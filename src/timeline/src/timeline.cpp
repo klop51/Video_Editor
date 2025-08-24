@@ -83,6 +83,21 @@ ClipId Timeline::add_clip(std::shared_ptr<MediaSource> source, const std::string
     return id;
 }
 
+
+ClipId Timeline::commit_prepared_clip(const PreparedClip& pc) {
+    // Commit must be lightweight: no I/O, no decoding, just data structure mutation
+    ClipId id = next_clip_id_++;
+    auto clip = std::make_unique<MediaClip>();
+    clip->id = id;
+    clip->source = pc.source;
+    clip->name = pc.name.empty() ? pc.source->path : pc.name;
+    clip->in_time = ve::TimePoint{0};
+    clip->out_time = ve::TimePoint{pc.source->duration.to_rational().num, pc.source->duration.to_rational().den};
+    clips_[id] = std::move(clip);
+    ve::log::info("Committed prepared clip: " + clips_[id]->name + " (ID: " + std::to_string(id) + ")");
+    return id;
+}
+
 bool Timeline::remove_clip(ClipId clip_id) {
     auto it = clips_.find(clip_id);
     if (it == clips_.end()) {

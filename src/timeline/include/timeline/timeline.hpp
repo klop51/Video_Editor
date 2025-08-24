@@ -6,6 +6,12 @@
 
 namespace ve::timeline {
 
+
+struct PreparedClip {
+    std::shared_ptr<MediaSource> source;
+    std::string name;
+};
+
 class Timeline {
 public:
     Timeline();
@@ -23,6 +29,7 @@ public:
     
     // Clip management
     ClipId add_clip(std::shared_ptr<MediaSource> source, const std::string& name = "");
+    ClipId commit_prepared_clip(const PreparedClip& pc);
     bool remove_clip(ClipId clip_id);
     MediaClip* get_clip(ClipId clip_id);
     const MediaClip* get_clip(ClipId clip_id) const;

@@ -9,19 +9,11 @@
 #include "media_io/media_probe.hpp"
 #include "decode/decoder.hpp"
 
-// Global flag: timeline model mutating off the UI thread
-std::atomic<bool> g_timeline_busy{false};
-
-
 #include <QApplication>
 #include <QMenuBar>
 #include <QToolBar>
 #include <QStatusBar>
 #include <QDockWidget>
-#include <QCoreApplication>
-#include <QEventLoop>
-#include <atomic>
-#include <QtConcurrent/QtConcurrentRun>
 #include <QAction>
 #include <QLabel>
 #include <QFileDialog>
@@ -287,9 +279,7 @@ void MainWindow::setup_media_worker() {
     // Start the worker thread
     media_worker_thread_->start();
     
-    
-    media_worker_thread_->setPriority(QThread::LowPriority);
-ve::log::info("Media processing worker thread started");
+    ve::log::info("Media processing worker thread started");
 }
 
 void MainWindow::setup_timeline_worker() {
@@ -315,9 +305,7 @@ void MainWindow::setup_timeline_worker() {
     // Start the worker thread
     timeline_worker_thread_->start();
     
-    
-    timeline_worker_thread_->setPriority(QThread::LowPriority);
-ve::log::info("Timeline processing worker thread started");
+    ve::log::info("Timeline processing worker thread started");
 }
 
 void MainWindow::cleanup_media_worker() {
@@ -1481,61 +1469,31 @@ void MainWindow::flushTimelineBatch() {
         }
 
         std::string clip_name = QFileInfo(info.filePath).baseName().toStdString();
-        
-        // Set busy flag and run add_clip off the UI thread
-        g_timeline_busy = true;
-        QElapsedTimer _clipTimer; _clipTimer.start();
-        
-        // Capture variables for the background thread
-        auto timeline_ptr = timeline_;
-        auto media_source_copy = media_source;
-        auto clip_name_copy = clip_name;
-        auto track_index = info.track_index;
-        auto has_video = info.has_video;
-        auto start_time = info.start_time;
-        auto duration = media_source->duration;
-        
-        // Run add_clip in background thread
-        QtConcurrent::run([=, this]() {
-            auto clip_id = timeline_ptr->add_clip(media_source_copy, clip_name_copy);
-            auto elapsed = _clipTimer.elapsed();
-            
-            // Hop back to UI thread to attach segment and update
-            QMetaObject::invokeMethod(this, [=, this]() {
-                ve::log::info(std::string("add_clip (bg) took ") + std::to_string(elapsed) + " ms");
-                
-                // Ensure target track exists (expand as needed)
-                while (static_cast<int>(timeline_->tracks().size()) <= track_index) {
-                    ve::timeline::Track::Type track_type = has_video ? ve::timeline::Track::Video : ve::timeline::Track::Audio;
-                    std::string auto_name = (track_type == ve::timeline::Track::Video ? "Video " : "Audio ") + std::to_string(timeline_->tracks().size() + 1);
-                    timeline_->add_track(track_type, auto_name);
-                }
+        ve::timeline::PreparedClip prepared{media_source, clip_name};
+        auto clip_id = timeline_->commit_prepared_clip(prepared);
 
-                // Create segment referencing clip
-                ve::timeline::Segment segment;
-                segment.clip_id = clip_id;
-                segment.start_time = start_time;
-                segment.duration = duration;
-                segment.name = clip_name_copy;
+        // Ensure target track exists (expand as needed)
+        while (static_cast<int>(timeline_->tracks().size()) <= info.track_index) {
+            ve::timeline::Track::Type track_type = info.has_video ? ve::timeline::Track::Video : ve::timeline::Track::Audio;
+            std::string auto_name = (track_type == ve::timeline::Track::Video ? "Video " : "Audio ") + std::to_string(timeline_->tracks().size() + 1);
+            timeline_->add_track(track_type, auto_name);
+        }
 
-                auto* track = timeline_->tracks()[track_index].get();
-                if(track && track->add_segment(segment)) {
-                    ve::log::info("Added segment (clip) to track index " + std::to_string(track_index));
-                } else {
-                    ve::log::warn("Failed to add segment to track index " + std::to_string(track_index));
-                }
-                
-                // Clear busy flag and update UI
-                g_timeline_busy = false;
-                
-                // Update UI after completion
-                if (timeline_panel_) {
-                    timeline_panel_->set_timeline(timeline_);
-                    timeline_panel_->update();
-                }
-            }, Qt::QueuedConnection);
-        });
-processed++;
+        // Create segment referencing clip
+        ve::timeline::Segment segment;
+        segment.clip_id = clip_id;
+        segment.start_time = info.start_time;
+        segment.duration = media_source->duration;
+        segment.name = clip_name;
+
+        auto* track = timeline_->tracks()[info.track_index].get();
+        if(track && track->add_segment(segment)) {
+            ve::log::info("Added segment (clip) to track index " + std::to_string(info.track_index));
+        } else {
+            ve::log::warn("Failed to add segment to track index " + std::to_string(info.track_index));
+        }
+        
+        processed++;
         
         // Check budget every few items
         if (processed % 4 == 0 && budget.elapsed() > budgetMs) {
