@@ -1,0 +1,15 @@
+{
+  "name": "video-editor",
+  "version-string": "0.1.0",
+  "dependencies": [
+    "ffmpeg",
+    "catch2",
+    {
+      "name": "qtbase",
+      "features": ["widgets", "opengl"]
+    },
+    "qtmultimedia",
+    "fmt",
+    "spdlog"
+  ]
+}

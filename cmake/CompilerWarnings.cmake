@@ -1,0 +1,17 @@
+# Centralized compiler warnings configuration
+function(setup_project_warnings)
+    if(MSVC)
+        # /W4 warning level, treat warnings as errors optionally
+        add_compile_options(/W4)
+        if(ENABLE_WARNINGS_AS_ERRORS)
+            add_compile_options(/WX)
+        endif()
+        # Disable noisy warnings (adjust as needed)
+        add_compile_options(/wd4251 /wd4275)
+    else()
+        add_compile_options(-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion)
+        if(ENABLE_WARNINGS_AS_ERRORS)
+            add_compile_options(-Werror)
+        endif()
+    endif()
+endfunction()

@@ -1,0 +1,224 @@
+#pragma once
+#include "core/time.hpp"
+#include "media_io/media_probe.hpp"
+#include <QMainWindow>
+#include <QDockWidget>
+#include <QTimer>
+#include <QQueue>
+#include <memory>
+
+QT_BEGIN_NAMESPACE
+class QMenuBar;
+class QToolBar;
+class QStatusBar;
+class QAction;
+class QLabel;
+class QTreeWidget;
+class QTreeWidgetItem;
+class QThread;
+QT_END_NAMESPACE
+
+namespace ve::timeline { class Timeline; }
+namespace ve::playback { class Controller; }
+namespace ve::media { struct ProbeResult; }
+namespace ve::commands { 
+    class Command; 
+    class CommandHistory; 
+}
+
+namespace ve::ui {
+
+class TimelinePanel;
+class ViewerPanel;
+class MediaProcessingWorker;
+class TimelineProcessingWorker;
+
+// Forward declarations for worker result structs
+struct MediaInfo {
+    QString filePath;
+    ve::media::ProbeResult probeResult;
+    bool success;
+    QString errorMessage;
+};
+
+struct TimelineInfo {
+    QString filePath;
+    ve::media::ProbeResult probeResult;
+    bool has_video;
+    bool has_audio;
+    double duration_seconds;
+    bool success;
+    QString errorMessage;
+    // Context from the UI (drop location etc.)
+    ve::TimePoint start_time{}; // Where to place the clip on the timeline
+    int track_index = 0;        // Target track index (will auto-expand if needed)
+};
+
+class MainWindow : public QMainWindow {
+    Q_OBJECT
+    
+public:
+    explicit MainWindow(QWidget* parent = nullptr);
+    ~MainWindow();
+    
+    void set_timeline(ve::timeline::Timeline* timeline);
+    void set_playback_controller(ve::playback::Controller* controller);
+    
+protected:
+    void closeEvent(QCloseEvent* event) override;
+    
+private slots:
+    // File menu
+    void new_project();
+    void open_project();
+    void save_project();
+    void save_project_as();
+    void import_media();
+    void export_timeline();
+    void quit_application();
+    
+    // Edit menu
+    void undo();
+    void redo();
+    void cut();
+    void copy();
+    void paste();
+    void delete_selection();
+    
+    // Playback menu
+    void play_pause();
+    void stop();
+    void step_forward();
+    void step_backward();
+    void go_to_start();
+    void go_to_end();
+    
+    // Position update
+    void update_playback_position();
+    
+    // View menu
+    void zoom_in();
+    void zoom_out();
+    void zoom_fit();
+    void toggle_timeline();
+    void toggle_media_browser();
+    void toggle_properties();
+    
+    // Help menu
+    void about();
+    void about_qt();
+    
+    // Playback status updates
+    void on_playback_time_changed(ve::TimePoint time);
+    void on_playback_state_changed();
+    
+    // Media browser interactions
+    void on_media_item_double_clicked(QTreeWidgetItem* item, int column);
+    void on_media_browser_context_menu(const QPoint& pos);
+    void add_media_to_timeline(const QString& filePath);
+    void add_selected_media_to_timeline();
+    // Overload allowing explicit placement context
+    void add_media_to_timeline(const QString& filePath, ve::TimePoint start_time, int track_index);
+    
+    // Timeline interactions
+    void on_timeline_clip_added(const QString& filePath, ve::TimePoint start_time, int track_index);
+    
+    // Worker thread handlers
+    void on_media_processed(const MediaInfo& info);
+    void on_media_processing_error(const QString& error);
+    void on_media_progress(int percentage, const QString& status);
+    void on_timeline_processed(const TimelineInfo& info);
+    void on_timeline_processing_error(const QString& error);
+    void on_timeline_progress(int percentage, const QString& status);
+    
+private:
+    void create_menus();
+    void create_toolbars();
+    void create_status_bar();
+    void create_dock_widgets();
+    void setup_layout();
+    void connect_signals();
+    void update_window_title();
+    void update_actions();
+    
+    // Media import helpers
+    void import_single_file(const QString& filePath);
+    void add_media_to_browser(const QString& filePath, const ve::media::ProbeResult& probe);
+    void add_media_browser_placeholder();
+    void remove_media_browser_placeholder();
+    
+    // Command system helpers
+    bool execute_command(std::unique_ptr<ve::commands::Command> command);
+    
+    // Development/testing helpers
+    void create_test_timeline_content();
+    
+    // Worker thread management
+    void setup_media_worker();
+    void cleanup_media_worker();
+    void setup_timeline_worker();
+    void cleanup_timeline_worker();
+    
+    // Central widget and panels
+    ViewerPanel* viewer_panel_;
+    
+    // Dock widgets and their panels
+    QDockWidget* timeline_dock_;
+    TimelinePanel* timeline_panel_;
+    
+    QDockWidget* media_browser_dock_;
+    QTreeWidget* media_browser_;
+    
+    QDockWidget* properties_dock_;
+    QLabel* property_panel_;
+    
+    // Menu actions
+    QAction* new_action_;
+    QAction* open_action_;
+    QAction* save_action_;
+    QAction* save_as_action_;
+    QAction* import_action_;
+    QAction* export_action_;
+    QAction* quit_action_;
+    
+    QAction* undo_action_;
+    QAction* redo_action_;
+    QAction* cut_action_;
+    QAction* copy_action_;
+    QAction* paste_action_;
+    QAction* delete_action_;
+    
+    QAction* play_pause_action_;
+    QAction* stop_action_;
+    QAction* step_forward_action_;
+    QAction* step_backward_action_;
+    QAction* go_to_start_action_;
+    QAction* go_to_end_action_;
+    
+    // Status bar
+    QLabel* status_label_;
+    QLabel* time_label_;
+    QLabel* fps_label_;
+    
+    // Data
+    ve::timeline::Timeline* timeline_;
+    ve::playback::Controller* playback_controller_;
+    std::unique_ptr<ve::commands::CommandHistory> command_history_;
+    QTimer* position_update_timer_;
+    
+    QString current_project_path_;
+    bool project_modified_;
+    
+    // Worker threads for background processing
+    MediaProcessingWorker* media_worker_;
+    QThread* media_worker_thread_;
+    TimelineProcessingWorker* timeline_worker_;
+    QThread* timeline_worker_thread_;
+    
+    // UI responsiveness improvements - chunked processing
+    QQueue<TimelineInfo> timeline_update_queue_;
+    QTimer* timeline_update_pump_;
+    void flushTimelineBatch();
+};
+
+} // namespace ve::ui

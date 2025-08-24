@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  windows-build-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgJsonGlob: 'vcpkg.json'
+      - name: Configure
+        run: cmake --preset dev-debug
+      - name: Build
+        run: cmake --build --preset dev-debug -j 4
+      - name: Test
+        run: ctest --preset dev-debug-tests --output-on-failure
+      - name: Archive profiling (if any)
+        if: always()
+        run: |
+          if(Test-Path build/dev-debug/profiling.json){ echo "Found profiling artifact" }name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        build_type: [Debug, Release]
+    runs-on: ${{ matrix.os }}
+    env:
+      VCPKG_FORCE_SYSTEM_BINARIES: 1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup vcpkg
+        uses: microsoft/setup-vcpkg@v1
+        with:
+          vcpkgJsonGlob: '**/vcpkg.json'
+          cacheDependencyGraph: true
+
+      - name: Configure
+        run: |
+          cmake --preset dev-${{ matrix.build_type == 'Debug' && 'debug' || 'release' }}
+      - name: Build
+        run: |
+          cmake --build --preset dev-${{ matrix.build_type == 'Debug' && 'debug' || 'release' }} -j
+      - name: Test
+        if: matrix.build_type == 'Debug'
+        run: |
+          ctest --preset dev-debug-tests --output-on-failure
+      - name: Coverage (Linux Debug)
+        if: matrix.os == 'ubuntu-latest' && matrix.build_type == 'Debug'
+        run: |
+          sudo apt-get update && sudo apt-get install -y lcov
+          cmake --build --preset dev-debug -j --target unit_tests
+          ctest --preset dev-debug-tests --output-on-failure
+          lcov --capture --directory build/dev-debug --output-file coverage.info
+          lcov --remove coverage.info '/usr/*' '*/vcpkg_installed/*' --output-file coverage.info
+          lcov --list coverage.info
+      - name: Upload coverage artifact
+        if: matrix.os == 'ubuntu-latest' && matrix.build_type == 'Debug'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: coverage.info
+      - name: Upload build artifacts
+        if: matrix.build_type == 'Release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.os }}-${{ matrix.build_type }}
+          path: build/dev-${{ matrix.build_type == 'Debug' && 'debug' || 'release' }}
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Validate CMake configure (no build)
+        run: cmake --preset no-ffmpeg
+  clang-tidy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup vcpkg
+        uses: microsoft/setup-vcpkg@v1
+        with:
+          vcpkgJsonGlob: '**/vcpkg.json'
+          cacheDependencyGraph: true
+      - name: Configure
+        run: cmake --preset dev-debug
+      - name: Run clang-tidy
+        run: |
+          python3 - <<'EOF'
+import json, subprocess, sys, pathlib
+compdb = json.load(open('build/dev-debug/compile_commands.json'))
+errors = 0
+for entry in compdb:
+    file = entry['file']
+    if not file.endswith(('.cpp','.cc','.cxx')): continue
+    if 'vcpkg_installed' in file: continue
+    r = subprocess.run(['clang-tidy', file, '--quiet', '--', '-std=c++20'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if r.returncode != 0 and r.stdout.strip():
+        print(r.stdout)
+    if 'warning:' in r.stdout or 'error:' in r.stdout:
+        errors += 1
+if errors:
+    print(f"clang-tidy found issues: {errors}")
+    sys.exit(1)
+EOF
