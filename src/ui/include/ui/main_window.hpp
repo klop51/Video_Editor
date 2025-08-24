@@ -1,6 +1,7 @@
 #pragma once
 #include "core/time.hpp"
 #include "media_io/media_probe.hpp"
+#include "timeline/timeline.hpp"
 #include <QMainWindow>
 #include <QDockWidget>
 #include <QTimer>
@@ -52,6 +53,10 @@ struct TimelineInfo {
     // Context from the UI (drop location etc.)
     ve::TimePoint start_time{}; // Where to place the clip on the timeline
     int track_index = 0;        // Target track index (will auto-expand if needed)
+    
+    // NEW: Prepared data to minimize UI thread work
+    std::shared_ptr<ve::timeline::MediaSource> prepared_source;
+    ve::timeline::Segment prepared_segment;
 };
 
 class MainWindow : public QMainWindow {
