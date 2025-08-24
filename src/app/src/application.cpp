@@ -19,7 +19,7 @@ Application::Application(int argc, char** argv)
     setOrganizationName("Video Editor Team");
     setOrganizationDomain("videoeditor.dev");
     
-    ve::log::info("Application starting");
+    // ve::log::info("Application starting"); // Temporarily disabled to test
     
     // Create core components
     timeline_ = std::make_unique<ve::timeline::Timeline>();
@@ -40,12 +40,12 @@ Application* Application::instance() {
 
 int Application::run() {
     if (!main_window_) {
-        ve::log::error("Main window not created");
+        // ve::log::error("Main window not created");
         return -1;
     }
     
     main_window_->show();
-    ve::log::info("Application started successfully");
+    // ve::log::info("Application started successfully");
     
     return exec();
 }
@@ -134,4 +134,4 @@ void Application::setup_connections() {
 
 } // namespace ve::app
 
-#include "application.moc"
+// #include "application.moc"  // Temporarily removed due to AutoMoc warning

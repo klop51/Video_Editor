@@ -170,8 +170,9 @@ void ViewerPanel::update_frame_display() {
     }
     
     // Scale pixmap to fit display while maintaining aspect ratio
+    // Use fast transformation for real-time playback performance
     QSize display_size = video_display_->size();
-    QPixmap scaled_pixmap = pixmap.scaled(display_size, aspect_ratio_mode_, Qt::SmoothTransformation);
+    QPixmap scaled_pixmap = pixmap.scaled(display_size, aspect_ratio_mode_, Qt::FastTransformation);
     
     video_display_->setPixmap(scaled_pixmap);
 }
@@ -222,10 +223,11 @@ QPixmap ViewerPanel::convert_frame_to_pixmap(const ve::decode::VideoFrame& frame
             
             int bytes_per_line = rgba_frame->width * 4;
             
-            // Create QImage with data copy to avoid pointer issues
+            // Create QImage and convert to pixmap efficiently
             QImage temp_image(rgba_frame->data.data(), rgba_frame->width, rgba_frame->height, bytes_per_line, QImage::Format_RGBA8888);
-            image = temp_image.copy(); // Make a deep copy to avoid dangling pointer
-            break;
+            
+            // Create pixmap directly from image to avoid extra copy
+            return QPixmap::fromImage(temp_image);
         }
             
         default:

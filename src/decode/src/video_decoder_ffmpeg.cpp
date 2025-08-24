@@ -40,6 +40,11 @@ PixelFormat map_pixel_format(int av_format) {
         case AV_PIX_FMT_RGBA: return PixelFormat::RGBA32;
         case AV_PIX_FMT_BGR24: return PixelFormat::BGR24;
         case AV_PIX_FMT_BGRA: return PixelFormat::BGRA32;
+        // Deprecated JPEG formats - map to standard equivalents
+        case AV_PIX_FMT_YUVJ420P: return PixelFormat::YUV420P;
+        case AV_PIX_FMT_YUVJ422P: return PixelFormat::YUV422P;
+        case AV_PIX_FMT_YUVJ444P: return PixelFormat::YUV444P;
+        // High bit depth formats
         case AV_PIX_FMT_YUV420P10LE: return PixelFormat::YUV420P10LE;
         case AV_PIX_FMT_YUV422P10LE: return PixelFormat::YUV422P10LE;
         case AV_PIX_FMT_YUV444P10LE: return PixelFormat::YUV444P10LE;
@@ -321,7 +326,10 @@ public:
                 }
                 
                 // Detect color range
-                if (frame_->color_range == AVCOL_RANGE_JPEG) {
+                if (frame_->color_range == AVCOL_RANGE_JPEG || 
+                    frame_->format == AV_PIX_FMT_YUVJ420P ||
+                    frame_->format == AV_PIX_FMT_YUVJ422P ||
+                    frame_->format == AV_PIX_FMT_YUVJ444P) {
                     vf.color_range = ColorRange::Full;
                 } else {
                     vf.color_range = ColorRange::Limited;  // Default for most video content

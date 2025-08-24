@@ -16,7 +16,8 @@
 #include <algorithm>
 
 #include <atomic>
-extern std::atomic<bool> g_timeline_busy;
+// Global variable to track timeline operations
+std::atomic<bool> g_timeline_busy{false};
 
 
 namespace ve::ui {
@@ -51,12 +52,12 @@ TimelinePanel::TimelinePanel(QWidget* parent)
     background_color_ = QColor(45, 45, 45);
     grid_color_ = QColor(70, 70, 70);
     
-    // Add a QTimer for heartbeat debugging
+    // Add a QTimer for heartbeat debugging - reduced frequency for release
     heartbeat_timer_ = new QTimer(this);
     connect(heartbeat_timer_, &QTimer::timeout, this, [this]() {
         static int heartbeat_count = 0;
         heartbeat_count++;
-        if (heartbeat_count % 30 == 0) { // Every 3 seconds if 100ms intervals
+        if (heartbeat_count % 300 == 0) { // Every 30 seconds instead of 3 seconds
             qDebug() << "HEARTBEAT #" << heartbeat_count << "- UI thread is responsive";
         }
     });
@@ -121,14 +122,8 @@ void TimelinePanel::paintEvent(QPaintEvent* event) {
         p.drawText(rect(), Qt::AlignCenter, tr("Preparing clip..."));
         return;
     }
-static QElapsedTimer paint_timer;
-    paint_timer.start();
-    
-    static int paint_count = 0;
-    paint_count++;
-    if (paint_count % 50 == 0) {  // Reduced frequency
-        qDebug() << "PAINT EVENT #" << paint_count;
-    }
+
+    // Removed debug timing for performance - paint events are called very frequently
     
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, false); // Crisp lines for timeline
@@ -139,7 +134,6 @@ static QElapsedTimer paint_timer;
     
     // Skip expensive operations if clip rect is very small (like resize handles)
     if (clipRect.width() < 5 || clipRect.height() < 5) {
-        paint_timer.restart();
         return;
     }
     
@@ -159,14 +153,11 @@ static QElapsedTimer paint_timer;
     draw_playhead(painter);
     draw_selection(painter);
     
-    auto elapsed = paint_timer.elapsed();
-    if (elapsed > 16) { // Log slow paint events
-        qDebug() << "SLOW PAINT EVENT took" << elapsed << "ms (clip rect:" << clipRect << ")";
-    }
+    // Removed slow paint event logging for performance
 }
 
 void TimelinePanel::mousePressEvent(QMouseEvent* event) {
-    qDebug() << "MousePressEvent: button=" << event->button() << "pos=" << event->pos() << "timeline_=" << (timeline_ != nullptr);
+    // Removed debug logging for performance - mouse press events can be frequent
     
     if (!timeline_) return;
     
@@ -176,7 +167,6 @@ void TimelinePanel::mousePressEvent(QMouseEvent* event) {
     if (event->button() == Qt::LeftButton) {
         if (event->pos().y() < TIMECODE_HEIGHT) {
             // Clicked in timecode ruler - start scrubbing
-            qDebug() << "Clicked in timecode ruler";
             ve::TimePoint time = pixel_to_time(event->pos().x());
             current_time_ = time;
             emit time_changed(time);
@@ -184,17 +174,13 @@ void TimelinePanel::mousePressEvent(QMouseEvent* event) {
             update();
         } else {
             // Clicked in track area - check for segment interaction
-            qDebug() << "Clicked in track area, searching for segment";
             ve::timeline::Segment* segment = find_segment_at_pos(event->pos());
             
-            qDebug() << "Found segment:" << (segment != nullptr);
             if (segment) {
-                qDebug() << "Segment ID:" << segment->id << "start:" << segment->start_time.to_rational().num;
                 // Check if clicking on segment edge for resizing
                 bool is_left_edge;
                 if (is_on_segment_edge(event->pos(), *segment, is_left_edge)) {
-                    // Start resizing operation
-                    qDebug() << "Starting resize operation, left_edge=" << is_left_edge;
+                    // Start resizing operation - removed debug logging for performance
                     resizing_segment_ = true;
                     is_left_resize_ = is_left_edge;
                     dragged_segment_id_ = segment->id;
@@ -203,15 +189,13 @@ void TimelinePanel::mousePressEvent(QMouseEvent* event) {
                     setCursor(Qt::SizeHorCursor);
                     // Don't grab mouse immediately - wait for actual mouse movement
                 } else {
-                    // Start moving operation
-                    qDebug() << "Starting move operation for segment ID:" << segment->id;
+                    // Start moving operation - removed debug logging for performance
                     dragging_segment_ = true;
                     dragged_segment_id_ = segment->id;
                     original_segment_start_ = segment->start_time;
                     original_segment_duration_ = segment->duration;
                     setCursor(Qt::ClosedHandCursor);
                     // Don't grab mouse immediately - wait for actual mouse movement
-                    qDebug() << "Ready for dragging, dragging_segment_=" << dragging_segment_;
                     
                     // Select the segment if not already selected
                     if (std::find(selected_segments_.begin(), selected_segments_.end(), segment->id) == selected_segments_.end()) {
@@ -224,13 +208,12 @@ void TimelinePanel::mousePressEvent(QMouseEvent* event) {
                     }
                 }
             } else {
-                // Clicked empty space - handle selection
-                qDebug() << "Clicked empty space";
+                // Clicked empty space - handle selection - removed debug logging for performance
                 handle_click(event->pos());
             }
             
             dragging_ = true;
-            qDebug() << "Final dragging_ state:" << dragging_;
+            // qDebug() << "Final dragging_ state:" << dragging_; // Removed for performance
         }
     } else if (event->button() == Qt::RightButton) {
         // Right click for context menu
@@ -239,11 +222,7 @@ void TimelinePanel::mousePressEvent(QMouseEvent* event) {
 }
 
 void TimelinePanel::mouseMoveEvent(QMouseEvent* event) {
-    static int mouse_move_count = 0;
-    mouse_move_count++;
-    if (mouse_move_count % 50 == 0) {
-        qDebug() << "MOUSE MOVE #" << mouse_move_count << "- frequency check, pos=" << event->pos();
-    }
+    // Removed frequent debug logging for performance - mouse move events are called constantly
     
     if (!timeline_) return;
     
@@ -254,22 +233,18 @@ void TimelinePanel::mouseMoveEvent(QMouseEvent* event) {
         if (abs(diff.x()) > 3 || abs(diff.y()) > 3) { // Minimum movement threshold
             dragging_ = true;
             grabMouse(); // Now grab mouse for actual drag operation
-            qDebug() << "Starting actual drag operation - mouse grabbed";
         }
     }
     
     if (dragging_) {
-        qDebug() << "MouseMove: dragging=true, pos=" << event->pos() << "dragging_segment_=" << dragging_segment_ << "resizing_segment_=" << resizing_segment_;
         if (event->pos().y() < TIMECODE_HEIGHT) {
             // Scrubbing in timecode ruler
-            qDebug() << "Scrubbing in timecode ruler";
             ve::TimePoint time = pixel_to_time(event->pos().x());
             current_time_ = time;
             emit time_changed(time);
             update();
         } else {
-            // Dragging in track area
-            qDebug() << "Dragging in track area, calling update_drag";
+            // Dragging in track area - removed debug logging for performance
             update_drag(event->pos());
         }
     } else {
@@ -284,16 +259,14 @@ void TimelinePanel::mouseMoveEvent(QMouseEvent* event) {
 }
 
 void TimelinePanel::mouseReleaseEvent(QMouseEvent* event) {
-    qDebug() << "MouseReleaseEvent: dragging_=" << dragging_ << "dragging_segment_=" << dragging_segment_ << "resizing_segment_=" << resizing_segment_;
+    // Removed debug logging for performance - mouse release events during active editing
     
     if (dragging_) {
         // Complete any ongoing operations with command system
         if (command_executor_ && (dragging_segment_ || resizing_segment_)) {
-            qDebug() << "Finishing segment edit";
             finish_segment_edit(event->pos());
         }
         
-        qDebug() << "Ending drag operation";
         end_drag(event->pos());
         dragging_ = false;
         dragging_segment_ = false;
@@ -717,24 +690,19 @@ void TimelinePanel::start_drag(const QPoint& pos) {
 }
 
 void TimelinePanel::update_drag(const QPoint& pos) {
-    qDebug() << "update_drag called: pos=" << pos << "dragged_segment_id_=" << dragged_segment_id_;
+    // Removed debug logging for performance - called frequently during mouse drag
     
     if (pos.y() < TIMECODE_HEIGHT) {
         // Scrubbing - already handled in mouseMoveEvent
-        qDebug() << "Returning early - scrubbing";
         return;
     }
     
     // Handle segment dragging/resizing with live preview (without modifying actual data)
     if (!timeline_ || dragged_segment_id_ == 0) {
-        qDebug() << "Returning early - no timeline or no dragged segment";
         return;
     }
     
-    qDebug() << "Processing drag: dragging_segment_=" << dragging_segment_ << "resizing_segment_=" << resizing_segment_;
-    
     if (dragging_segment_) {
-        qDebug() << "Processing segment drag";
         // Calculate new position for preview
         ve::TimePoint new_time = pixel_to_time(pos.x());
         
@@ -747,7 +715,7 @@ void TimelinePanel::update_drag(const QPoint& pos) {
         preview_start_time_ = new_time;
         preview_duration_ = original_segment_duration_;
         show_drag_preview_ = true;
-        qDebug() << "Set preview: start_time=" << new_time.to_rational().num << "show_preview=" << show_drag_preview_;
+        // Removed drag preview debug logging for performance - called frequently during drag
         update();
         
     } else if (resizing_segment_) {
@@ -933,17 +901,14 @@ ve::timeline::Segment* TimelinePanel::find_segment_at_pos(const QPoint& pos) {
     
     // Search through segments in the track
     auto& segments = const_cast<std::vector<ve::timeline::Segment>&>(tracks[track_index]->segments());
-    qDebug() << "Segments in track" << track_index << ":" << segments.size();
+    // Removed segment search debug logging for performance - called on every mouse click
     
     for (auto& segment : segments) {
-        qDebug() << "Checking segment ID:" << segment.id << "start:" << segment.start_time.to_rational().num << "end:" << segment.end_time().to_rational().num;
         if (click_time >= segment.start_time && click_time <= segment.end_time()) {
-            qDebug() << "Found segment at position!";
             return &segment;
         }
     }
     
-    qDebug() << "No segment found at position";
     return nullptr;
 }
 

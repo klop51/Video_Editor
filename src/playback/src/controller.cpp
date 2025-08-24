@@ -1,5 +1,6 @@
 #include "playback/controller.hpp"
 #include "core/log.hpp"
+#include "media_io/media_probe.hpp"
 #include <chrono>
 #include <thread>
 
@@ -34,6 +35,17 @@ bool Controller::load_media(const std::string& path) {
         ve::log::error("Failed to open media file: " + path);
         decoder_.reset();
         return false;
+    }
+    
+    // Get duration from media probe
+    auto probe_result = ve::media::probe_file(path);
+    if (probe_result.success && probe_result.duration_us > 0) {
+        duration_us_ = probe_result.duration_us;
+        ve::log::info("Media duration: " + std::to_string(duration_us_) + " us (" + 
+                     std::to_string(duration_us_ / 1000000.0) + " seconds)");
+    } else {
+        ve::log::warn("Could not determine media duration");
+        duration_us_ = 0;
     }
     
     ve::log::info("Media loaded successfully: " + path);
