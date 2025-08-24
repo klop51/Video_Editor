@@ -15,6 +15,10 @@
 #include <QDebug>
 #include <algorithm>
 
+#include <atomic>
+extern std::atomic<bool> g_timeline_busy;
+
+
 namespace ve::ui {
 
 TimelinePanel::TimelinePanel(QWidget* parent)
@@ -108,7 +112,16 @@ void TimelinePanel::zoom_fit() {
 }
 
 void TimelinePanel::paintEvent(QPaintEvent* event) {
-    static QElapsedTimer paint_timer;
+    
+    if (g_timeline_busy.load(std::memory_order_acquire)) {
+        // Skip reading timeline while a background commit is in progress
+        QPainter p(this);
+        p.fillRect(rect(), palette().base());
+        p.setPen(Qt::gray);
+        p.drawText(rect(), Qt::AlignCenter, tr("Preparing clip..."));
+        return;
+    }
+static QElapsedTimer paint_timer;
     paint_timer.start();
     
     static int paint_count = 0;
