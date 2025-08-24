@@ -8,16 +8,43 @@
 #include "core/log.hpp"
 #include "media_io/media_probe.hpp"
 #include "decode/decoder.hpp"
+#include <limits>
 
 #include <QApplication>
 #include <QMenuBar>
 #include <QToolBar>
 #include <QStatusBar>
 #include <QDockWidget>
+#include <algorithm>
 #include <QAction>
 #include <QLabel>
 #include <QFileDialog>
 #include <QMessageBox>
+
+// Convert TimeDuration -> microseconds (safe)
+static qint64 td_to_us(const ve::TimeDuration& d) {
+    const auto r = d.to_rational();                 // num/den (seconds = num/den)
+    long double us = 1'000'000.0L * (long double)r.num / (long double)r.den;
+    if (us < 0) us = 0;
+    if (us > (long double)std::numeric_limits<qint64>::max()) us = (long double)std::numeric_limits<qint64>::max();
+    return (qint64)us;
+}
+
+// Make a TimePoint from microseconds
+static inline ve::TimePoint us_to_tp(qint64 us) { return ve::TimePoint{ us, 1'000'000 }; }
+
+// Compute frame duration in microseconds from fps (num/den = frames per second)
+static qint64 frame_us_from_fps(const ve::TimeRational& fps) {
+    if (fps.num <= 0) return 33'333;                // ~30 fps fallback
+    long double us = 1'000'000.0L * (long double)fps.den / (long double)fps.num; // 1/fps
+    if (us < 1) us = 1;
+    return (qint64)us;
+}
+
+// Get timeline duration and current pos in microseconds (works even if controller has only rational APIs)
+static qint64 timeline_duration_us(const ve::timeline::Timeline* tl) {
+    return tl ? td_to_us(tl->duration()) : 0;
+}
 #include <QProgressDialog>
 #include <QDateTime>
 #include <QTimer>
@@ -29,7 +56,6 @@
 #include <QHBoxLayout>
 #include <QMimeData>
 #include <QUrl>
-#include <algorithm>
 #include <QProgressDialog>
 #include <QStandardPaths>
 #include <QThread>
@@ -519,27 +545,6 @@ void MainWindow::create_menus() {
     auto add_to_timeline_action = edit_menu->addAction("Add Selected Media to &Timeline", this, &MainWindow::add_selected_media_to_timeline);
     add_to_timeline_action->setShortcut(QKeySequence("Ctrl+T"));
     
-    edit_menu->addSeparator();
-    
-    // Add professional video editing shortcuts
-    auto split_action = edit_menu->addAction("&Split at Playhead", this, [this]() {
-        // TODO: Implement split functionality
-        statusBar()->showMessage("Split at playhead: Feature coming soon!", 2000);
-    });
-    split_action->setShortcut(QKeySequence("S"));
-    
-    auto razor_action = edit_menu->addAction("&Razor Tool", this, [this]() {
-        // TODO: Implement razor tool
-        statusBar()->showMessage("Razor tool: Feature coming soon!", 2000);
-    });
-    razor_action->setShortcut(QKeySequence("C"));
-    
-    auto select_all_action = edit_menu->addAction("Select &All Clips", this, [this]() {
-        // TODO: Implement select all timeline clips
-        statusBar()->showMessage("Select all clips: Feature coming soon!", 2000);
-    });
-    select_all_action->setShortcut(QKeySequence::SelectAll);
-    
     // Playback menu
     QMenu* playback_menu = menuBar()->addMenu("&Playback");
     
@@ -564,36 +569,6 @@ void MainWindow::create_menus() {
     
     go_to_end_action_ = playback_menu->addAction("Go to &End", this, &MainWindow::go_to_end);
     go_to_end_action_->setShortcut(QKeySequence("End"));
-    
-    playback_menu->addSeparator();
-    
-    // Add professional playback shortcuts
-    auto fast_forward_action = playback_menu->addAction("Fast Forward", this, [this]() {
-        statusBar()->showMessage("Fast forward: Feature coming soon!", 2000);
-    });
-    fast_forward_action->setShortcut(QKeySequence("L"));
-    
-    auto fast_rewind_action = playback_menu->addAction("Fast Rewind", this, [this]() {
-        statusBar()->showMessage("Fast rewind: Feature coming soon!", 2000);
-    });
-    fast_rewind_action->setShortcut(QKeySequence("J"));
-    
-    auto play_reverse_action = playback_menu->addAction("Play Reverse", this, [this]() {
-        statusBar()->showMessage("Play reverse: Feature coming soon!", 2000);
-    });
-    play_reverse_action->setShortcut(QKeySequence("Shift+Space"));
-    
-    playback_menu->addSeparator();
-    
-    auto mark_in_action = playback_menu->addAction("Mark In Point", this, [this]() {
-        statusBar()->showMessage("Mark in point: Feature coming soon!", 2000);
-    });
-    mark_in_action->setShortcut(QKeySequence("I"));
-    
-    auto mark_out_action = playback_menu->addAction("Mark Out Point", this, [this]() {
-        statusBar()->showMessage("Mark out point: Feature coming soon!", 2000);
-    });
-    mark_out_action->setShortcut(QKeySequence("O"));
     
     // View menu
     QMenu* view_menu = menuBar()->addMenu("&View");
@@ -629,7 +604,6 @@ void MainWindow::create_menus() {
 void MainWindow::create_toolbars() {
     // Main toolbar
     QToolBar* main_toolbar = addToolBar("Main");
-    main_toolbar->setObjectName("MainToolBar");
     main_toolbar->addAction(new_action_);
     main_toolbar->addAction(open_action_);
     main_toolbar->addAction(save_action_);
@@ -639,7 +613,6 @@ void MainWindow::create_toolbars() {
     
     // Edit toolbar
     QToolBar* edit_toolbar = addToolBar("Edit");
-    edit_toolbar->setObjectName("EditToolBar");
     edit_toolbar->addAction(undo_action_);
     edit_toolbar->addAction(redo_action_);
     edit_toolbar->addSeparator();
@@ -650,7 +623,6 @@ void MainWindow::create_toolbars() {
     
     // Playback toolbar
     QToolBar* playback_toolbar = addToolBar("Playback");
-    playback_toolbar->setObjectName("PlaybackToolBar");
     playback_toolbar->addAction(go_to_start_action_);
     playback_toolbar->addAction(step_backward_action_);
     playback_toolbar->addAction(play_pause_action_);
@@ -677,7 +649,6 @@ void MainWindow::create_status_bar() {
 void MainWindow::create_dock_widgets() {
     // Timeline dock
     timeline_dock_ = new QDockWidget("Timeline", this);
-    timeline_dock_->setObjectName("TimelineDock");
     timeline_panel_ = new TimelinePanel();
     
     // Connect command system to timeline panel
@@ -691,7 +662,6 @@ void MainWindow::create_dock_widgets() {
     
     // Media browser dock - Tree widget for media files
     media_browser_dock_ = new QDockWidget("Media Browser", this);
-    media_browser_dock_->setObjectName("MediaBrowserDock");
     media_browser_ = new QTreeWidget();
     media_browser_->setHeaderLabels({"Name", "Duration", "Format", "Resolution"});
     media_browser_->setRootIsDecorated(false);
@@ -708,7 +678,6 @@ void MainWindow::create_dock_widgets() {
     
     // Properties dock (placeholder for now)
     properties_dock_ = new QDockWidget("Properties", this);
-    properties_dock_->setObjectName("PropertiesDock");
     property_panel_ = new QLabel("Properties\n(Coming Soon)");
     property_panel_->setAlignment(Qt::AlignCenter);
     properties_dock_->setWidget(property_panel_);
@@ -903,19 +872,15 @@ void MainWindow::save_project_as() { ve::log::info("Save project as requested");
 void MainWindow::import_media() {
     ve::log::info("Import media requested");
     
-    // Show file dialog for media selection with optimized filter order
+    // Show file dialog for media selection
     QStringList filters;
-    filters << "All Media Files (*.mp4 *.avi *.mov *.mkv *.wmv *.flv *.webm *.m4v *.mp3 *.wav *.aac *.flac *.ogg *.wma *.m4a)"
-            << "Video Files (*.mp4 *.avi *.mov *.mkv *.wmv *.flv *.webm *.m4v)"
+    filters << "Video Files (*.mp4 *.avi *.mov *.mkv *.wmv *.flv *.webm *.m4v)"
             << "Audio Files (*.mp3 *.wav *.aac *.flac *.ogg *.wma *.m4a)"
+            << "All Media Files (*.mp4 *.avi *.mov *.mkv *.wmv *.flv *.webm *.m4v *.mp3 *.wav *.aac *.flac *.ogg *.wma *.m4a)"
             << "All Files (*.*)";
     
     QString lastDir = QSettings().value("last_import_directory", 
                                        QStandardPaths::writableLocation(QStandardPaths::MoviesLocation)).toString();
-    
-    // Update status before dialog opens
-    status_label_->setText("Opening file browser...");
-    status_label_->setStyleSheet("color: blue;");
     
     QStringList filePaths = QFileDialog::getOpenFileNames(
         this,
@@ -926,8 +891,6 @@ void MainWindow::import_media() {
     
     if (filePaths.isEmpty()) {
         ve::log::info("Import cancelled by user");
-        status_label_->setText("Import cancelled");
-        status_label_->setStyleSheet("");
         return;
     }
     
@@ -1014,44 +977,83 @@ void MainWindow::play_pause() {
     }
 }
 
-void MainWindow::stop() { 
-    ve::log::info("Stop button clicked");
+
+void MainWindow::stop() {
     if (playback_controller_) {
-        auto current_state = playback_controller_->state();
-        ve::log::info("Current state before stop: " + std::to_string(static_cast<int>(current_state)));
         playback_controller_->stop();
-        ve::log::info("Stop command sent to playback controller");
+        playback_controller_->seek(0);
     }
+    if (timeline_panel_) {
+        timeline_panel_->set_current_time(us_to_tp(0));
+        timeline_panel_->update();
+    }
+    if (time_label_) time_label_->setText(QString("Time: %1s").arg(0.0, 0, 'f', 2));
 }
 
-void MainWindow::step_forward() { 
-    ve::log::info("STEP FORWARD button clicked"); 
-    if (playback_controller_) {
-        // Step forward by 1 frame (assuming 30fps = ~33ms per frame)
-        int64_t current_time = playback_controller_->current_time_us();
-        int64_t step_amount = 33333; // ~1/30 second in microseconds
-        int64_t new_time = current_time + step_amount;
-        ve::log::info("STEP FORWARD: " + std::to_string(current_time) + " -> " + std::to_string(new_time) + " (ADDING " + std::to_string(step_amount) + ")");
-        playback_controller_->seek(new_time);
+void MainWindow::step_forward() {
+    if (!playback_controller_) return;
+
+    // pause so stepping is deterministic
+    playback_controller_->pause();
+
+    // compute a single-frame step
+    qint64 frame_us = 33'333;
+    if (timeline_) frame_us = frame_us_from_fps(timeline_->frame_rate());
+
+    // read current time (prefer microseconds if your controller has it)
+    qint64 cur_us = 0;
+    if constexpr (true) { // replace with your actual API
+        cur_us = playback_controller_->current_time_us();    // if you have this
     }
+    // else: cur_us = td_to_us(playback_controller_->current_time());
+
+    // clamp to timeline duration
+    const qint64 dur_us = timeline_duration_us(timeline_);
+    qint64 tgt = cur_us + frame_us;
+    if (dur_us > 0 && tgt > dur_us) tgt = dur_us;
+
+    playback_controller_->seek(tgt);
+
+    // snap UI immediately
+    if (timeline_panel_) {
+        timeline_panel_->set_current_time(us_to_tp(tgt));
+        timeline_panel_->update();
+    }
+    if (time_label_) time_label_->setText(QString("Time: %1s").arg(tgt / 1'000'000.0, 0, 'f', 2));
 }
 
-void MainWindow::step_backward() { 
-    ve::log::info("STEP BACKWARD button clicked"); 
-    if (playback_controller_) {
-        // Step backward by 1 frame (assuming 30fps = ~33ms per frame)
-        int64_t current_time = playback_controller_->current_time_us();
-        int64_t step_amount = 33333; // ~1/30 second in microseconds
-        int64_t new_time = std::max(0LL, current_time - step_amount);
-        ve::log::info("STEP BACKWARD: " + std::to_string(current_time) + " -> " + std::to_string(new_time) + " (SUBTRACTING " + std::to_string(step_amount) + ")");
-        playback_controller_->seek(new_time);
+
+void MainWindow::step_backward() {
+    if (!playback_controller_) return;
+
+    playback_controller_->pause();
+
+    qint64 frame_us = 33'333;
+    if (timeline_) frame_us = frame_us_from_fps(timeline_->frame_rate());
+
+    qint64 cur_us = 0;
+    if constexpr (true) {
+        cur_us = playback_controller_->current_time_us();
     }
+    // else: cur_us = td_to_us(playback_controller_->current_time());
+
+    qint64 tgt = cur_us - frame_us;
+    if (tgt < 0) tgt = 0;
+
+    playback_controller_->seek(tgt);
+
+    if (timeline_panel_) {
+        timeline_panel_->set_current_time(us_to_tp(tgt));
+        timeline_panel_->update();
+    }
+    if (time_label_) time_label_->setText(QString("Time: %1s").arg(tgt / 1'000'000.0, 0, 'f', 2));
 }
 
 void MainWindow::go_to_start() { 
-    ve::log::info("Go to start requested");
     if (playback_controller_) {
         playback_controller_->seek(0);
+        if (timeline_panel_) timeline_panel_->set_current_time(ve::TimePoint{0, 1000000});
+        if (time_label_) time_label_->setText(QString("Time: %1s").arg(0.0, 0, 'f', 2));
     }
 }
 
@@ -1064,6 +1066,8 @@ void MainWindow::go_to_end() {
             int64_t target_time = duration - 1000; // Go to end minus 1ms
             ve::log::info("Going to end: " + std::to_string(target_time) + " us");
             playback_controller_->seek(target_time);
+            if (timeline_panel_) timeline_panel_->set_current_time(ve::TimePoint{target_time, 1000000});
+            if (time_label_) time_label_->setText(QString("Time: %1s").arg(target_time / 1000000.0, 0, 'f', 2));
         } else {
             ve::log::warn("Cannot go to end: duration is 0 or unknown");
         }
@@ -1582,8 +1586,7 @@ void MainWindow::flushTimelineBatch() {
         }
 
         std::string clip_name = QFileInfo(info.filePath).baseName().toStdString();
-        ve::timeline::PreparedClip prepared{media_source, clip_name};
-        auto clip_id = timeline_->commit_prepared_clip(prepared);
+        auto clip_id = timeline_->add_clip(media_source, clip_name);
 
         // Ensure target track exists (expand as needed)
         while (static_cast<int>(timeline_->tracks().size()) <= info.track_index) {
