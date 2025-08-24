@@ -14,6 +14,8 @@
 #include <QToolBar>
 #include <QStatusBar>
 #include <QDockWidget>
+#include <QCoreApplication>
+#include <QEventLoop>
 #include <QAction>
 #include <QLabel>
 #include <QFileDialog>
@@ -173,34 +175,6 @@ void TimelineProcessingWorker::processForTimeline(const QString& filePath) {
         }
         
         info.duration_seconds = static_cast<double>(info.probeResult.duration_us) / 1000000.0;
-        
-        // NEW: Prepare MediaSource and Segment in worker thread to minimize UI work
-        auto src = std::make_shared<ve::timeline::MediaSource>();
-        src->path = filePath.toStdString();
-        src->duration = ve::TimeDuration{info.probeResult.duration_us, 1000000};
-        src->format_name = info.probeResult.format;
-        
-        for (const auto& stream : info.probeResult.streams) {
-            if (stream.type == "video") {
-                src->width = stream.width;
-                src->height = stream.height;
-                if (stream.fps > 0) {
-                    src->frame_rate = ve::TimeRational{static_cast<int64_t>(stream.fps * 1000), 1000};
-                }
-            } else if (stream.type == "audio") {
-                src->sample_rate = stream.sample_rate;
-                src->channels = stream.channels;
-            }
-        }
-        info.prepared_source = std::move(src);
-        
-        // Prepare segment skeleton (clip_id will be filled after add_clip)
-        ve::timeline::Segment seg;
-        seg.start_time = info.start_time;
-        seg.duration = ve::TimeDuration{info.probeResult.duration_us, 1000000};
-        seg.name = QFileInfo(filePath).baseName().toStdString();
-        info.prepared_segment = seg;
-        
         info.success = true;
         
         // Final progress update
@@ -307,10 +281,9 @@ void MainWindow::setup_media_worker() {
     // Start the worker thread
     media_worker_thread_->start();
     
-    // Lower worker thread priority to prevent starving the UI
-    media_worker_thread_->setPriority(QThread::LowPriority);
     
-    ve::log::info("Media processing worker thread started");
+    media_worker_thread_->setPriority(QThread::LowPriority);
+ve::log::info("Media processing worker thread started");
 }
 
 void MainWindow::setup_timeline_worker() {
@@ -336,10 +309,9 @@ void MainWindow::setup_timeline_worker() {
     // Start the worker thread
     timeline_worker_thread_->start();
     
-    // Lower worker thread priority to prevent starving the UI
-    timeline_worker_thread_->setPriority(QThread::LowPriority);
     
-    ve::log::info("Timeline processing worker thread started");
+    timeline_worker_thread_->setPriority(QThread::LowPriority);
+ve::log::info("Timeline processing worker thread started");
 }
 
 void MainWindow::cleanup_media_worker() {
@@ -1483,49 +1455,46 @@ void MainWindow::flushTimelineBatch() {
             continue;
         }
         
-        // Add timing to pinpoint the blocker
-        QElapsedTimer op; 
-        op.start();
+        // Build media source / clip (single clip representing both streams)
+        auto media_source = std::make_shared<ve::timeline::MediaSource>();
+        media_source->path = info.filePath.toStdString();
+        media_source->duration = ve::TimeDuration{info.probeResult.duration_us, 1000000};
+        media_source->format_name = info.probeResult.format;
         
-        // Use prepared MediaSource from worker (no construction on UI thread)
-        auto media_source = info.prepared_source;
-        if (!media_source) {
-            // Fallback: build on UI thread if not prepared (shouldn't happen)
-            media_source = std::make_shared<ve::timeline::MediaSource>();
-            media_source->path = info.filePath.toStdString();
-            media_source->duration = ve::TimeDuration{info.probeResult.duration_us, 1000000};
-            media_source->format_name = info.probeResult.format;
-            
-            for (const auto& stream : info.probeResult.streams) {
-                if (stream.type == "video") {
-                    media_source->width = stream.width;
-                    media_source->height = stream.height;
-                    if (stream.fps > 0) {
-                        media_source->frame_rate = ve::TimeRational{static_cast<int64_t>(stream.fps * 1000), 1000};
-                    }
-                } else if (stream.type == "audio") {
-                    media_source->sample_rate = stream.sample_rate;
-                    media_source->channels = stream.channels;
+        for (const auto& stream : info.probeResult.streams) {
+            if (stream.type == "video") {
+                media_source->width = stream.width;
+                media_source->height = stream.height;
+                if (stream.fps > 0) {
+                    media_source->frame_rate = ve::TimeRational{static_cast<int64_t>(stream.fps * 1000), 1000};
                 }
+            } else if (stream.type == "audio") {
+                media_source->sample_rate = stream.sample_rate;
+                media_source->channels = stream.channels;
             }
         }
-        ve::log::debug("MediaSource preparation took " + std::to_string(op.restart()) + " ms");
 
         std::string clip_name = QFileInfo(info.filePath).baseName().toStdString();
-        auto clip_id = timeline_->add_clip(media_source, clip_name);
-        ve::log::debug("add_clip took " + std::to_string(op.restart()) + " ms");
+        QElapsedTimer _clipTimer; _clipTimer.start();
 
-        // Ensure target track exists (expand as needed)
+        auto clip_id = timeline_->add_clip(media_source, clip_name);
+
+        ve::log::info(std::string("add_clip took ") + std::to_string(_clipTimer.elapsed()) + " ms");
+
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+// Ensure target track exists (expand as needed)
         while (static_cast<int>(timeline_->tracks().size()) <= info.track_index) {
             ve::timeline::Track::Type track_type = info.has_video ? ve::timeline::Track::Video : ve::timeline::Track::Audio;
             std::string auto_name = (track_type == ve::timeline::Track::Video ? "Video " : "Audio ") + std::to_string(timeline_->tracks().size() + 1);
             timeline_->add_track(track_type, auto_name);
         }
-        ve::log::debug("ensure_tracks took " + std::to_string(op.restart()) + " ms");
 
-        // Use prepared segment with clip_id filled in
-        auto segment = info.prepared_segment;
+        // Create segment referencing clip
+        ve::timeline::Segment segment;
         segment.clip_id = clip_id;
+        segment.start_time = info.start_time;
+        segment.duration = media_source->duration;
+        segment.name = clip_name;
 
         auto* track = timeline_->tracks()[info.track_index].get();
         if(track && track->add_segment(segment)) {
@@ -1533,9 +1502,10 @@ void MainWindow::flushTimelineBatch() {
         } else {
             ve::log::warn("Failed to add segment to track index " + std::to_string(info.track_index));
         }
-        ve::log::debug("add_segment took " + std::to_string(op.restart()) + " ms");
         
-        processed++;
+        
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+processed++;
         
         // Check budget every few items
         if (processed % 4 == 0 && budget.elapsed() > budgetMs) {
