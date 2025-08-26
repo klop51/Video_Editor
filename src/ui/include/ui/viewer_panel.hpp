@@ -11,7 +11,7 @@ class QDragEnterEvent;
 class QDropEvent;
 QT_END_NAMESPACE
 
-namespace ve::playback { class Controller; }
+namespace ve::playback { class PlaybackController; }
 
 namespace ve::ui {
 
@@ -21,7 +21,7 @@ class ViewerPanel : public QWidget {
 public:
     explicit ViewerPanel(QWidget* parent = nullptr);
     
-    void set_playback_controller(ve::playback::Controller* controller);
+    void set_playback_controller(ve::playback::PlaybackController* controller);
     
     // Media loading
     bool load_media(const QString& filePath);
@@ -63,7 +63,7 @@ private:
     QSlider* position_slider_;
     
     // Data
-    ve::playback::Controller* playback_controller_;
+    ve::playback::PlaybackController* playback_controller_;
     ve::decode::VideoFrame current_frame_;
     bool has_frame_;
     

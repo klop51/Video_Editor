@@ -20,7 +20,7 @@ class QThread;
 QT_END_NAMESPACE
 
 namespace ve::timeline { class Timeline; }
-namespace ve::playback { class Controller; }
+namespace ve::playback { class PlaybackController; }
 namespace ve::media { struct ProbeResult; }
 namespace ve::commands { 
     class Command; 
@@ -67,7 +67,7 @@ public:
     ~MainWindow();
     
     void set_timeline(ve::timeline::Timeline* timeline);
-    void set_playback_controller(ve::playback::Controller* controller);
+    void set_playback_controller(ve::playback::PlaybackController* controller);
     
 protected:
     void closeEvent(QCloseEvent* event) override;
@@ -135,6 +135,10 @@ private slots:
     void on_timeline_processed(const TimelineInfo& info);
     void on_timeline_processing_error(const QString& error);
     void on_timeline_progress(int percentage, const QString& status);
+
+    // Application-level project state notifications
+    void on_project_state_changed();      // project loaded/closed/saved
+    void on_project_dirty();              // project gained unsaved changes
     
 private:
     void create_menus();
@@ -192,6 +196,7 @@ private:
     QAction* copy_action_;
     QAction* paste_action_;
     QAction* delete_action_;
+    QAction* add_to_timeline_action_{}; // Edit menu timeline insertion action
     
     QAction* play_pause_action_;
     QAction* stop_action_;
@@ -207,12 +212,18 @@ private:
     
     // Data
     ve::timeline::Timeline* timeline_;
-    ve::playback::Controller* playback_controller_;
+    ve::playback::PlaybackController* playback_controller_;
     std::unique_ptr<ve::commands::CommandHistory> command_history_;
     QTimer* position_update_timer_;
     
     QString current_project_path_;
     bool project_modified_;
+    // NOTE: project_modified_ is intentionally updated directly in certain UI actions
+    // (undo/redo/command execution) AND indirectly via Application's project_modified
+    // signal (triggered by Timeline::mark_modified callback). This duplication keeps
+    // the UI instantly responsive while still exercising the central dirty pipeline
+    // for any other observers. See undo/redo/execute_command for paired
+    // timeline_->mark_modified() calls ensuring Application is notified.
     
     // Worker threads for background processing
     MediaProcessingWorker* media_worker_;

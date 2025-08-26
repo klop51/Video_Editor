@@ -24,10 +24,10 @@ Follow-ups:
 ## Index
 | ID | Title | Date | Status | Supersedes |
 |----|-------|------|--------|------------|
-| DR-0001 | (placeholder – GPU API selection) | (TBD) | Proposed | - |
+| DR-0001 | GPU API Abstraction Choice | 2025-08-26 | Proposed | - |
 | DR-0002 | Dependency Manager: vcpkg | 2025-08-23 | Accepted | - |
-| DR-0003 | (placeholder – Exception Policy) | (TBD) | Proposed | - |
-| DR-0004 | (placeholder – Internal Timebase Strategy) | (TBD) | Proposed | - |
+| DR-0003 | Exception & Error Handling Policy | 2025-08-26 | Proposed | - |
+| DR-0004 | Internal Timebase Strategy | 2025-08-26 | Proposed | - |
 
 ## Templates
 Start a new record by copying the format above beneath this line.

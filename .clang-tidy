@@ -1,5 +1,8 @@
 Checks: '-*,bugprone-*,performance-*,readability-*,modernize-*,clang-analyzer-*,-modernize-use-trailing-return-type'
-WarningsAsErrors: ''
+WarningsAsErrors: '*'
 HeaderFilterRegex: 'src/|include/'
 FormatStyle: none
 AnalyzeTemporaryDtors: false
+## Policy Note (DR-0003): Core performance modules must remain exception free.
+# A lightweight CI script (not part of clang-tidy) should grep for 'throw' in:
+# src/(media_io|decode|playback|audio|render|fx|cache|gfx) and fail if found.

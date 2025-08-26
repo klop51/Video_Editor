@@ -181,7 +181,7 @@ private:
 ```
 
 #### Step 1.3: Basic Playback Controller
-Create `src/playback/include/playback/controller.hpp`:
+Create `src/playback/include/playback/playback_controller.hpp`:
 ```cpp
 #pragma once
 #include "decode/video_decoder.hpp"
@@ -437,7 +437,7 @@ public:
     
     timeline::Timeline* current_timeline() { return timeline_.get(); }
     commands::CommandHistory* command_history() { return command_history_.get(); }
-    playback::Controller* playback_controller() { return playback_controller_.get(); }
+    playback::PlaybackController* playback_controller() { return playback_controller_.get(); }
     
 public slots:
     void execute_command(std::unique_ptr<commands::Command> command);
@@ -453,7 +453,7 @@ private:
     
     std::unique_ptr<timeline::Timeline> timeline_;
     std::unique_ptr<commands::CommandHistory> command_history_;
-    std::unique_ptr<playback::Controller> playback_controller_;
+    std::unique_ptr<playback::PlaybackController> playback_controller_;
     
     QString current_project_path_;
     bool project_modified_{false};

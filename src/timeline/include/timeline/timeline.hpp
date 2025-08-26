@@ -3,6 +3,7 @@
 #include <memory>
 #include <vector>
 #include <unordered_map>
+#include <functional>
 
 namespace ve::timeline {
 
@@ -30,6 +31,9 @@ public:
     // Clip management
     ClipId add_clip(std::shared_ptr<MediaSource> source, const std::string& name = "");
     ClipId commit_prepared_clip(const PreparedClip& pc);
+    // Persistence helper: create clip with explicit ID
+    ClipId add_clip_with_id(ClipId id, std::shared_ptr<MediaSource> source, const std::string& name,
+                            ve::TimePoint in_time, ve::TimePoint out_time);
     bool remove_clip(ClipId clip_id);
     MediaClip* get_clip(ClipId clip_id);
     const MediaClip* get_clip(ClipId clip_id) const;
@@ -65,6 +69,23 @@ public:
     const Selection& selection() const { return selection_; }
     Selection& selection() { return selection_; }
     
+    // Versioning & snapshot
+    uint64_t version() const { return version_; }
+    // Marks structural modification and notifies observer
+    void mark_modified() { ++version_; if(modified_callback_) modified_callback_(); }
+
+    using ModifiedCallback = std::function<void()>;
+    void set_modified_callback(ModifiedCallback cb) { modified_callback_ = std::move(cb); }
+    struct Snapshot {
+        std::string name;
+        ve::TimeRational frame_rate;
+        std::vector<Track> tracks; // immutable copies
+        std::unordered_map<ClipId, MediaClip> clips;
+        uint64_t version = 0;
+    };
+    std::shared_ptr<Snapshot> snapshot() const; // Creates an immutable copy of current state (tracks, segments, clips)
+    mutable uint64_t version_ = 1; // Incremented on each structural modification
+    
 private:
     std::vector<std::unique_ptr<Track>> tracks_;
     std::unordered_map<ClipId, std::unique_ptr<MediaClip>> clips_;
@@ -79,6 +100,8 @@ private:
     Selection selection_;
     
     size_t find_track_index(TrackId track_id) const;
+
+    ModifiedCallback modified_callback_{}; // Invoked whenever timeline structure changes
 };
 
 } // namespace ve::timeline

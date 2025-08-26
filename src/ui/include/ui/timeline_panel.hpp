@@ -5,6 +5,7 @@
 #include <QPainter>
 #include <QScrollArea>
 #include <QTimer>
+#include <QMenu> // Ensure QMenu complete type available for context menu implementation
 #include <memory>
 #include <functional>
 
@@ -90,10 +91,10 @@ private:
     int track_y_position(size_t track_index) const;
     
     // Interaction helpers
-    void start_drag(const QPoint& pos);
+    void start_drag(const QPoint&);
     void update_drag(const QPoint& pos);
-    void end_drag(const QPoint& pos);
-    void finish_segment_edit(const QPoint& pos);
+    void end_drag(const QPoint&);
+    void finish_segment_edit(const QPoint&);
     void handle_click(const QPoint& pos);
     void handle_context_menu(const QPoint& pos);
     void update_cursor(const QPoint& pos);

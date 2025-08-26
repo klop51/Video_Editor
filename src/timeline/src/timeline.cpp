@@ -8,6 +8,23 @@ Timeline::Timeline() {
     ve::log::debug("Created new timeline: " + name_);
 }
 
+
+std::shared_ptr<Timeline::Snapshot> Timeline::snapshot() const {
+    auto snap = std::make_shared<Snapshot>();
+    snap->name = name_;
+    snap->frame_rate = frame_rate_;
+    snap->version = version_;
+    snap->tracks.reserve(tracks_.size());
+    for (const auto& tptr : tracks_) {
+        Track copy = *tptr; // relies on implicit copy of Track (segments vector etc.)
+        snap->tracks.push_back(std::move(copy));
+    }
+    for (const auto& [id, cptr] : clips_) {
+        snap->clips.emplace(id, *cptr);
+    }
+    return snap;
+}
+
 TrackId Timeline::add_track(Track::Type type, const std::string& name) {
     TrackId id = next_track_id_++;
     std::string track_name = name;
@@ -21,6 +38,7 @@ TrackId Timeline::add_track(Track::Type type, const std::string& name) {
     tracks_.push_back(std::move(track));
     
     ve::log::info("Added track: " + track_name + " (ID: " + std::to_string(id) + ")");
+    mark_modified();
     return id;
 }
 
@@ -34,6 +52,7 @@ bool Timeline::remove_track(TrackId track_id) {
     tracks_.erase(tracks_.begin() + index);
     
     ve::log::info("Removed track: " + track_name + " (ID: " + std::to_string(track_id) + ")");
+    mark_modified();
     return true;
 }
 
@@ -80,6 +99,7 @@ ClipId Timeline::add_clip(std::shared_ptr<MediaSource> source, const std::string
     clips_[id] = std::move(clip);
     
     ve::log::info("Added clip: " + clips_[id]->name + " (ID: " + std::to_string(id) + ")");
+    mark_modified();
     return id;
 }
 
@@ -95,6 +115,16 @@ ClipId Timeline::commit_prepared_clip(const PreparedClip& pc) {
     clip->out_time = ve::TimePoint{pc.source->duration.to_rational().num, pc.source->duration.to_rational().den};
     clips_[id] = std::move(clip);
     ve::log::info("Committed prepared clip: " + clips_[id]->name + " (ID: " + std::to_string(id) + ")");
+    mark_modified();
+    return id;
+}
+
+ClipId Timeline::add_clip_with_id(ClipId id, std::shared_ptr<MediaSource> source, const std::string& name,
+                            ve::TimePoint in_time, ve::TimePoint out_time) {
+    if(id >= next_clip_id_) next_clip_id_ = id + 1;
+    auto clip = std::make_unique<MediaClip>();
+    clip->id = id; clip->source = source; clip->name = name; clip->in_time = in_time; clip->out_time = out_time;
+    clips_[id] = std::move(clip);
     return id;
 }
 
@@ -108,6 +138,7 @@ bool Timeline::remove_clip(ClipId clip_id) {
     clips_.erase(it);
     
     ve::log::info("Removed clip: " + clip_name + " (ID: " + std::to_string(clip_id) + ")");
+    mark_modified();
     return true;
 }
 
@@ -143,6 +174,7 @@ bool Timeline::insert_gap_all_tracks(ve::TimePoint at, ve::TimeDuration duration
             success = false;
         }
     }
+    if(success) mark_modified();
     return success;
 }
 
@@ -153,6 +185,7 @@ bool Timeline::delete_range_all_tracks(ve::TimePoint start, ve::TimeDuration dur
             success = false;
         }
     }
+    if(success) mark_modified();
     return success;
 }
 

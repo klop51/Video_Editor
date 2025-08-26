@@ -3,6 +3,7 @@ add_library(ve_core STATIC
     src/log.cpp
     src/time.cpp
     src/profiling.cpp
+    src/job_system.cpp
 )
 
 add_library(VideoEditor::core ALIAS ve_core)

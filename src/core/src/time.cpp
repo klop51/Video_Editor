@@ -2,6 +2,7 @@
 #include <sstream>
 #include <iomanip>
 #include <cmath>
+#include <numeric>
 
 namespace ve {
 
@@ -39,6 +40,19 @@ std::string format_timecode(const TimeRational& t, int32_t frame_rate_num, int32
         << std::setw(2) << secs << '.'
         << std::setw(2) << frame;
     return oss.str();
+}
+
+TimeRational normalize(const TimeRational& in) noexcept {
+    if(in.den == 0) return TimeRational{0,1};
+    int64_t num = in.num;
+    int32_t den = in.den;
+    if(den < 0) { den = -den; num = -num; }
+    if(num == 0) return TimeRational{0,1};
+    auto g = std::gcd(num < 0 ? -num : num, static_cast<int64_t>(den));
+    if(g <= 1) return TimeRational{num, den};
+    num /= g;
+    den = static_cast<int32_t>(den / g);
+    return TimeRational{num, den};
 }
 
 } // namespace ve

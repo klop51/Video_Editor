@@ -1,23 +1,25 @@
-#include "playback/controller.hpp"
+#include "playback/controller.hpp" // renamed class PlaybackController
 #include "core/log.hpp"
 #include "media_io/media_probe.hpp"
+#include <vector>
 #include <chrono>
 #include <thread>
+#include "timeline/timeline.hpp"
 
 namespace ve::playback {
 
-Controller::Controller() {
-    playback_thread_ = std::thread(&Controller::playback_thread_main, this);
+PlaybackController::PlaybackController() {
+    playback_thread_ = std::thread(&PlaybackController::playback_thread_main, this);
 }
 
-Controller::~Controller() {
+PlaybackController::~PlaybackController() {
     thread_should_exit_.store(true);
     if (playback_thread_.joinable()) {
         playback_thread_.join();
     }
 }
 
-bool Controller::load_media(const std::string& path) {
+bool PlaybackController::load_media(const std::string& path) {
     ve::log::info("Loading media: " + path);
     
     decoder_ = decode::create_decoder();
@@ -55,7 +57,7 @@ bool Controller::load_media(const std::string& path) {
     return true;
 }
 
-void Controller::close_media() {
+void PlaybackController::close_media() {
     stop();
     decoder_.reset();
     duration_us_ = 0;
@@ -67,7 +69,7 @@ void Controller::close_media() {
     total_frame_time_ms_.store(0.0);
 }
 
-void Controller::play() {
+void PlaybackController::play() {
     if (!has_media()) {
         ve::log::warn("Cannot play: no media loaded");
         return;
@@ -77,14 +79,14 @@ void Controller::play() {
     set_state(PlaybackState::Playing);
 }
 
-void Controller::pause() {
+void PlaybackController::pause() {
     if (state_.load() == PlaybackState::Playing) {
         ve::log::info("Pausing playback");
         set_state(PlaybackState::Paused);
     }
 }
 
-void Controller::stop() {
+void PlaybackController::stop() {
     if (state_.load() != PlaybackState::Stopped) {
         ve::log::info("Stopping playback");
         set_state(PlaybackState::Stopped);
@@ -92,7 +94,7 @@ void Controller::stop() {
     }
 }
 
-bool Controller::seek(int64_t timestamp_us) {
+bool PlaybackController::seek(int64_t timestamp_us) {
     if (!has_media()) {
         return false;
     }
@@ -105,14 +107,14 @@ bool Controller::seek(int64_t timestamp_us) {
     return true;
 }
 
-void Controller::set_state(PlaybackState new_state) {
+void PlaybackController::set_state(PlaybackState new_state) {
     PlaybackState old_state = state_.exchange(new_state);
     if (old_state != new_state && state_callback_) {
         state_callback_(new_state);
     }
 }
 
-void Controller::update_frame_stats(double frame_time_ms) {
+void PlaybackController::update_frame_stats(double frame_time_ms) {
     int64_t count = frame_count_.fetch_add(1) + 1;
     double total = total_frame_time_ms_.fetch_add(frame_time_ms) + frame_time_ms;
     
@@ -120,7 +122,7 @@ void Controller::update_frame_stats(double frame_time_ms) {
     stats_.avg_frame_time_ms = total / count;
 }
 
-void Controller::playback_thread_main() {
+void PlaybackController::playback_thread_main() {
     ve::log::debug("Playback thread started");
     
     auto last_frame_time = std::chrono::high_resolution_clock::now();
@@ -129,6 +131,16 @@ void Controller::playback_thread_main() {
     
     while (!thread_should_exit_.load()) {
         auto frame_start = std::chrono::high_resolution_clock::now();
+
+        // Refresh timeline snapshot if timeline attached and version changed
+        if(timeline_) {
+            uint64_t v = timeline_->version();
+            if(v != observed_timeline_version_) {
+                timeline_snapshot_ = timeline_->snapshot(); // immutable copy
+                observed_timeline_version_ = v;
+                ve::log::debug("Playback refreshed timeline snapshot version " + std::to_string(v));
+            }
+        }
         
         // Handle seek requests
         if (seek_requested_.load()) {
@@ -143,15 +155,40 @@ void Controller::playback_thread_main() {
         
         // Process frames if playing
         if (state_.load() == PlaybackState::Playing && decoder_) {
-            // Read video frame
+            // Attempt cache reuse first (only exact pts match for now)
+            if(seek_requested_.load()==false) { // if not in middle of seek handling
+                    ve::cache::CachedFrame cached; cache_lookups_.fetch_add(1);
+                ve::cache::FrameKey key; key.pts_us = current_time_us_.load();
+                if(frame_cache_.get(key, cached)) {
+                    cache_hits_.fetch_add(1);
+                    decode::VideoFrame vf; vf.width = cached.width; vf.height = cached.height; vf.pts = current_time_us_.load(); vf.data = cached.data; // copy buffer
+                    vf.format = cached.format;
+                    vf.color_space = cached.color_space;
+                    vf.color_range = cached.color_range;
+                    if(video_callback_) video_callback_(vf);
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    continue; // Skip decoding new frame this iteration
+                }
+            }
+
+            // Read video frame (decode path)
             auto video_frame = decoder_->read_video();
             if (video_frame) {
+                // Future: traverse snapshot (immutable) to determine which clip/segment is active
+                // For now we rely solely on decoder PTS ordering.
+                // Cache store (basic) - store raw data buffer
+                ve::cache::CachedFrame cf; cf.width = video_frame->width; cf.height = video_frame->height; cf.data = video_frame->data; // copy
+                cf.format = video_frame->format;
+                cf.color_space = video_frame->color_space;
+                cf.color_range = video_frame->color_range;
+                ve::cache::FrameKey putKey; putKey.pts_us = video_frame->pts;
+                frame_cache_.put(putKey, std::move(cf));
                 current_time_us_.store(video_frame->pts);
-                
+
                 if (video_callback_) {
                     video_callback_(*video_frame);
                 }
-                
+
                 // Adaptive frame timing based on PTS
                 if (!first_frame) {
                     int64_t pts_diff_us = video_frame->pts - last_pts_us;
@@ -159,18 +196,18 @@ void Controller::playback_thread_main() {
                         auto target_interval = std::chrono::microseconds(pts_diff_us);
                         auto frame_end = std::chrono::high_resolution_clock::now();
                         auto actual_duration = frame_end - last_frame_time;
-                        
+
                         if (actual_duration < target_interval) {
                             auto sleep_time = target_interval - actual_duration;
                             std::this_thread::sleep_for(sleep_time);
                         }
                     }
                 }
-                
+
                 last_pts_us = video_frame->pts;
                 first_frame = false;
                 last_frame_time = std::chrono::high_resolution_clock::now();
-                
+
                 // Update performance stats
                 auto frame_time = std::chrono::duration<double, std::milli>(last_frame_time - frame_start);
                 update_frame_stats(frame_time.count());

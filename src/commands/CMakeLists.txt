@@ -21,10 +21,13 @@ add_library(ve_commands STATIC
     src/timeline_commands.cpp
 )
 
+add_library(VideoEditor::commands ALIAS ve_commands)
+
 # Include directories
 target_include_directories(ve_commands
     PUBLIC
-        include
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
     PRIVATE
         ${CMAKE_SOURCE_DIR}/src/core/include
         ${CMAKE_SOURCE_DIR}/src/timeline/include
@@ -47,3 +50,6 @@ set_target_properties(ve_commands PROPERTIES
 if(COMMAND set_project_warnings)
     set_project_warnings(ve_commands)
 endif()
+
+install(TARGETS ve_commands EXPORT VideoEditorTargets ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})

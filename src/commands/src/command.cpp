@@ -14,35 +14,31 @@ bool CommandHistory::execute(std::unique_ptr<Command> command, ve::timeline::Tim
         ve::log::warn("Attempted to execute null command");
         return false;
     }
-    
-    // Try to coalesce with the last command first
-    if (try_coalesce(command)) {
-        ve::log::debug("Command coalesced with previous command");
-        return true;
-    }
-    
-    // Execute the command
+
+    // Execute first so timeline reflects latest state prior to any merge attempt
     bool success = command->execute(timeline);
     if (!success) {
         ve::log::warn("Command execution failed: " + command->description());
         return false;
     }
-    
-    // Remove any commands after the current position (for redo branch pruning)
+
+    // Prune any redo branch
     if (current_index_ < commands_.size()) {
         commands_.erase(commands_.begin() + current_index_, commands_.end());
     }
-    
-    // Add the command to history
+
+    // Attempt to coalesce with last executed command (now both have been applied)
+    if (try_coalesce(command)) {
+        ve::log::debug("Command coalesced with previous command");
+        return true; // merged; new command consumed
+    }
+
+    // Otherwise append as new history entry
     commands_.push_back(std::move(command));
     current_index_ = commands_.size();
-    
-    // Trim history if needed
     trim_history();
-    
-    ve::log::debug("Command executed and added to history. Position: " + 
-                   std::to_string(current_index_) + "/" + std::to_string(commands_.size()));
-    
+    ve::log::debug("Command executed and added to history. Position: " +
+        std::to_string(current_index_) + "/" + std::to_string(commands_.size()));
     return true;
 }
 

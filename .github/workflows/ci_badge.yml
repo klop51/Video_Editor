@@ -1,0 +1,53 @@
+name: CI Badge Refresh
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  schedule:
+    - cron: '15 */6 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  refresh-badge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jq & gh
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y jq
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg || true
+          sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg || true
+          sudo apt-get install -y gh || true
+      - name: Fetch recent runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/${{ github.repository }}/actions/runs -F branch=main -F per_page=30 > runs_raw.json
+          jq '{runs: [.workflow_runs[] | {status, conclusion, updated_at}]}' runs_raw.json > runs.json
+      - name: Compute metrics
+        run: |
+          python scripts/ci_quality_gate.py --runs runs.json --window 20 --metrics-out gate_metrics.json --badge-out gate_badge.json > gate.json
+          cat gate_badge.json
+      - name: Generate SVG badge
+        run: |
+          LABEL=$(jq -r '.label' gate_badge.json)
+          MESSAGE=$(jq -r '.message' gate_badge.json)
+          COLOR=$(jq -r '.color' gate_badge.json)
+          echo "Generating badge $LABEL:$MESSAGE ($COLOR)"
+          SVG_CONTENT="<svg xmlns='http://www.w3.org/2000/svg' width='140' height='20' role='img' aria-label='CI'><linearGradient id='s' x2='0' y2='100%'><stop offset='0' stop-color='#bbb' stop-opacity='.1'/><stop offset='1' stop-opacity='.1'/></linearGradient><mask id='m'><rect width='140' height='20' rx='3' fill='#fff'/></mask><g mask='url(#m)'><rect width='60' height='20' fill='#555'/><rect x='60' width='80' height='20' fill='${COLOR}'/><rect width='140' height='20' fill='url(#s)'/></g><g fill='#fff' text-anchor='middle' font-family='Verdana,Geneva,DejaVu Sans,sans-serif' font-size='11'><text x='30' y='14'>ci</text><text x='100' y='14'>${MESSAGE}</text></g></svg>"
+          echo "$SVG_CONTENT" > .badges/ci_status.svg
+      - name: Commit badge if changed
+        run: |
+          if git diff --quiet .badges/ci_status.svg; then
+            echo "No badge changes"; exit 0; fi
+          git config user.name "ci-badge-bot"
+          git config user.email "ci-badge-bot@users.noreply.github.com"
+          git add .badges/ci_status.svg gate_metrics.json
+          git commit -m "chore: update CI badge" || true
+          git push

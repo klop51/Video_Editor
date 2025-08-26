@@ -1,0 +1,210 @@
+# Error & Debug Tracking Log
+
+Purpose: Living log of non-trivial build/runtime/test issues encountered in this repository, the investigative steps taken, root causes, and preventive guardrails. Keep entries concise but actionable. Newest entries on top.
+
+## Usage & Conventions
+**When to log**: Any issue that (a) consumed >15 min to triage, (b) required a non-obvious workaround, (c) risks recurrence, or (d) would help future contributors.
+
+**Severity (Sev)**:
+- Sev1 Critical: Data loss, blocks all dev / CI red on main.
+- Sev2 High: Blocks feature or PR progress for a subset of devs.
+- Sev3 Moderate: Workaround exists; slows productivity.
+- Sev4 Low: Cosmetic or minor intermittent annoyance.
+
+Include a Sev tag in the title line, e.g. `– (Sev3)`.
+
+**Automation**: Use `python scripts/new_error_entry.py "Short Title" --sev 3 --area "build / tests"` to insert a new entry template at the top and update the Index.
+
+**Tokens**: If diagnosing potential stale builds, add a one-line `// TOKEN:<unique>` comment in the involved source and reference it in the log for quicker future verification.
+
+---
+
+## 2025-08-27 – Phantom viewer_panel.cpp 'switch' Syntax Error (Sev3)
+**Area**: UI module (Qt / AUTOMOC / MSVC incremental build)
+
+### Symptom
+Intermittent compile failures for `viewer_panel.cpp` reporting a stray `switch` token near line ~30 plus follow-on parse errors (`C2059: syntax error: 'switch'`, `C2447: '{' missing function header`, `C1004: unexpected end-of-file`). The cited line numbers did not correspond to any `switch` statement in the current file (first real `switch` on pixel format appears much later). Source as opened in editor and via direct file read showed no such construct near the reported location.
+
+### Impact
+Slowed iteration on UI changes; misleading diagnostics risked fruitless source edits. Increased uncertainty about correctness of recent pixel format refactor while errors actually originated from stale/incorrect translation unit state.
+
+### Environment Snapshot
+- Date observed: 2025-08-26 evening → early 2025-08-27
+- OS: Windows 10
+- Toolchain: MSVC 19.44 (VS 2022) via CMake multi-config (qt-debug preset)
+- Qt: 6.9.1 (AUTOMOC enabled)
+- Recent edits: Significant modifications to `viewer_panel.cpp` conversion logic and `MainWindow` wiring immediately before anomalies.
+
+### Hypotheses Considered
+1. Actual hidden / non-printable characters injected into source (disproven by hex inspection & fresh read).
+2. Concurrent write during compile produced truncated file snapshot (unlikely; no partial content seen on disk).
+3. AUTOMOC generated amalgamation (`mocs_compilation_Debug.cpp`) concatenating stale moc output with an orphaned fragment containing a `switch` (plausible; not reproduced yet).
+4. MSVC incremental build using outdated PCH / object referencing an earlier revision, misreporting line mapping (plausible given earlier similar stale TU test issue).
+5. Corruption in build tree (object or preprocessed intermediate) isolated to UI target (possible; resolved by clean rebuild).
+
+### Actions Taken
+| Step | Action | Result |
+|------|--------|--------|
+| 1 | Inspected on-disk `viewer_panel.cpp` around reported line numbers | No stray `switch` present |
+| 2 | Searched build tree for partial temporary file copies | No alternate copies found |
+| 3 | Performed targeted clean: removed `build/qt-debug/CMakeFiles`, UI object dirs | Error disappeared |
+| 4 | Reconfigured & rebuilt only `ve_ui` target | Successful build; no syntax errors |
+| 5 | Added sentinel token comment to `viewer_panel.cpp` | Provides future stale artifact detection |
+
+### Root Cause
+Unconfirmed; most consistent with stale or corrupted incremental compilation artifact (possibly AUTOMOC or MSVC object reuse) referencing a prior in-progress edit state. Lack of recurrence after hard clean strengthens this hypothesis.
+
+### Resolution
+Manual purge of build system metadata & object files for qt-debug preset followed by full reconfigure & rebuild.
+
+### Preventive Guardrails
+- Sentinel comment token (`// TOKEN:VIEWER_PANEL_2025_08_27_A`) near top of file; future diagnostics lacking this token imply stale preprocessing.
+- If reappears: capture preprocessed output (`/P`) for `viewer_panel.cpp` and archive alongside error log.
+- Add optional developer script to purge only a single target's intermediates: e.g., PowerShell function `Clean-Target ve_ui` removing its obj & CMake dependency subfolders.
+- Periodic (daily/CI) clean builds to flush incremental divergence.
+
+### Verification
+Post-clean rebuild produced `ve_ui.lib` without errors. No phantom `switch` diagnostics observed across two successive incremental builds.
+
+---
+
+## 2025-08-26 – Pixel Format Conversion Spam & Missing Playback Wiring (Sev3)
+**Area**: UI Viewer / Playback / Decode Integration
+
+### Symptom
+1. High-frequency log spam: "Unsupported pixel format for display" and "Failed to convert frame to pixmap" while attempting to play various media (YUV420P, NV12, grayscale sources).
+2. After double-clicking a media item, video loaded metadata but no frames advanced (static image or blank), requiring manual intervention; play controls sometimes disabled.
+
+### Impact
+Obscured genuine warnings, slowed debugging signal/noise, and created perception that playback was broken. Users could not easily begin playback after load without an explicit controller instance wired.
+
+### Environment Snapshot
+- OS: Windows 10
+- Build: qt-debug preset (MSVC multi-config)
+- Dependencies: Qt6, FFmpeg via vcpkg
+
+### Hypotheses Considered
+1. Decoder failing to produce frames (disproven by inspecting cache population logic).
+2. Viewer conversion path too limited causing rejection of otherwise valid frames (confirmed).
+3. Playback controller not started or not in Playing state (confirmed: state remained Stopped, no auto-play, and wiring sometimes absent).
+4. Thread timing / sleep overshooting causing perceived stall (not root cause for initial frame absence).
+
+### Actions Taken
+| Step | Action | Result |
+|------|--------|--------|
+| 1 | Inspected `viewer_panel.cpp` conversion switch | Found narrow pixel format support |
+| 2 | Extended switch to handle RGB, RGBA, multiple YUV planar/semiplanar, grayscale; added Unknown heuristic | Reduced unsupported warnings in test cases |
+| 3 | Added rate limiting for repetitive warnings | Log spam curtailed |
+| 4 | Ensured `PlaybackController` created & passed to viewer in `MainWindow` when loading media | Play controls activate reliably |
+| 5 | Added on-demand controller creation in double-click handler | Prevented null controller cases |
+
+### Root Cause
+Insufficient pixel format coverage in viewer conversion plus missing guaranteed wiring of a playback controller before media load; no auto-creation meant callbacks never invoked.
+
+### Resolution
+- Code modifications (see git diff on 2025-08-26) to viewer conversion and MainWindow controller instantiation/wiring.
+- Added heuristic & fallback conversion to RGBA.
+
+### Preventive Guardrails
+- Add unit test covering conversion for each enum value.
+- Introduce structured log categories with per-category rate limiting.
+- CI test that loads a sample YUV420P clip and asserts at least one frame callback within a timeout.
+
+### Verification
+Manual build after changes; pending runtime session to confirm reduced warnings and active frame callbacks (to be logged in future update).
+
+---
+
+## 2025-08-26 – Phantom Catch2 Header / Stale Test Translation Unit (Sev3)
+**Area**: Tests / Profiling subsystem / Build system (MSVC, CMake multi-config)
+
+### Symptom
+Intermittent build failures for `tests/test_profiling.cpp` reporting:
+- Missing header: `catch2/matchers/catch_matchers_floating.hpp` (never included in current source)
+- Follow‑on template errors referencing `Catch::Approx` after all `Approx` usages had been removed.
+
+### Impact
+Slowed test iteration; misleading diagnostics obscured actual code state. Risk of committing unnecessary code changes to “fix” a non-code issue.
+
+### Environment Snapshot
+- OS: Windows 10.0.19045
+- Toolchain: MSVC 14.44.* via CMake + vcpkg (Catch2 3.9.1)
+- Build preset: `qt-debug` (multi-config generator with MSBuild)
+
+### Initial Hypotheses Considered
+1. Stray include introduced transitively by another test – disproven by full text searches.
+2. Cached precompiled header (PCH) referencing old file – plausible (MSBuild sometimes keeps stale TU state when file list mutates quickly).
+3. Duplicate file path or shadow copy in build tree – no duplicate found (`test_profiling.cpp` single occurrence).
+4. IDE/editor produced unsaved changes vs on-disk – ruled out by direct file reads & `grep`.
+5. Catch2 version mismatch or partial install – ruled out (other tests fine; only this TU affected).
+
+### Actions Taken (Timeline)
+| Step | Action | Result |
+|------|--------|--------|
+| 1 | Removed `Catch::Approx` usage, added custom `ve_approx` | Build still reported `Approx` errors |
+| 2 | Inserted `#error` sentinel in file | Build sometimes showed old errors, later showed sentinel confirming correct file compiled intermittently |
+| 3 | Searched for phantom header (`matchers_floating`) across repo & build dirs | No occurrences |
+| 4 | Deleted/renamed test file to `test_profiling_stats.cpp` and updated CMake list | All errors vanished; clean build & all tests passed |
+
+### Root Cause (Probable)
+Stale build artifact / MSBuild incremental state retained association between the removed original `test_profiling.cpp` object and outdated preprocessed content, causing diagnostics to reflect an earlier revision. Renaming the file invalidated the stale object and forced a full compile of the *current* content. Exact internal trigger not definitively proven, but behavior aligns with an incremental dependency graph desync.
+
+### Resolution
+- Replace problematic TU: remove `test_profiling.cpp`, add `test_profiling_stats.cpp`.
+- Eliminate dependency on `Catch::Approx` to simplify matcher includes.
+
+### Preventive Guardrails / Follow Ups
+- Periodic clean builds in CI (fresh clone) to catch stale artifact anomalies early.
+- (Optional) Script to hash test source files and compare against object timestamps; warn if mismatch suggests stale compilation.
+- Avoid rapid create/delete cycles of the same filename in successive commits where possible.
+- Consider adding a comment header in each test file with a unique token; if diagnostics reference code not containing the token, suspect staleness.
+
+### Verification
+- Rebuilt: `unit_tests.exe` produced without earlier errors.
+- Ran full test suite: 214 assertions passed including new profiling percentile tests.
+
+---
+
+## Template for New Entries
+Copy this block and fill it out when logging a new issue.
+
+### YYYY-MM-DD – Short Title (SevX)
+**Area**: (module / layer / tooling)
+
+#### Symptom
+Concise description + representative error messages.
+
+#### Impact
+Developer productivity / correctness / performance / user-facing risk.
+
+#### Environment Snapshot
+- OS / Compiler / Dependencies / Preset.
+
+#### Hypotheses Considered
+List numbered hypotheses (include those disproven and how).
+
+#### Actions Taken
+| Step | Action | Result |
+|------|--------|--------|
+| 1 | … | … |
+
+#### Root Cause
+Most plausible cause (or multiple if still uncertain). Mark UNKNOWN if unresolved.
+
+#### Resolution
+What definitively stopped the symptom.
+
+#### Preventive Guardrails
+Bullets: monitoring, tests, config changes, process tweaks.
+
+#### Verification
+How we confirmed fix (commands/tests/logs).
+
+---
+
+## Index
+- 2025-08-27 – Phantom viewer_panel.cpp 'switch' Syntax Error
+- 2025-08-26 – Pixel Format Conversion Spam & Missing Playback Wiring
+- 2025-08-26 – Phantom Catch2 Header / Stale Test Translation Unit
+
+Add new entries above this line.

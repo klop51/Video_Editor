@@ -47,7 +47,7 @@ if(WIN32)
             "$<IF:$<CONFIG:Debug>,${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows/debug/bin/pcre2-16d.dll,${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows/bin/pcre2-16.dll>"
             "${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows/bin/double-conversion.dll"
             "$<IF:$<CONFIG:Debug>,${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows/debug/bin/zlibd1.dll,${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows/bin/zlib1.dll>"
-            "${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows/bin/harfbuzz.dll"
+            "$<IF:$<CONFIG:Debug>,${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows/debug/bin/harfbuzz.dll,${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows/bin/harfbuzz.dll>"
             "$<IF:$<CONFIG:Debug>,${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows/debug/bin/freetyped.dll,${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows/bin/freetype.dll>"
             "${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows/bin/brotlicommon.dll"
             "${CMAKE_SOURCE_DIR}/vcpkg_installed/x64-windows/bin/brotlidec.dll"

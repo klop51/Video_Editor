@@ -9,6 +9,11 @@ Track::Track(TrackId id, Type type, const std::string& name)
 }
 
 bool Track::add_segment(const Segment& segment) {
+#ifdef VE_TIMELINE_DEBUG
+    ve::log::debug("[Track::add_segment] incoming segment id=" + std::to_string(segment.id) +
+                   " start=" + std::to_string(segment.start_time.to_rational().num) +
+                   " dur=" + std::to_string(segment.duration.to_rational().num));
+#endif
     // Check for overlaps
     for (const auto& existing : segments_) {
         ve::TimePoint existing_end = existing.end_time();
@@ -21,12 +26,34 @@ bool Track::add_segment(const Segment& segment) {
     }
     
     Segment new_segment = segment;
-    new_segment.id = next_segment_id_++;
+    if (new_segment.id == 0) {
+        new_segment.id = next_segment_id_++;
+    } else {
+        // Keep next_segment_id_ ahead of any explicitly provided IDs
+        if (new_segment.id >= next_segment_id_) {
+            next_segment_id_ = new_segment.id + 1;
+        }
+    }
     
     segments_.push_back(new_segment);
+    last_added_segment_id_ = new_segment.id;
     sort_segments();
+    // Dump segments post-add
+    #ifdef VE_TIMELINE_DEBUG
+    std::string dump = "[Track::add_segment] segments now:";
+    for (const auto& s : segments_) {
+        dump += " (id=" + std::to_string(s.id) + " st=" + std::to_string(s.start_time.to_rational().num) +
+                " end=" + std::to_string(s.end_time().to_rational().num) + ")";
+    }
+    ve::log::debug(dump);
+    #endif
     
     return true;
+}
+
+SegmentId Track::add_segment_get_id(const Segment& segment) {
+    if (!add_segment(segment)) return 0;
+    return last_added_segment_id_;
 }
 
 bool Track::remove_segment(SegmentId segment_id) {
@@ -40,8 +67,13 @@ bool Track::remove_segment(SegmentId segment_id) {
 }
 
 bool Track::move_segment(SegmentId segment_id, ve::TimePoint new_start) {
+#ifdef VE_TIMELINE_DEBUG
+    ve::log::debug("[Track::move_segment] request id=" + std::to_string(segment_id) +
+                   " new_start=" + std::to_string(new_start.to_rational().num));
+#endif
     size_t index = find_segment_index(segment_id);
     if (index >= segments_.size()) {
+        ve::log::debug("[Track::move_segment] segment not found");
         return false;
     }
     
@@ -49,6 +81,17 @@ bool Track::move_segment(SegmentId segment_id, ve::TimePoint new_start) {
     ve::TimePoint old_start = segment.start_time;
     segment.start_time = new_start;
     
+    // Log pre-move layout
+    #ifdef VE_TIMELINE_DEBUG
+    {
+        std::string before = "[Track::move_segment] layout before overlap check:";
+        for (const auto& s : segments_) {
+            before += " (id=" + std::to_string(s.id) + " st=" + std::to_string(s.start_time.to_rational().num) +
+                      " end=" + std::to_string(s.end_time().to_rational().num) + ")";
+        }
+        ve::log::debug(before);
+    }
+    #endif
     // Check for overlaps with other segments
     for (size_t i = 0; i < segments_.size(); ++i) {
         if (i == index) continue;
@@ -66,6 +109,17 @@ bool Track::move_segment(SegmentId segment_id, ve::TimePoint new_start) {
     }
     
     sort_segments();
+    #ifdef VE_TIMELINE_DEBUG
+    // Log after successful move
+    {
+        std::string after = "[Track::move_segment] layout after move:";
+        for (const auto& s : segments_) {
+            after += " (id=" + std::to_string(s.id) + " st=" + std::to_string(s.start_time.to_rational().num) +
+                     " end=" + std::to_string(s.end_time().to_rational().num) + ")";
+        }
+        ve::log::debug(after);
+    }
+    #endif
     return true;
 }
 
@@ -128,6 +182,16 @@ const Segment* Track::get_segment_at_time(ve::TimePoint time) const {
 }
 
 bool Track::insert_gap(ve::TimePoint at, ve::TimeDuration duration) {
+#ifdef VE_TIMELINE_DEBUG
+    ve::log::debug("[Track::insert_gap] at=" + std::to_string(at.to_rational().num) +
+                   " dur=" + std::to_string(duration.to_rational().num));
+    std::string before = "[Track::insert_gap] before:";
+    for (const auto& s : segments_) {
+        before += " (id=" + std::to_string(s.id) + " st=" + std::to_string(s.start_time.to_rational().num) +
+                  " end=" + std::to_string(s.end_time().to_rational().num) + ")";
+    }
+    ve::log::debug(before);
+#endif
     for (auto& segment : segments_) {
         if (segment.start_time >= at) {
             segment.start_time = ve::TimePoint{
@@ -136,6 +200,14 @@ bool Track::insert_gap(ve::TimePoint at, ve::TimeDuration duration) {
             };
         }
     }
+    #ifdef VE_TIMELINE_DEBUG
+    std::string after = "[Track::insert_gap] after:";
+    for (const auto& s : segments_) {
+        after += " (id=" + std::to_string(s.id) + " st=" + std::to_string(s.start_time.to_rational().num) +
+                 " end=" + std::to_string(s.end_time().to_rational().num) + ")";
+    }
+    ve::log::debug(after);
+    #endif
     return true;
 }
 

@@ -12,8 +12,9 @@
         "CMAKE_CXX_STANDARD": "20",
         "ENABLE_TESTS": "ON",
         "ENABLE_TOOLS": "ON",
-        "ENABLE_FFMPEG": "ON",
-        "CMAKE_TOOLCHAIN_FILE": "${env.VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+  "ENABLE_FFMPEG": "ON",
+  "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+  "VCPKG_TARGET_TRIPLET": "x64-windows"
       }
     },
     {
@@ -26,8 +27,9 @@
         "CMAKE_CXX_STANDARD": "20",
         "ENABLE_TESTS": "ON",
         "ENABLE_TOOLS": "ON",
-        "ENABLE_FFMPEG": "ON",
-        "CMAKE_TOOLCHAIN_FILE": "${env.VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+  "ENABLE_FFMPEG": "ON",
+  "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+  "VCPKG_TARGET_TRIPLET": "x64-windows"
       }
     },
     {
@@ -54,8 +56,9 @@
         "CMAKE_CXX_STANDARD": "20",
         "ENABLE_TESTS": "ON",
         "ENABLE_TOOLS": "ON",
-        "ENABLE_FFMPEG": "ON",
-        "CMAKE_TOOLCHAIN_FILE": "${env.VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+  "ENABLE_FFMPEG": "ON",
+  "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+  "VCPKG_TARGET_TRIPLET": "x64-windows"
       }
     },
     {
@@ -69,8 +72,9 @@
         "CMAKE_CXX_STANDARD": "20",
         "ENABLE_TESTS": "ON",
         "ENABLE_TOOLS": "ON",
-        "ENABLE_FFMPEG": "ON",
-        "CMAKE_TOOLCHAIN_FILE": "${env.VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+  "ENABLE_FFMPEG": "ON",
+  "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+  "VCPKG_TARGET_TRIPLET": "x64-windows"
       }
     },
     {
@@ -84,9 +88,26 @@
         "CMAKE_CXX_STANDARD": "20",
         "ENABLE_TESTS": "ON",
         "ENABLE_TOOLS": "ON",
-        "ENABLE_FFMPEG": "ON",
-        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/vcpkg_installed/x64-windows/share/vcpkg/scripts/buildsystems/vcpkg.cmake",
-        "VCPKG_TARGET_TRIPLET": "x64-windows"
+  "ENABLE_FFMPEG": "ON",
+  "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+  "VCPKG_TARGET_TRIPLET": "x64-windows"
+      }
+  },
+    {
+      "name": "qt-debug",
+      "displayName": "Qt Debug (VS 2022 + local vcpkg + Qt tools)",
+      "generator": "Visual Studio 17 2022",
+      "binaryDir": "${sourceDir}/build/qt-debug",
+      "architecture": { "value": "x64" },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_STANDARD": "20",
+        "ENABLE_TESTS": "ON",
+        "ENABLE_TOOLS": "ON",
+  "ENABLE_FFMPEG": "ON",
+  "ENABLE_QT_TOOLS": "ON",
+  "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+  "VCPKG_TARGET_TRIPLET": "x64-windows"
       }
     }
   ],
@@ -96,7 +117,8 @@
     { "name": "no-ffmpeg", "configurePreset": "no-ffmpeg" },
     { "name": "vs-debug", "configurePreset": "vs-debug" },
     { "name": "vs-release", "configurePreset": "vs-release" },
-    { "name": "simple-debug", "configurePreset": "simple-debug" }
+    { "name": "simple-debug", "configurePreset": "simple-debug" },
+    { "name": "qt-debug", "configurePreset": "qt-debug" }
   ],
   "testPresets": [
     { "name": "dev-debug-tests", "configurePreset": "dev-debug", "output": { "outputOnFailure": true } }

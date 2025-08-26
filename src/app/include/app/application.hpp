@@ -28,11 +28,12 @@ public:
     
     // Core components access
     ve::timeline::Timeline* timeline() { return timeline_.get(); }
-    ve::playback::Controller* playback_controller() { return playback_controller_.get(); }
+    ve::playback::PlaybackController* playback_controller() { return playback_controller_.get(); }
     
 signals:
     void project_changed();
     void playback_time_changed(int64_t time_us);
+    void project_modified(); // Emitted when project becomes dirty (unsaved changes)
     
 private slots:
     void on_project_modified();
@@ -44,7 +45,7 @@ private:
     static Application* instance_;
     
     std::unique_ptr<ve::timeline::Timeline> timeline_;
-    std::unique_ptr<ve::playback::Controller> playback_controller_;
+    std::unique_ptr<ve::playback::PlaybackController> playback_controller_;
     std::unique_ptr<ve::ui::MainWindow> main_window_;
     
     QString current_project_path_;

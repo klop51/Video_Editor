@@ -21,3 +21,4 @@ target_compile_features(ve_timeline PUBLIC cxx_std_20)
 
 # Create alias for consistency
 add_library(timeline ALIAS ve_timeline)
+add_library(VideoEditor::timeline ALIAS ve_timeline)

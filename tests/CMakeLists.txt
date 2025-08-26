@@ -1,15 +1,43 @@
 # Tests root
 find_package(Catch2 3 REQUIRED)
 
-add_executable(unit_tests
+option(VE_ENABLE_QT_UI_TESTS "Enable Qt UI smoke tests" OFF)
+
+set(UNIT_TEST_SOURCES
     test_time.cpp
     test_decoder.cpp
     test_frame_cache.cpp
     test_color_convert.cpp
     test_playback_scheduler.cpp
+    test_persistence.cpp
+    test_timeline_basic.cpp
+    test_timeline_invariants.cpp
+    test_commands.cpp
+    test_commands_macro_and_random.cpp
+    test_timeline_additional_invariants.cpp
+    test_command_coalescing.cpp
+    test_profiling_stats.cpp
+    test_project_roundtrip.cpp
 )
 
-target_link_libraries(unit_tests PRIVATE VideoEditor::core VideoEditor::decode Catch2::Catch2WithMain)
+if(VE_ENABLE_QT_UI_TESTS)
+    list(APPEND UNIT_TEST_SOURCES test_ui_smoke.cpp)
+endif()
+
+add_executable(unit_tests ${UNIT_TEST_SOURCES})
+
+target_link_libraries(unit_tests PRIVATE VideoEditor::core VideoEditor::decode VideoEditor::timeline VideoEditor::persistence VideoEditor::commands Catch2::Catch2WithMain)
+
+# Explicit include for commands until propagated include dirs confirmed across all generators
+target_include_directories(unit_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/commands/include
+)
+
+if(VE_ENABLE_QT_UI_TESTS)
+    find_package(Qt6 COMPONENTS Widgets REQUIRED)
+    target_link_libraries(unit_tests PRIVATE Qt6::Widgets VideoEditor::ui)
+    target_compile_definitions(unit_tests PRIVATE VE_ENABLE_QT_UI_TESTS)
+endif()
 
 include(CTest)
 add_test(NAME unit_tests COMMAND unit_tests)

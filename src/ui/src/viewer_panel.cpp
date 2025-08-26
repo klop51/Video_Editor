@@ -1,3 +1,4 @@
+// TOKEN:VIEWER_PANEL_2025_08_27_A (sentinel for stale build detection)
 #include "ui/viewer_panel.hpp"
 #include "playback/controller.hpp"
 #include "decode/decoder.hpp"
@@ -14,8 +15,10 @@
 #include <QDropEvent>
 #include <QMimeData>
 #include <QUrl>
-#include <QFileInfo>
 #include <QMessageBox>
+#include <QFileInfo>
+#include <algorithm>
+#include <QMetaObject>
 
 namespace ve::ui {
 
@@ -31,18 +34,27 @@ ViewerPanel::ViewerPanel(QWidget* parent)
     setAcceptDrops(true);
 }
 
-void ViewerPanel::set_playback_controller(ve::playback::Controller* controller) {
+void ViewerPanel::set_playback_controller(ve::playback::PlaybackController* controller) {
     playback_controller_ = controller;
     
     if (controller) {
-        // Connect playback controller to send frames to viewer during playback
-        controller->set_video_callback([this](const ve::decode::VideoFrame& frame) { 
-            display_frame(frame); 
+        // Thread-safe frame delivery: marshal to GUI thread (Qt requires widget updates on main thread)
+        controller->set_video_callback([this](const ve::decode::VideoFrame& frame) {
+            // Copy frame metadata + buffer (shallow copy ok if data uses value semantics)
+            ve::decode::VideoFrame frame_copy = frame;
+            QMetaObject::invokeMethod(this, [this, frame_copy]() {
+                display_frame(frame_copy);
+            }, Qt::QueuedConnection);
         });
-        
-        // Connect state changes to update playback controls
+
+        // Connect state changes to update playback controls (also on GUI thread)
         controller->set_state_callback([this](ve::playback::PlaybackState state) {
-            update_playback_controls();
+            QMetaObject::invokeMethod(this, [this, state]() {
+                if (play_pause_button_) {
+                    play_pause_button_->setText(state == ve::playback::PlaybackState::Playing ? "Pause" : "Play");
+                }
+                update_playback_controls();
+            }, Qt::QueuedConnection);
         });
     }
     
@@ -179,70 +191,95 @@ void ViewerPanel::update_frame_display() {
 
 QPixmap ViewerPanel::convert_frame_to_pixmap(const ve::decode::VideoFrame& frame) {
     if (frame.data.empty()) {
-        ve::log::warn("Frame data is empty");
+        static int empty_warns = 0;
+        if (empty_warns < 5) {
+            ve::log::warn("Frame data is empty");
+            if (++empty_warns == 5) ve::log::warn("Further empty frame warnings suppressed");
+        }
         return QPixmap();
     }
 
     // Convert frame data to QImage based on format
     QImage image;
-    
+
+    auto convert_yuv_like = [&frame]() -> QPixmap {
+        auto rgba_frame = ve::decode::to_rgba(frame);
+        if (!rgba_frame) {
+            return QPixmap();
+        }
+        size_t expected_rgba_size = static_cast<size_t>(rgba_frame->width) * rgba_frame->height * 4;
+        if (rgba_frame->data.size() != expected_rgba_size) {
+            ve::log::warn("Invalid RGBA frame size (" + std::to_string(rgba_frame->data.size()) + ") expected " + std::to_string(expected_rgba_size));
+            return QPixmap();
+        }
+        int bytes_per_line = rgba_frame->width * 4;
+        QImage temp_image(rgba_frame->data.data(), rgba_frame->width, rgba_frame->height, bytes_per_line, QImage::Format_RGBA8888);
+        return QPixmap::fromImage(temp_image);
+    };
+
     switch (frame.format) {
         case ve::decode::PixelFormat::RGB24: {
             int bytes_per_line = frame.width * 3;
             size_t expected_size = bytes_per_line * frame.height;
-            
             if (frame.data.size() < expected_size) {
                 ve::log::warn("Insufficient data for RGB24 image");
                 return QPixmap();
             }
-            
             image = QImage(frame.data.data(), frame.width, frame.height, bytes_per_line, QImage::Format_RGB888);
             break;
         }
-            
         case ve::decode::PixelFormat::RGBA32: {
             int bytes_per_line = frame.width * 4;
             image = QImage(frame.data.data(), frame.width, frame.height, bytes_per_line, QImage::Format_RGBA8888);
             break;
         }
-            
-        case ve::decode::PixelFormat::YUV420P: {
-            // Use optimized color conversion from decode module
-            auto rgba_frame = ve::decode::to_rgba(frame);
-            if (!rgba_frame) {
-                ve::log::warn("Failed to convert YUV420P to RGBA");
-                return QPixmap();
-            }
-            
-            // Validate RGBA frame data
-            size_t expected_rgba_size = static_cast<size_t>(rgba_frame->width) * rgba_frame->height * 4;
-            if (rgba_frame->data.size() != expected_rgba_size) {
-                ve::log::warn("Invalid RGBA frame data size: expected " + std::to_string(expected_rgba_size) + ", got " + std::to_string(rgba_frame->data.size()));
-                return QPixmap();
-            }
-            
-            int bytes_per_line = rgba_frame->width * 4;
-            
-            // Create QImage and convert to pixmap efficiently
-            QImage temp_image(rgba_frame->data.data(), rgba_frame->width, rgba_frame->height, bytes_per_line, QImage::Format_RGBA8888);
-            
-            // Create pixmap directly from image to avoid extra copy
-            return QPixmap::fromImage(temp_image);
+        case ve::decode::PixelFormat::YUV420P:
+        case ve::decode::PixelFormat::YUV422P:
+        case ve::decode::PixelFormat::YUV444P:
+        case ve::decode::PixelFormat::YUV420P10LE:
+        case ve::decode::PixelFormat::YUV422P10LE:
+        case ve::decode::PixelFormat::YUV444P10LE:
+        case ve::decode::PixelFormat::NV12:
+        case ve::decode::PixelFormat::NV21:
+        case ve::decode::PixelFormat::P010LE:
+        case ve::decode::PixelFormat::YUYV422:
+        case ve::decode::PixelFormat::UYVY422:
+        case ve::decode::PixelFormat::GRAY8: {
+            return convert_yuv_like(); // Use common conversion path (will log if unsupported)
         }
-            
-        default:
-            ve::log::warn("Unsupported pixel format for display: " + std::to_string(static_cast<int>(frame.format)));
+        default: {
+            static int unsupported_count = 0;
+            if (unsupported_count < 10) {
+                ve::log::warn("Unsupported pixel format for display: " + std::to_string(static_cast<int>(frame.format)));
+                if (++unsupported_count == 10) {
+                    ve::log::warn("Further unsupported pixel format warnings suppressed");
+                }
+            }
+            // Attempt a best-effort treat-as YUV conversion if it looks like planar 420 (size heuristic)
+            if (frame.format == ve::decode::PixelFormat::Unknown) {
+                size_t y_size = static_cast<size_t>(frame.width) * frame.height;
+                if (frame.data.size() == y_size + 2 * (y_size / 4)) { // Looks like 420 planar
+                    ve::log::info("Heuristic: treating Unknown frame as YUV420P for display");
+                    ve::decode::VideoFrame f2 = frame;
+                    f2.format = ve::decode::PixelFormat::YUV420P; // temporary reinterpret
+                    return convert_yuv_like();
+                }
+            }
             return QPixmap();
-    }
-    
-    if (image.isNull()) {
-        ve::log::warn("Failed to create QImage from frame data");
-        return QPixmap();
+        }
     }
 
-    QPixmap pixmap = QPixmap::fromImage(image);
-    return pixmap;
-}void ViewerPanel::on_play_pause_clicked() {
+    if (image.isNull()) {
+        static int create_fail = 0;
+        if (create_fail < 5) {
+            ve::log::warn("Failed to create QImage from frame data");
+            if (++create_fail == 5) ve::log::warn("Further QImage creation warnings suppressed");
+        }
+        return QPixmap();
+    }
+    return QPixmap::fromImage(image);
+}
+void ViewerPanel::on_play_pause_clicked() {
     emit play_pause_requested();
 }
 
@@ -369,4 +406,4 @@ void ViewerPanel::dropEvent(QDropEvent* event) {
 
 } // namespace ve::ui
 
-#include "viewer_panel.moc"
+// Removed explicit moc include; handled by AUTOMOC

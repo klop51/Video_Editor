@@ -8,6 +8,7 @@
 #include "core/log.hpp"
 #include "media_io/media_probe.hpp"
 #include "decode/decoder.hpp"
+#include "app/application.hpp"
 #include <limits>
 
 #include <QApplication>
@@ -81,9 +82,8 @@ namespace ve::ui {
 // Worker class for background media processing
 class MediaProcessingWorker : public QObject {
     Q_OBJECT
-
-private:
-    QElapsedTimer progress_timer_; // For throttling progress updates
+public:
+    MediaProcessingWorker() = default;
 
 public slots:
     void processMedia(const QString& filePath);
@@ -92,14 +92,16 @@ signals:
     void mediaProcessed(const ve::ui::MediaInfo& info);
     void progressUpdate(int percentage, const QString& status); // Throttled progress
     void errorOccurred(const QString& error);
+
+private:
+    QElapsedTimer progress_timer_;
 };
 
 // Worker class for background timeline processing
 class TimelineProcessingWorker : public QObject {
     Q_OBJECT
-
-private:
-    QElapsedTimer progress_timer_; // For throttling progress updates
+public:
+    TimelineProcessingWorker() = default;
 
 public slots:
     void processForTimeline(const QString& filePath);
@@ -108,6 +110,9 @@ signals:
     void timelineProcessed(const ve::ui::TimelineInfo& info);
     void progressUpdate(int percentage, const QString& status); // Throttled progress
     void errorOccurred(const QString& error);
+
+private:
+    QElapsedTimer progress_timer_; // For throttling progress updates
 };
 
 // Implementation
@@ -274,6 +279,12 @@ MainWindow::~MainWindow() {
     // Clean up worker threads
     cleanup_timeline_worker();
     cleanup_media_worker();
+
+    // Detach playback callbacks to prevent late thread invokes during shutdown
+    if (playback_controller_) {
+        playback_controller_->set_video_callback(nullptr);
+        playback_controller_->set_state_callback(nullptr);
+    }
     
     // Save window state
     QSettings settings;
@@ -377,7 +388,7 @@ void MainWindow::set_timeline(ve::timeline::Timeline* timeline) {
     update_window_title();
 }
 
-void MainWindow::set_playback_controller(ve::playback::Controller* controller) {
+void MainWindow::set_playback_controller(ve::playback::PlaybackController* controller) {
     playback_controller_ = controller;
     if (viewer_panel_) {
         viewer_panel_->set_playback_controller(controller);
@@ -486,124 +497,71 @@ void MainWindow::closeEvent(QCloseEvent* event) {
 }
 
 void MainWindow::create_menus() {
-    // File menu
+    // Helper lambda to reduce QAction boilerplate
+    auto mk = [this](QMenu* menu, QAction*& slot_store, const QString& text, const QKeySequence& shortcut, auto method, bool checkable=false, bool checked=true){
+        slot_store = new QAction(text, this);
+        if(!shortcut.isEmpty()) slot_store->setShortcut(shortcut);
+        if(checkable){ slot_store->setCheckable(true); slot_store->setChecked(checked);}    
+        connect(slot_store, &QAction::triggered, this, method);
+        menu->addAction(slot_store);
+        return slot_store;
+    };
+
     QMenu* file_menu = menuBar()->addMenu("&File");
-    
-    new_action_ = file_menu->addAction("&New Project", this, &MainWindow::new_project);
-    new_action_->setShortcut(QKeySequence::New);
-    
-    open_action_ = file_menu->addAction("&Open Project...", this, &MainWindow::open_project);
-    open_action_->setShortcut(QKeySequence::Open);
-    
+    mk(file_menu, new_action_, "&New Project", QKeySequence::New, &MainWindow::new_project);
+    mk(file_menu, open_action_, "&Open Project...", QKeySequence::Open, &MainWindow::open_project);
     file_menu->addSeparator();
-    
-    save_action_ = file_menu->addAction("&Save Project", this, &MainWindow::save_project);
-    save_action_->setShortcut(QKeySequence::Save);
-    
-    save_as_action_ = file_menu->addAction("Save Project &As...", this, &MainWindow::save_project_as);
-    save_as_action_->setShortcut(QKeySequence::SaveAs);
-    
+    mk(file_menu, save_action_, "&Save Project", QKeySequence::Save, &MainWindow::save_project);
+    mk(file_menu, save_as_action_, "Save Project &As...", QKeySequence::SaveAs, &MainWindow::save_project_as);
     file_menu->addSeparator();
-    
-    import_action_ = file_menu->addAction("&Import Media...", this, &MainWindow::import_media);
-    import_action_->setShortcut(QKeySequence("Ctrl+I"));
-    
-    export_action_ = file_menu->addAction("&Export Timeline...", this, &MainWindow::export_timeline);
-    export_action_->setShortcut(QKeySequence("Ctrl+E"));
-    
+    mk(file_menu, import_action_, "&Import Media...", QKeySequence(QStringLiteral("Ctrl+I")), &MainWindow::import_media);
+    mk(file_menu, export_action_, "&Export Timeline...", QKeySequence(QStringLiteral("Ctrl+E")), &MainWindow::export_timeline);
     file_menu->addSeparator();
-    
-    quit_action_ = file_menu->addAction("&Quit", this, &MainWindow::quit_application);
-    quit_action_->setShortcut(QKeySequence::Quit);
-    
-    // Edit menu
+    mk(file_menu, quit_action_, "&Quit", QKeySequence::Quit, &MainWindow::quit_application);
+
     QMenu* edit_menu = menuBar()->addMenu("&Edit");
-    
-    undo_action_ = edit_menu->addAction("&Undo", this, &MainWindow::undo);
-    undo_action_->setShortcut(QKeySequence::Undo);
-    
-    redo_action_ = edit_menu->addAction("&Redo", this, &MainWindow::redo);
-    redo_action_->setShortcut(QKeySequence::Redo);
-    
+    mk(edit_menu, undo_action_, "&Undo", QKeySequence::Undo, &MainWindow::undo);
+    mk(edit_menu, redo_action_, "&Redo", QKeySequence::Redo, &MainWindow::redo);
     edit_menu->addSeparator();
-    
-    cut_action_ = edit_menu->addAction("Cu&t", this, &MainWindow::cut);
-    cut_action_->setShortcut(QKeySequence::Cut);
-    
-    copy_action_ = edit_menu->addAction("&Copy", this, &MainWindow::copy);
-    copy_action_->setShortcut(QKeySequence::Copy);
-    
-    paste_action_ = edit_menu->addAction("&Paste", this, &MainWindow::paste);
-    paste_action_->setShortcut(QKeySequence::Paste);
-    
-    delete_action_ = edit_menu->addAction("&Delete", this, &MainWindow::delete_selection);
-    delete_action_->setShortcut(QKeySequence::Delete);
-    
+    mk(edit_menu, cut_action_, "Cu&t", QKeySequence::Cut, &MainWindow::cut);
+    mk(edit_menu, copy_action_, "&Copy", QKeySequence::Copy, &MainWindow::copy);
+    mk(edit_menu, paste_action_, "&Paste", QKeySequence::Paste, &MainWindow::paste);
+    mk(edit_menu, delete_action_, "&Delete", QKeySequence::Delete, &MainWindow::delete_selection);
     edit_menu->addSeparator();
-    
-    // Timeline actions
-    auto add_to_timeline_action = edit_menu->addAction("Add Selected Media to &Timeline", this, &MainWindow::add_selected_media_to_timeline);
-    add_to_timeline_action->setShortcut(QKeySequence("Ctrl+T"));
-    
-    // Playback menu
+    mk(edit_menu, add_to_timeline_action_, "Add Selected Media to &Timeline", QKeySequence(QStringLiteral("Ctrl+T")), &MainWindow::add_selected_media_to_timeline);
+
     QMenu* playback_menu = menuBar()->addMenu("&Playback");
-    
-    play_pause_action_ = playback_menu->addAction("&Play/Pause", this, &MainWindow::play_pause);
-    play_pause_action_->setShortcut(QKeySequence("Space"));
-    
-    stop_action_ = playback_menu->addAction("&Stop", this, &MainWindow::stop);
-    stop_action_->setShortcut(QKeySequence("Ctrl+Space"));
-    
+    mk(playback_menu, play_pause_action_, "&Play/Pause", QKeySequence(QStringLiteral("Space")), &MainWindow::play_pause);
+    mk(playback_menu, stop_action_, "&Stop", QKeySequence(QStringLiteral("Ctrl+Space")), &MainWindow::stop);
     playback_menu->addSeparator();
-    
-    step_forward_action_ = playback_menu->addAction("Step &Forward", this, &MainWindow::step_forward);
-    step_forward_action_->setShortcut(QKeySequence("Right"));
-    
-    step_backward_action_ = playback_menu->addAction("Step &Backward", this, &MainWindow::step_backward);
-    step_backward_action_->setShortcut(QKeySequence("Left"));
-    
+    mk(playback_menu, step_forward_action_, "Step &Forward", QKeySequence(QStringLiteral("Right")), &MainWindow::step_forward);
+    mk(playback_menu, step_backward_action_, "Step &Backward", QKeySequence(QStringLiteral("Left")), &MainWindow::step_backward);
     playback_menu->addSeparator();
-    
-    go_to_start_action_ = playback_menu->addAction("Go to &Start", this, &MainWindow::go_to_start);
-    go_to_start_action_->setShortcut(QKeySequence("Home"));
-    
-    go_to_end_action_ = playback_menu->addAction("Go to &End", this, &MainWindow::go_to_end);
-    go_to_end_action_->setShortcut(QKeySequence("End"));
-    
-    // View menu
+    mk(playback_menu, go_to_start_action_, "Go to &Start", QKeySequence(QStringLiteral("Home")), &MainWindow::go_to_start);
+    mk(playback_menu, go_to_end_action_, "Go to &End", QKeySequence(QStringLiteral("End")), &MainWindow::go_to_end);
+
     QMenu* view_menu = menuBar()->addMenu("&View");
-    
-    view_menu->addAction("Zoom &In", this, &MainWindow::zoom_in, QKeySequence("Ctrl++"));
-    view_menu->addAction("Zoom &Out", this, &MainWindow::zoom_out, QKeySequence("Ctrl+-"));
-    view_menu->addAction("Zoom &Fit", this, &MainWindow::zoom_fit, QKeySequence("Ctrl+0"));
-    
+    QAction* dummy=nullptr; // temporary holder for helper
+    mk(view_menu, dummy, "Zoom &In", QKeySequence(QStringLiteral("Ctrl++")), &MainWindow::zoom_in);
+    mk(view_menu, dummy, "Zoom &Out", QKeySequence(QStringLiteral("Ctrl+-")), &MainWindow::zoom_out);
+    mk(view_menu, dummy, "Zoom &Fit", QKeySequence(QStringLiteral("Ctrl+0")), &MainWindow::zoom_fit);
     view_menu->addSeparator();
-    
-    auto timeline_action = view_menu->addAction("&Timeline", this, &MainWindow::toggle_timeline);
-    timeline_action->setCheckable(true);
-    timeline_action->setChecked(true);
-    
-    auto browser_action = view_menu->addAction("&Media Browser", this, &MainWindow::toggle_media_browser);
-    browser_action->setCheckable(true);
-    browser_action->setChecked(true);
-    
-    auto properties_action = view_menu->addAction("&Properties", this, &MainWindow::toggle_properties);
-    properties_action->setCheckable(true);
-    properties_action->setChecked(true);
-    
-    // Help menu
+    mk(view_menu, dummy, "&Timeline", QKeySequence(), &MainWindow::toggle_timeline, true, true);
+    mk(view_menu, dummy, "&Media Browser", QKeySequence(), &MainWindow::toggle_media_browser, true, true);
+    mk(view_menu, dummy, "&Properties", QKeySequence(), &MainWindow::toggle_properties, true, true);
+
     QMenu* help_menu = menuBar()->addMenu("&Help");
-    help_menu->addAction("&About", this, &MainWindow::about);
-    help_menu->addAction("About &Qt", this, &MainWindow::about_qt);
-    
-    // Development menu (for testing)
+    mk(help_menu, dummy, "&About", QKeySequence(), &MainWindow::about);
+    mk(help_menu, dummy, "About &Qt", QKeySequence(), &MainWindow::about_qt);
+
     QMenu* dev_menu = menuBar()->addMenu("&Development");
-    dev_menu->addAction("Create &Test Timeline Content", this, &MainWindow::create_test_timeline_content);
+    mk(dev_menu, dummy, "Create &Test Timeline Content", QKeySequence(), &MainWindow::create_test_timeline_content);
 }
 
 void MainWindow::create_toolbars() {
     // Main toolbar
     QToolBar* main_toolbar = addToolBar("Main");
+    main_toolbar->setObjectName("MainToolbar");
     main_toolbar->addAction(new_action_);
     main_toolbar->addAction(open_action_);
     main_toolbar->addAction(save_action_);
@@ -613,6 +571,7 @@ void MainWindow::create_toolbars() {
     
     // Edit toolbar
     QToolBar* edit_toolbar = addToolBar("Edit");
+    edit_toolbar->setObjectName("EditToolbar");
     edit_toolbar->addAction(undo_action_);
     edit_toolbar->addAction(redo_action_);
     edit_toolbar->addSeparator();
@@ -623,6 +582,7 @@ void MainWindow::create_toolbars() {
     
     // Playback toolbar
     QToolBar* playback_toolbar = addToolBar("Playback");
+    playback_toolbar->setObjectName("PlaybackToolbar");
     playback_toolbar->addAction(go_to_start_action_);
     playback_toolbar->addAction(step_backward_action_);
     playback_toolbar->addAction(play_pause_action_);
@@ -649,6 +609,7 @@ void MainWindow::create_status_bar() {
 void MainWindow::create_dock_widgets() {
     // Timeline dock
     timeline_dock_ = new QDockWidget("Timeline", this);
+    timeline_dock_->setObjectName("TimelineDock");
     timeline_panel_ = new TimelinePanel();
     
     // Connect command system to timeline panel
@@ -662,6 +623,7 @@ void MainWindow::create_dock_widgets() {
     
     // Media browser dock - Tree widget for media files
     media_browser_dock_ = new QDockWidget("Media Browser", this);
+    media_browser_dock_->setObjectName("MediaBrowserDock");
     media_browser_ = new QTreeWidget();
     media_browser_->setHeaderLabels({"Name", "Duration", "Format", "Resolution"});
     media_browser_->setRootIsDecorated(false);
@@ -678,6 +640,7 @@ void MainWindow::create_dock_widgets() {
     
     // Properties dock (placeholder for now)
     properties_dock_ = new QDockWidget("Properties", this);
+    properties_dock_->setObjectName("PropertiesDock");
     property_panel_ = new QLabel("Properties\n(Coming Soon)");
     property_panel_->setAlignment(Qt::AlignCenter);
     properties_dock_->setWidget(property_panel_);
@@ -727,6 +690,12 @@ void MainWindow::connect_signals() {
                 this, &MainWindow::play_pause);
         connect(viewer_panel_, &ViewerPanel::stop_requested,
                 this, &MainWindow::stop);
+    }
+
+    // Connect to Application signals for project lifecycle & modifications
+    if(auto* app = ve::app::Application::instance()) {
+        connect(app, &ve::app::Application::project_changed, this, &MainWindow::on_project_state_changed);
+        connect(app, &ve::app::Application::project_modified, this, &MainWindow::on_project_dirty);
     }
 }
 
@@ -813,7 +782,9 @@ void MainWindow::new_project() {
         
         // Initialize playback controller with timeline
         if (!playback_controller_) {
-            playback_controller_ = new ve::playback::Controller();
+            playback_controller_ = new ve::playback::PlaybackController();
+            // Attach controller to viewer so playback controls enable and frames route
+            set_playback_controller(playback_controller_);
         }
         
         // Update UI state
@@ -912,10 +883,13 @@ void MainWindow::undo() {
     }
     
     bool success = command_history_->undo(*timeline_);
-    if (success) {
-        project_modified_ = true;
-        update_window_title();
-        update_actions();
+        if (success) {
+            project_modified_ = true;
+            // Direct UI flag for immediate feedback
+            update_window_title();
+            // Propagate to Application via timeline callback
+            if (timeline_) timeline_->mark_modified();
+            update_actions();
         
         // Refresh timeline display
         if (timeline_panel_) {
@@ -941,10 +915,12 @@ void MainWindow::redo() {
     }
     
     bool success = command_history_->redo(*timeline_);
-    if (success) {
-        project_modified_ = true;
-        update_window_title();
-        update_actions();
+        if (success) {
+            project_modified_ = true;
+            // Propagate to Application via timeline callback
+            if (timeline_) timeline_->mark_modified();
+            update_window_title();
+            update_actions();
         
         // Refresh timeline display
         if (timeline_panel_) {
@@ -1250,10 +1226,12 @@ bool MainWindow::execute_command(std::unique_ptr<ve::commands::Command> command)
     }
     
     bool success = command_history_->execute(std::move(command), *timeline_);
-    if (success) {
-        project_modified_ = true;
-        update_window_title();
-        update_actions();
+        if (success) {
+            project_modified_ = true;
+            // Propagate to Application via timeline callback
+            if (timeline_) timeline_->mark_modified();
+            update_window_title();
+            update_actions();
         
         // Refresh timeline display
         if (timeline_panel_) {
@@ -1270,6 +1248,23 @@ bool MainWindow::execute_command(std::unique_ptr<ve::commands::Command> command)
     return success;
 }
 
+// Application project state changed (new/open/save/close)
+void MainWindow::on_project_state_changed() {
+    // Reset modified state based on application signal (treated as clean snapshot)
+    project_modified_ = false;
+    update_window_title();
+    update_actions();
+}
+
+// Application reported timeline modifications (dirty)
+void MainWindow::on_project_dirty() {
+    if(!project_modified_) {
+        project_modified_ = true;
+        update_window_title();
+        update_actions();
+    }
+}
+
 void MainWindow::on_media_item_double_clicked(QTreeWidgetItem* item, int column) {
     Q_UNUSED(column);
     
@@ -1284,19 +1279,19 @@ void MainWindow::on_media_item_double_clicked(QTreeWidgetItem* item, int column)
     // Load the media in the viewer panel
     if (viewer_panel_->load_media(filePath)) {
         ve::log::info("Media loaded successfully in viewer");
-        
+        // Ensure playback controller exists & is wired
+        if (!playback_controller_) {
+            ve::log::info("Creating playback controller on-demand");
+            playback_controller_ = new ve::playback::PlaybackController();
+            set_playback_controller(playback_controller_);
+        }
+
         // Also load the media in the playback controller for playback functionality
         if (playback_controller_) {
             if (playback_controller_->load_media(filePath.toStdString())) {
                 ve::log::info("Media loaded successfully in playback controller");
-                
-                // Connect playback controller video frames to viewer display
-                playback_controller_->set_video_callback([this](const ve::decode::VideoFrame& frame) {
-                    if (viewer_panel_) {
-                        viewer_panel_->display_frame(frame);
-                    }
-                });
-                ve::log::info("Connected playback controller to viewer for frame updates");
+                // Autoplay after load (optional UX improvement)
+                playback_controller_->play();
             } else {
                 ve::log::warn("Failed to load media in playback controller");
             }
@@ -1332,8 +1327,11 @@ void MainWindow::on_media_browser_context_menu(const QPoint& pos) {
     qDebug() << "Creating context menu for file:" << filePath;
     
     QMenu contextMenu(this);
-    QAction* addToTimelineAction = contextMenu.addAction("Add to Timeline");
-    QAction* loadInViewerAction = contextMenu.addAction("Load in Viewer");
+    // Avoid deprecated addAction(const QString&) overloads – create actions explicitly
+    QAction* addToTimelineAction = new QAction("Add to Timeline", &contextMenu);
+    contextMenu.addAction(addToTimelineAction);
+    QAction* loadInViewerAction = new QAction("Load in Viewer", &contextMenu);
+    contextMenu.addAction(loadInViewerAction);
     
     qDebug() << "Context menu created with" << contextMenu.actions().size() << "actions";
     
@@ -1429,7 +1427,7 @@ void MainWindow::on_timeline_clip_added(const QString& filePath, ve::TimePoint s
     // Store placement context on worker and invoke async probe
     timeline_worker_->setProperty("timeline_start_time_us", QVariant::fromValue<int64_t>(start_time.to_rational().num));
     timeline_worker_->setProperty("timeline_track_index", QVariant(track_index));
-    status_label_->setText("Processing media for timeline in background...");
+    status_label_->setText("Processing media for timeline...");
     status_label_->setStyleSheet("color: blue;");
     QMetaObject::invokeMethod(timeline_worker_, "processForTimeline", Qt::QueuedConnection, Q_ARG(QString, filePath));
 }
@@ -1464,8 +1462,9 @@ void MainWindow::create_test_timeline_content() {
     if (!timeline_) return;
     
     // Add some test tracks
-    auto video_track_id = timeline_->add_track(ve::timeline::Track::Video, "Video Track 1");
-    auto audio_track_id = timeline_->add_track(ve::timeline::Track::Audio, "Audio Track 1");
+    // Capture created track IDs (potential diagnostics / future use)
+    const auto video_track_id = timeline_->add_track(ve::timeline::Track::Video, "Video Track 1");
+    const auto audio_track_id = timeline_->add_track(ve::timeline::Track::Audio, "Audio Track 1");
     
     // Get the tracks
     auto* video_track = timeline_->get_track(video_track_id);
@@ -1493,9 +1492,9 @@ void MainWindow::create_test_timeline_content() {
         audio_seg1.duration = ve::TimeDuration{9000000, 1000000}; // 9 seconds
         
         // Add segments to tracks
-        video_track->add_segment(video_seg1);
-        video_track->add_segment(video_seg2);
-        audio_track->add_segment(audio_seg1);
+    if(!video_track->add_segment(video_seg1)) ve::log::warn("Failed to add test video segment 1");
+    if(!video_track->add_segment(video_seg2)) ve::log::warn("Failed to add test video segment 2");
+    if(!audio_track->add_segment(audio_seg1)) ve::log::warn("Failed to add test audio segment 1");
         
         // Refresh the timeline display
         if (timeline_panel_) {
@@ -1592,7 +1591,9 @@ void MainWindow::flushTimelineBatch() {
         while (static_cast<int>(timeline_->tracks().size()) <= info.track_index) {
             ve::timeline::Track::Type track_type = info.has_video ? ve::timeline::Track::Video : ve::timeline::Track::Audio;
             std::string auto_name = (track_type == ve::timeline::Track::Video ? "Video " : "Audio ") + std::to_string(timeline_->tracks().size() + 1);
-            timeline_->add_track(track_type, auto_name);
+            // Track added to satisfy placement requirement; id retained for potential logging
+            const auto new_track_id = timeline_->add_track(track_type, auto_name);
+            (void)new_track_id; // silence unused for now (may log later)
         }
 
         // Create segment referencing clip
@@ -1639,6 +1640,7 @@ void MainWindow::flushTimelineBatch() {
     ve::log::info("Processed " + std::to_string(processed) + " timeline updates in " + std::to_string(budget.elapsed()) + "ms");
 }
 
+// End of MainWindow implementation
 } // namespace ve::ui
 
 #include "main_window.moc"

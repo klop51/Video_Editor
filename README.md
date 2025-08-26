@@ -1,5 +1,8 @@
 # Video Editor (Prototype Scaffold)
 
+![CI Quality Gate status badge showing rolling CI health](./.badges/ci_status.svg "CI Quality Gate (rolling success, MTTR)")
+![CI Mean Time To Recovery badge emphasizing recovery speed](./.badges/ci_mttr.svg "CI Mean Time To Recovery")
+
 Initial scaffold for the C++ professional non-linear video editor project. See `ARCHITECTURE.md` for the comprehensive design and roadmap.
 
 ## Dependencies (via vcpkg manifest)
@@ -76,6 +79,8 @@ cmake --preset no-ffmpeg
 
 ## Continuous Integration
 GitHub Actions workflow (`.github/workflows/ci.yml`) builds Debug & Release on Windows and Ubuntu with vcpkg caching, runs tests in Debug, and performs a no-FFmpeg configure lint.
+
+The quality gate badge above is regenerated from recent workflow history (success rate & status). If it shows stale data, the scheduled badge refresh job may not have run yet.
 
 ## Additional Developer Features
 - Coverage (Linux): use `dev-debug-coverage` preset then run tests; generates lcov data.

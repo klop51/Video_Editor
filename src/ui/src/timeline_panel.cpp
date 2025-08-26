@@ -9,6 +9,7 @@
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QMimeData>
+#include <QMenu>
 #include <QUrl>
 #include <QFileInfo>
 #include <QApplication>
@@ -403,13 +404,9 @@ void TimelinePanel::draw_timecode_ruler(QPainter& painter) {
     
     // Calculate time intervals for tick marks
     double pixels_per_second = MIN_PIXELS_PER_SECOND * zoom_factor_;
-    double seconds_per_pixel = 1.0 / pixels_per_second;
-    
-    // Determine appropriate time interval for major ticks
-    double time_interval = 1.0; // Start with 1 second
-    while (time_interval * pixels_per_second < 50) {
-        time_interval *= 2;
-    }
+    // Adaptive tick sizing: grow interval so that major ticks are ~>=50px apart
+    double time_interval = 1.0; // seconds
+    while (time_interval * pixels_per_second < 50.0) time_interval *= 2.0;
     
     // Draw time ticks
     ve::TimePoint start_time = pixel_to_time(-scroll_x_);
@@ -452,10 +449,10 @@ void TimelinePanel::draw_tracks(QPainter& painter) {
 void TimelinePanel::draw_track(QPainter& painter, const ve::timeline::Track& track, int track_y) {
     QRect track_rect(0, track_y, width(), TRACK_HEIGHT);
     
-    // Track background
+    // Track background - much lighter to show segments clearly
     QColor track_bg = (track.type() == ve::timeline::Track::Video) ? 
-                      track_color_video_.darker(150) : 
-                      track_color_audio_.darker(150);
+                      QColor(40, 60, 90) :    // Very dark blue background for video tracks
+                      QColor(40, 90, 60);     // Very dark green background for audio tracks
     painter.fillRect(track_rect, track_bg);
     
     // Track border
@@ -482,9 +479,9 @@ void TimelinePanel::draw_segments(QPainter& painter, const ve::timeline::Track& 
     // Quick exit if no segments
     if (segments.empty()) return;
     
-    // Pre-calculate common values
-    static QColor cached_video_color(100, 150, 200);
-    static QColor cached_audio_color(100, 200, 150);
+    // Pre-calculate common values - much brighter colors for better visibility
+    static QColor cached_video_color(150, 200, 255);  // Very bright blue for video segments
+    static QColor cached_audio_color(150, 255, 200);  // Very bright green for audio segments
     static QColor cached_text_color(255, 255, 255);
     static QFont cached_small_font;
     static QFont cached_name_font;
@@ -512,21 +509,26 @@ void TimelinePanel::draw_segments(QPainter& painter, const ve::timeline::Track& 
         int end_x = time_to_pixel(segment.end_time());
         int segment_width = end_x - start_x;
         
+        
         // Aggressive culling
         if (segment_width < 1) continue;
         if (end_x < viewport_left || start_x > viewport_right) continue;
         
         QRect segment_rect(start_x, track_y + 5, segment_width, TRACK_HEIGHT - 10);
         
+        
         // Check if segment is selected (cache this lookup)
         bool is_selected = std::find(selected_segments_.begin(), selected_segments_.end(), 
                                    segment.id) != selected_segments_.end();
         
-        QColor segment_color = is_selected ? base_color.lighter(130) : base_color;
+        QColor segment_color = is_selected ? base_color.lighter(150) : base_color.lighter(120);
         
-        // For very small segments, use simple solid fill
+        // For very small segments, use simple solid fill with stronger color
         if (segment_width < 20) {
-            painter.fillRect(segment_rect, segment_color);
+            painter.fillRect(segment_rect, segment_color.lighter(110));  // Even brighter for small segments
+            // Add white border for small segments too
+            painter.setPen(QPen(Qt::white, 1));
+            painter.drawRect(segment_rect);
             // Skip all other details for tiny segments
             continue;
         }
@@ -537,10 +539,13 @@ void TimelinePanel::draw_segments(QPainter& painter, const ve::timeline::Track& 
         gradient.setColorAt(1, segment_color.darker(110));
         painter.fillRect(segment_rect, gradient);
         
-        // Enhanced border
-        painter.setPen(QPen(is_selected ? cached_text_color : segment_color.darker(150), 
-                           is_selected ? 2 : 1));
+        // Enhanced border with white outline for maximum visibility
+        painter.setPen(QPen(Qt::white, 2));  // White border for maximum contrast
         painter.drawRect(segment_rect);
+        
+        // Inner border with segment color
+        painter.setPen(QPen(is_selected ? cached_text_color : segment_color.darker(120), 1));
+        painter.drawRect(segment_rect.adjusted(1, 1, -1, -1));
         
         // Only draw details for segments larger than minimum threshold
         if (segment_width < 30) continue;
@@ -685,8 +690,8 @@ int TimelinePanel::track_y_position(size_t track_index) const {
     return TIMECODE_HEIGHT + static_cast<int>(track_index) * (TRACK_HEIGHT + TRACK_SPACING);
 }
 
-void TimelinePanel::start_drag(const QPoint& pos) {
-    // Implementation for drag operations
+void TimelinePanel::start_drag(const QPoint&) {
+    // Future: initiate drag preparation
 }
 
 void TimelinePanel::update_drag(const QPoint& pos) {
@@ -753,13 +758,11 @@ void TimelinePanel::update_drag(const QPoint& pos) {
     }
 }
 
-void TimelinePanel::end_drag(const QPoint& pos) {
-    Q_UNUSED(pos);
-    // Complete any ongoing drag operations
+void TimelinePanel::end_drag(const QPoint&) {
     update();
 }
 
-void TimelinePanel::finish_segment_edit(const QPoint& pos) {
+void TimelinePanel::finish_segment_edit(const QPoint&) {
     if (!timeline_ || !command_executor_ || dragged_segment_id_ == 0) return;
     
     // Find the current segment data
@@ -854,9 +857,29 @@ void TimelinePanel::handle_click(const QPoint& pos) {
 }
 
 void TimelinePanel::handle_context_menu(const QPoint& pos) {
-    // Future implementation for right-click context menus
+#if defined(QT_NO_MENU)
     Q_UNUSED(pos);
-    ve::log::debug("Context menu requested at: " + std::to_string(pos.x()) + ", " + std::to_string(pos.y()));
+    // Menus disabled in this Qt build
+    return;
+#else
+    // Context menu (guarded if menus available)
+    QMenu* menu = new QMenu(this); // use pointer to minimize stack use with incomplete types
+    ve::timeline::Segment* seg = find_segment_at_pos(pos);
+    if (seg) {
+        QAction* splitAct = menu->addAction("Split Segment");
+        QAction* deleteAct = menu->addAction("Delete Segment");
+        QAction* chosen = menu->exec(mapToGlobal(pos));
+        if (chosen == splitAct) {
+            ve::log::info("Split segment requested id=" + std::to_string(seg->id));
+        } else if (chosen == deleteAct) {
+            ve::log::info("Delete segment requested id=" + std::to_string(seg->id));
+        }
+    } else {
+        menu->addAction("Add Clip Here");
+        menu->exec(mapToGlobal(pos));
+    }
+    menu->deleteLater();
+#endif
 }
 
 void TimelinePanel::update_cursor(const QPoint& pos) {
@@ -1182,7 +1205,8 @@ void TimelinePanel::dropEvent(QDropEvent* event) {
 }
 
 void TimelinePanel::draw_audio_waveform(QPainter& painter, const QRect& rect, const ve::timeline::Segment& segment) {
-    Q_UNUSED(segment); // For now, we'll draw a fast placeholder waveform
+    // Placeholder waveform uses segment id as seed to vary pattern slightly
+    int seed = static_cast<int>(segment.id % 7 + 3);
     
     // Fast simplified waveform representation - reduced detail for performance
     painter.setPen(QPen(QColor(255, 255, 255, 100), 1));
@@ -1191,7 +1215,7 @@ void TimelinePanel::draw_audio_waveform(QPainter& painter, const QRect& rect, co
     
     // Draw fewer waveform "peaks" to reduce draw calls (every 12 pixels instead of 8)
     for (int x = rect.left() + 6; x < rect.right() - 6; x += 12) {
-        int peak_height = (x % 24) + 3; // Simpler pattern
+        int peak_height = ((x + seed) % 24) + 3; // Slight variation per segment
         painter.drawLine(x, center_y - peak_height/2, x, center_y + peak_height/2);
     }
     
@@ -1203,14 +1227,15 @@ void TimelinePanel::draw_audio_waveform(QPainter& painter, const QRect& rect, co
 }
 
 void TimelinePanel::draw_video_thumbnail(QPainter& painter, const QRect& rect, const ve::timeline::Segment& segment) {
-    Q_UNUSED(segment); // For now, we'll draw a fast placeholder thumbnail
+    // Use segment.id to introduce mild variation in placeholder visuals
+    int variation = static_cast<int>((segment.id * 37) % 50);
     
     // Fast video thumbnail placeholder - simplified for performance
     QRect thumb_rect = rect.adjusted(2, 2, -2, -20); // Leave space for duration text
     
     // Simple border instead of detailed film strip
     painter.setPen(QPen(QColor(255, 255, 255, 120), 1));
-    painter.setBrush(QBrush(QColor(50, 50, 50)));
+    painter.setBrush(QBrush(QColor(50 + variation/5, 50, 50)));
     painter.drawRect(thumb_rect);
     
     // Only draw film strip holes for larger thumbnails
@@ -1294,4 +1319,4 @@ void TimelinePanel::cancel_drag_operations() {
 
 } // namespace ve::ui
 
-#include "timeline_panel.moc"
+// Removed explicit moc include; handled by AUTOMOC

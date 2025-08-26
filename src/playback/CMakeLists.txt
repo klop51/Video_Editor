@@ -6,15 +6,21 @@ add_library(ve_playback
 )
 
 target_include_directories(ve_playback
-    PUBLIC include
-    PRIVATE src
-    PRIVATE ${CMAKE_SOURCE_DIR}/src/core/include
+    PUBLIC
+        include
+        ${CMAKE_SOURCE_DIR}/src/timeline/include
+        ${CMAKE_SOURCE_DIR}/src/cache/include
+    PRIVATE
+        src
+        ${CMAKE_SOURCE_DIR}/src/core/include
 )
 
 target_link_libraries(ve_playback
     PUBLIC
         ve_core
         ve_decode
+        ve_timeline
+    ve_cache
 )
 
 target_compile_features(ve_playback PUBLIC cxx_std_20)

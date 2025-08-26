@@ -1,0 +1,8 @@
+# Regex patterns (one per line) matching test source files or paths considered flaky.
+# Lines starting with # are comments.
+# Example to ignore a specific file:
+# test_network_timeout.cpp
+# Example using regex (Windows path separators escaped if needed):
+# test_.*_timing\.cpp
+
+# Add confirmed flaky tests below this line:

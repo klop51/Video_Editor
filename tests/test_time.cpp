@@ -13,3 +13,21 @@ TEST_CASE("Format timecode basic", "[time]") {
     auto tc = format_timecode(t, 24, 1);
     REQUIRE(tc.rfind("01:01:01", 0) == 0);
 }
+
+TEST_CASE("Normalize rational", "[time]") {
+    using namespace ve;
+    TimeRational r{120, 480};
+    auto n = normalize(r);
+    REQUIRE(n.num == 1);
+    REQUIRE(n.den == 4); // 120/480 reduces to 1/4
+
+    TimeRational r2{-300, -600}; // double negative
+    auto n2 = normalize(r2);
+    REQUIRE(n2.num == 1);
+    REQUIRE(n2.den == 2);
+
+    TimeRational r3{0, 500};
+    auto n3 = normalize(r3);
+    REQUIRE(n3.num == 0);
+    REQUIRE(n3.den == 1); // canonical zero
+}

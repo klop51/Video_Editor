@@ -33,6 +33,8 @@ target_include_directories(ve_ui
     PUBLIC include
     PRIVATE src
     PRIVATE ${CMAKE_SOURCE_DIR}/src/core/include
+    # Needed for referencing Application signals in main_window (no link dependency)
+    PRIVATE ${CMAKE_SOURCE_DIR}/src/app/include
 )
 
 target_link_libraries(ve_ui

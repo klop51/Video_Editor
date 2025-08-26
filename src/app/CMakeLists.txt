@@ -29,6 +29,7 @@ target_include_directories(ve_app
     PUBLIC include
     PRIVATE src
     PRIVATE ${CMAKE_SOURCE_DIR}/src/core/include
+    PRIVATE ${CMAKE_SOURCE_DIR}/src/persistence/include
 )
 
 target_link_libraries(ve_app
@@ -37,6 +38,7 @@ target_link_libraries(ve_app
         ve_timeline
         ve_playback
         ve_ui
+    ve_persistence
         Qt6::Core
         Qt6::Widgets
 )

@@ -1,6 +1,8 @@
 #include "app/application.hpp"
 #include "ui/main_window.hpp"
 #include "core/log.hpp"
+#include "core/profiling.hpp"
+#include "persistence/project_serializer.hpp"
 #include <QDir>
 #include <QStandardPaths>
 
@@ -23,7 +25,7 @@ Application::Application(int argc, char** argv)
     
     // Create core components
     timeline_ = std::make_unique<ve::timeline::Timeline>();
-    playback_controller_ = std::make_unique<ve::playback::Controller>();
+    playback_controller_ = std::make_unique<ve::playback::PlaybackController>();
     
     create_main_window();
     setup_connections();
@@ -31,6 +33,8 @@ Application::Application(int argc, char** argv)
 
 Application::~Application() {
     ve::log::info("Application shutting down");
+    // Emit profiling summary (best-effort)
+    ve::prof::Accumulator::instance().write_json("profiling.json");
     instance_ = nullptr;
 }
 
@@ -55,6 +59,7 @@ bool Application::new_project() {
     
     timeline_ = std::make_unique<ve::timeline::Timeline>();
     timeline_->set_name("Untitled Project");
+    timeline_->set_modified_callback([this]{ on_project_modified(); });
     
     if (main_window_) {
         main_window_->set_timeline(timeline_.get());
@@ -70,16 +75,30 @@ bool Application::new_project() {
 }
 
 bool Application::open_project(const QString& path) {
-    // TODO: Implement project file loading
     ve::log::info("Open project requested: " + path.toStdString());
-    
-    // For now, just create a new project
-    if (new_project()) {
-        current_project_path_ = path;
-        return true;
+    if(path.isEmpty()){
+        ve::log::warn("Open project called with empty path");
+        return false;
     }
-    
-    return false;
+    // Reset current timeline
+    timeline_ = std::make_unique<ve::timeline::Timeline>();
+    timeline_->set_modified_callback([this]{ on_project_modified(); });
+    auto res = ve::persistence::load_timeline_json(*timeline_, path.toStdString());
+    if(!res.success){
+        ve::log::error(std::string("Failed to load project: ") + res.error);
+        // Revert to clean new project to keep app usable
+        timeline_ = std::make_unique<ve::timeline::Timeline>();
+        if (main_window_) main_window_->set_timeline(timeline_.get());
+        return false;
+    }
+    if (main_window_) {
+        main_window_->set_timeline(timeline_.get());
+    }
+    current_project_path_ = path;
+    project_modified_ = false;
+    emit project_changed();
+    ve::log::info("Project loaded successfully");
+    return true;
 }
 
 bool Application::save_project(const QString& path) {
@@ -90,12 +109,20 @@ bool Application::save_project(const QString& path) {
         return false;
     }
     
-    // TODO: Implement project file saving
     ve::log::info("Save project requested: " + save_path.toStdString());
-    
+    if(!timeline_){
+        ve::log::warn("No timeline to save");
+        return false;
+    }
+    auto res = ve::persistence::save_timeline_json(*timeline_, save_path.toStdString());
+    if(!res.success){
+        ve::log::error(std::string("Failed to save project: ") + res.error);
+        return false;
+    }
     current_project_path_ = save_path;
     project_modified_ = false;
-    
+    emit project_changed();
+    ve::log::info("Project saved successfully");
     return true;
 }
 
@@ -118,6 +145,7 @@ void Application::close_project() {
 
 void Application::on_project_modified() {
     project_modified_ = true;
+    emit project_modified();
 }
 
 void Application::create_main_window() {
@@ -127,9 +155,9 @@ void Application::create_main_window() {
 }
 
 void Application::setup_connections() {
-    // TODO: Set up signal connections between components
-    // For example:
-    // connect(timeline_.get(), &Timeline::modified, this, &Application::on_project_modified);
+    if(timeline_) {
+        timeline_->set_modified_callback([this]{ on_project_modified(); });
+    }
 }
 
 } // namespace ve::app

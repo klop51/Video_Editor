@@ -77,3 +77,19 @@ Ticks to_ticks(const TimeRational& t) noexcept;
 std::string format_timecode(const TimeRational& t, int32_t frame_rate_num = 24, int32_t frame_rate_den = 1);
 
 } // namespace ve
+
+namespace ve {
+// Optional normalization (GCD reduction) for persistence / hashing / equality canonicalization.
+// Not automatically applied on construction to keep hot path fast.
+TimeRational normalize(const TimeRational& in) noexcept;
+
+// Cheap hash combine for rational (after normalization ideally). Not a cryptographic hash.
+inline uint64_t hash_time(const TimeRational& t) noexcept {
+    // Fowler–Noll–Vo variant
+    uint64_t h = 1469598103934665603ull;
+    auto mix = [&](uint64_t v){ h ^= v; h *= 1099511628211ull; };
+    mix(static_cast<uint64_t>(t.num));
+    mix(static_cast<uint64_t>(t.den));
+    return h;
+}
+} // namespace ve

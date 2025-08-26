@@ -164,7 +164,8 @@ bool MoveSegmentCommand::execute(ve::timeline::Timeline& timeline) {
     if (!to_track->add_segment(segment)) {
         // Rollback: re-add to source track
         segment.start_time = from_time_;
-        from_track->add_segment(segment);
+        bool restored = from_track->add_segment(segment); // rollback ignore failure (would log)
+        if(!restored){ ve::log::warn("Rollback failed re-adding segment during move"); }
         return false;
     }
     
@@ -200,11 +201,13 @@ bool MoveSegmentCommand::undo(ve::timeline::Timeline& timeline) {
     ve::timeline::Segment segment = *segment_it;
     
     // Remove from destination track
-    to_track->remove_segment(segment_id_);
+    bool removed = to_track->remove_segment(segment_id_);
+    if(!removed){ ve::log::warn("MoveSegment undo: destination remove failed"); }
     
     // Restore to source track
     segment.start_time = from_time_;
-    from_track->add_segment(segment);
+    bool restored = from_track->add_segment(segment);
+    if(!restored){ ve::log::warn("MoveSegment undo: restore failed"); }
     
     executed_ = false;
     return true;
@@ -225,10 +228,10 @@ bool MoveSegmentCommand::can_merge_with(const Command& other) const {
         return false;
     }
     
+    constexpr long MERGE_WINDOW_MS = 400; // tighter window
     auto time_diff = std::chrono::duration_cast<std::chrono::milliseconds>(
         other.timestamp() - timestamp()).count();
-    
-    return std::abs(time_diff) < 500; // Merge if within 500ms
+    return std::abs(time_diff) < MERGE_WINDOW_MS;
 }
 
 std::unique_ptr<Command> MoveSegmentCommand::merge_with(std::unique_ptr<Command> other) const {
@@ -238,8 +241,11 @@ std::unique_ptr<Command> MoveSegmentCommand::merge_with(std::unique_ptr<Command>
     }
     
     // Create a new move command from the original position to the final position
+    // Preserve original source track/time from *this*, final destination from other
     auto merged = std::make_unique<MoveSegmentCommand>(
         segment_id_, from_track_, other_move->to_track_, from_time_, other_move->to_time_);
+    // Mark as executed so undo will function (original last command was executed)
+    merged->executed_ = true;
     
     other.release(); // We're consuming the other command
     return merged;
@@ -311,9 +317,16 @@ bool SplitSegmentCommand::execute(ve::timeline::Timeline& timeline) {
     }
     
     // Add new segments
-    if (!track->add_segment(first_segment) || !track->add_segment(second_segment)) {
-        // Rollback
-        track->add_segment(original_segment_);
+    bool first_ok = track->add_segment(first_segment);
+    bool second_ok = first_ok && track->add_segment(second_segment);
+    if (!first_ok || !second_ok) {
+        // Rollback path: if first segment was added, remove it before restoring original
+        if(first_ok){
+            bool removed_first = track->remove_segment(first_segment.id);
+            if(!removed_first){ ve::log::warn("Split rollback: failed removing first provisional segment"); }
+        }
+        bool rolled = track->add_segment(original_segment_);
+        if(!rolled){ ve::log::warn("Split rollback failed re-adding original segment"); }
         return false;
     }
     
@@ -338,8 +351,9 @@ bool SplitSegmentCommand::undo(ve::timeline::Timeline& timeline) {
     }
     
     // Remove the split segments
-    track->remove_segment(first_segment_id_);
-    track->remove_segment(second_segment_id_);
+    bool r1 = track->remove_segment(first_segment_id_);
+    bool r2 = track->remove_segment(second_segment_id_);
+    if(!r1 || !r2){ ve::log::warn("Split undo: failed to remove split segments"); }
     
     // Restore original segment
     bool success = track->add_segment(original_segment_);
@@ -427,10 +441,10 @@ bool TrimSegmentCommand::can_merge_with(const Command& other) const {
         return false;
     }
     
+    constexpr long MERGE_WINDOW_MS = 400;
     auto time_diff = std::chrono::duration_cast<std::chrono::milliseconds>(
         other.timestamp() - timestamp()).count();
-    
-    return std::abs(time_diff) < 500; // Merge if within 500ms
+    return std::abs(time_diff) < MERGE_WINDOW_MS;
 }
 
 std::unique_ptr<Command> TrimSegmentCommand::merge_with(std::unique_ptr<Command> other) const {
@@ -446,6 +460,7 @@ std::unique_ptr<Command> TrimSegmentCommand::merge_with(std::unique_ptr<Command>
     // The merged command should have the original values from this command
     merged->original_start_ = original_start_;
     merged->original_duration_ = original_duration_;
+    merged->executed_ = true; // original command already applied
     
     other.release(); // We're consuming the other command
     return merged;
@@ -558,18 +573,19 @@ bool MacroCommand::execute(ve::timeline::Timeline& timeline) {
         return false; // Already executed
     }
     
-    // Execute all commands in order
-    for (auto& command : commands_) {
-        if (!command->execute(timeline)) {
-            // Rollback: undo all previously executed commands in reverse order
-            for (auto it = commands_.rbegin(); it != commands_.rend(); ++it) {
-                if (it->get() == command.get()) {
-                    break; // Stop at the failed command
-                }
-                (*it)->undo(timeline);
+    // Execute all commands in order. Track how many succeeded so we can rollback precisely.
+    size_t succeeded_count = 0;
+    for (size_t i = 0; i < commands_.size(); ++i) {
+        auto& cmd = commands_[i];
+        if (!cmd->execute(timeline)) {
+            // Rollback previously executed commands (those with index < i) in reverse order
+            for (size_t j = succeeded_count; j > 0; --j) {
+                auto& undo_cmd = commands_[j - 1];
+                (void)undo_cmd->undo(timeline); // ignore individual undo failures during rollback
             }
             return false;
         }
+        ++succeeded_count;
     }
     
     executed_ = true;
@@ -601,5 +617,9 @@ bool MacroCommand::undo(ve::timeline::Timeline& timeline) {
 std::string MacroCommand::description() const {
     return description_;
 }
+
+// NOTE: (maintenance) A previous build artifact referenced a removed VE_IGNORE_RESULT macro
+// around this area (historically line ~580). This trailing comment is intentional to
+// invalidate stale PCH/OBJ state when this file changes and clarify the macro no longer exists.
 
 } // namespace ve::commands

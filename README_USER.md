@@ -85,3 +85,19 @@ The launcher scripts automatically handle Qt6 and other dependencies. If you enc
 ✅ **Complete:** Standalone deployment with all dependencies
 
 This video editor provides a solid foundation for professional video editing applications with a modern Qt6 interface.
+
+## Profiling
+Lightweight scoped profiling is integrated. Timed regions created with `VE_PROFILE_SCOPE("name")` are aggregated and written to `profiling.json` on application shutdown.
+
+### Metrics
+For each unique scope the following are reported: count, total_ms, avg_ms, min_ms, max_ms, p50_ms (median), p95_ms.
+
+## Coding Policies
+Performance-critical core subsystems avoid throwing exceptions; an `expected<T,E>` utility is available for error propagation.
+
+### No-Throw Enforcement Script
+Run the PowerShell script:
+```
+pwsh ./scripts/enforce_no_throw.ps1 -FailOnViolation
+```
+It scans core directories for `throw` keywords. To allow an intentional throw add `VE_ALLOW_THROW` on the same line.
