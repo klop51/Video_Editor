@@ -7,6 +7,20 @@ TEST_CASE("Time rational to ticks conversion", "[time]") {
     REQUIRE(to_ticks(t) == TICKS_PER_SECOND);
 }
 
+TEST_CASE("Make time handles negative denominator", "[time]") {
+    using namespace ve;
+    auto t = make_time(1, -2);
+    REQUIRE(t.num == -1);
+    REQUIRE(t.den == 2);
+}
+
+TEST_CASE("Make time reduces fractions", "[time]") {
+    using namespace ve;
+    auto t = make_time(2, 4);
+    REQUIRE(t.num == 1);
+    REQUIRE(t.den == 2);
+}
+
 TEST_CASE("Format timecode basic", "[time]") {
     using namespace ve;
     auto t = make_time(48000 * 3661, 48000); // 1h 1m 1s
