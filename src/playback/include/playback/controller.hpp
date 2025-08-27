@@ -98,6 +98,19 @@ private:
     uint64_t observed_timeline_version_ = 0;
     // We keep a lightweight shared_ptr to immutable snapshot; structure defined in timeline
     std::shared_ptr<ve::timeline::Timeline::Snapshot> timeline_snapshot_;
+    
+    // Drift-proof frame stepping for fractional framerates
+    struct FrameStepAccum {
+        int64_t num{30}, den{1}, rem{0};
+        int64_t next_delta_us() {
+            const int64_t fps_n = (num > 0 ? num : 30);
+            const int64_t N = 1'000'000LL * (den > 0 ? den : 1);
+            int64_t base = N / fps_n; rem += N % fps_n;
+            if (rem >= fps_n) { base += 1; rem -= fps_n; }
+            return base;
+        }
+    };
+    FrameStepAccum step_;
 };
 
 } // namespace ve::playback
