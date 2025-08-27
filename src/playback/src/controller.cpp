@@ -178,8 +178,7 @@ void PlaybackController::playback_thread_main() {
         
         // Process frames if playing
         if (state_.load() == PlaybackState::Playing && decoder_) {
-            bool seek_req = seek_requested_.load();
-            ve::log::info("Processing frame in playback thread, state=Playing, seek_requested=" + std::string(seek_req ? "true" : "false"));
+            // Debug logging disabled for performance: "Processing frame in playback thread, state=Playing"
             
             int64_t current_pts = current_time_us_.load();
             int64_t target_frame_interval_us = 33333; // ~30fps default, TODO: get from video stream info
@@ -188,10 +187,10 @@ void PlaybackController::playback_thread_main() {
             if(seek_requested_.load()==false) { // if not in middle of seek handling
                     ve::cache::CachedFrame cached; cache_lookups_.fetch_add(1);
                 ve::cache::FrameKey key; key.pts_us = current_pts;
-                ve::log::info("Cache lookup for pts: " + std::to_string(key.pts_us));
+                // ve::log::info("Cache lookup for pts: " + std::to_string(key.pts_us));
                 if(frame_cache_.get(key, cached)) {
                     cache_hits_.fetch_add(1);
-                    ve::log::info("Cache HIT for pts: " + std::to_string(key.pts_us));
+                    // ve::log::info("Cache HIT for pts: " + std::to_string(key.pts_us));
                     decode::VideoFrame vf; vf.width = cached.width; vf.height = cached.height; vf.pts = current_pts; vf.data = cached.data; // copy buffer
                     vf.format = cached.format;
                     vf.color_space = cached.color_space;
@@ -211,22 +210,22 @@ void PlaybackController::playback_thread_main() {
                         continue; // exit playback loop cleanly
                     }
                     current_time_us_.store(next_pts);
-                    ve::log::info("Advanced time to: " + std::to_string(next_pts) + " (cache hit path)");
+                    // ve::log::info("Advanced time to: " + std::to_string(next_pts) + " (cache hit path)");
                     
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
                     continue; // Skip decoding new frame this iteration
                 } else {
-                    ve::log::info("Cache MISS for pts: " + std::to_string(key.pts_us) + ", proceeding to decoder");
+                    // ve::log::info("Cache MISS for pts: " + std::to_string(key.pts_us) + ", proceeding to decoder");
                 }
             } else {
-                ve::log::info("Skipping frame processing because seek_requested=true");
+                // ve::log::info("Skipping frame processing because seek_requested=true");
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 continue;
             }
 
             // Read video frame (decode path)
             auto video_frame = decoder_->read_video();
-            ve::log::info(std::string("Called decoder_->read_video(), result: ") + (video_frame ? "got frame" : "no frame"));
+            // ve::log::info(std::string("Called decoder_->read_video(), result: ") + (video_frame ? "got frame" : "no frame"));
             if (video_frame) {
                 // Future: traverse snapshot (immutable) to determine which clip/segment is active
                 // For now we rely solely on decoder PTS ordering.
