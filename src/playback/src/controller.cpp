@@ -4,7 +4,6 @@
 #include <vector>
 #include <chrono>
 #include <thread>
-#include "timeline/timeline.hpp"
 
 namespace ve::playback {
 
@@ -43,6 +42,10 @@ bool PlaybackController::load_media(const std::string& path) {
     auto probe_result = ve::media::probe_file(path);
     if (probe_result.success && probe_result.duration_us > 0) {
         duration_us_ = probe_result.duration_us;
+        // Derive fps from first video stream if present
+        for(const auto& s : probe_result.streams) {
+            if(s.type == "video" && s.fps > 0) { probed_fps_ = s.fps; break; }
+        }
         ve::log::info("Media duration: " + std::to_string(duration_us_) + " us (" + 
                      std::to_string(duration_us_ / 1000000.0) + " seconds)");
     } else {
@@ -53,7 +56,9 @@ bool PlaybackController::load_media(const std::string& path) {
     ve::log::info("Media loaded successfully: " + path);
     set_state(PlaybackState::Stopped);
     current_time_us_.store(0);
-    
+
+    // Immediately decode first frame for instant preview (avoid blank)
+    decode_one_frame_if_paused(0);
     return true;
 }
 
@@ -107,10 +112,24 @@ bool PlaybackController::seek(int64_t timestamp_us) {
     return true;
 }
 
+void PlaybackController::step_once() {
+    if(!has_media()) return;
+    single_step_.store(true);
+    // Force one-frame decode path even if currently paused/stopped
+    if(state_.load() != PlaybackState::Playing) {
+        set_state(PlaybackState::Playing);
+    }
+}
+
 void PlaybackController::set_state(PlaybackState new_state) {
     PlaybackState old_state = state_.exchange(new_state);
-    if (old_state != new_state && state_callback_) {
-        state_callback_(new_state);
+    if (old_state != new_state) {
+        std::vector<CallbackEntry<StateChangeCallback>> copy;
+        {
+            std::scoped_lock lk(callbacks_mutex_);
+            copy = state_entries_;
+        }
+        for(auto &entry : copy) if(entry.fn) entry.fn(new_state);
     }
 }
 
@@ -123,7 +142,7 @@ void PlaybackController::update_frame_stats(double frame_time_ms) {
 }
 
 void PlaybackController::playback_thread_main() {
-    ve::log::debug("Playback thread started");
+    ve::log::info("Playback thread started");
     
     auto last_frame_time = std::chrono::high_resolution_clock::now();
     int64_t last_pts_us = 0;
@@ -147,32 +166,61 @@ void PlaybackController::playback_thread_main() {
             int64_t seek_target = seek_target_us_.load();
             if (decoder_ && decoder_->seek_microseconds(seek_target)) {
                 current_time_us_.store(seek_target);
-                ve::log::debug("Seek completed to: " + std::to_string(seek_target) + " us");
+                ve::log::info("Seek completed to: " + std::to_string(seek_target) + " us");
                 first_frame = true; // Reset timing after seek
+                // If not playing, decode a preview frame immediately
+                if(state_.load() != PlaybackState::Playing) {
+                    decode_one_frame_if_paused(seek_target);
+                }
             }
             seek_requested_.store(false);
         }
         
         // Process frames if playing
         if (state_.load() == PlaybackState::Playing && decoder_) {
+            bool seek_req = seek_requested_.load();
+            ve::log::info("Processing frame in playback thread, state=Playing, seek_requested=" + std::string(seek_req ? "true" : "false"));
+            
+            int64_t current_pts = current_time_us_.load();
+            int64_t target_frame_interval_us = 33333; // ~30fps default, TODO: get from video stream info
+            
             // Attempt cache reuse first (only exact pts match for now)
             if(seek_requested_.load()==false) { // if not in middle of seek handling
                     ve::cache::CachedFrame cached; cache_lookups_.fetch_add(1);
-                ve::cache::FrameKey key; key.pts_us = current_time_us_.load();
+                ve::cache::FrameKey key; key.pts_us = current_pts;
+                ve::log::info("Cache lookup for pts: " + std::to_string(key.pts_us));
                 if(frame_cache_.get(key, cached)) {
                     cache_hits_.fetch_add(1);
-                    decode::VideoFrame vf; vf.width = cached.width; vf.height = cached.height; vf.pts = current_time_us_.load(); vf.data = cached.data; // copy buffer
+                    ve::log::info("Cache HIT for pts: " + std::to_string(key.pts_us));
+                    decode::VideoFrame vf; vf.width = cached.width; vf.height = cached.height; vf.pts = current_pts; vf.data = cached.data; // copy buffer
                     vf.format = cached.format;
                     vf.color_space = cached.color_space;
                     vf.color_range = cached.color_range;
-                    if(video_callback_) video_callback_(vf);
+                    {
+                        std::vector<CallbackEntry<VideoFrameCallback>> copy;
+                        { std::scoped_lock lk(callbacks_mutex_); copy = video_video_entries_; }
+                        for(auto &entry : copy) if(entry.fn) entry.fn(vf);
+                    }
+                    
+                    // IMPORTANT: Advance time for next frame even when cache hits
+                    int64_t next_pts = current_pts + target_frame_interval_us;
+                    current_time_us_.store(next_pts);
+                    ve::log::info("Advanced time to: " + std::to_string(next_pts) + " (cache hit path)");
+                    
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
                     continue; // Skip decoding new frame this iteration
+                } else {
+                    ve::log::info("Cache MISS for pts: " + std::to_string(key.pts_us) + ", proceeding to decoder");
                 }
+            } else {
+                ve::log::info("Skipping frame processing because seek_requested=true");
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                continue;
             }
 
             // Read video frame (decode path)
             auto video_frame = decoder_->read_video();
+            ve::log::info(std::string("Called decoder_->read_video(), result: ") + (video_frame ? "got frame" : "no frame"));
             if (video_frame) {
                 // Future: traverse snapshot (immutable) to determine which clip/segment is active
                 // For now we rely solely on decoder PTS ordering.
@@ -185,8 +233,10 @@ void PlaybackController::playback_thread_main() {
                 frame_cache_.put(putKey, std::move(cf));
                 current_time_us_.store(video_frame->pts);
 
-                if (video_callback_) {
-                    video_callback_(*video_frame);
+                {
+                    std::vector<CallbackEntry<VideoFrameCallback>> copy;
+                    { std::scoped_lock lk(callbacks_mutex_); copy = video_video_entries_; }
+                    for(auto &entry : copy) if(entry.fn) entry.fn(*video_frame);
                 }
 
                 // Adaptive frame timing based on PTS
@@ -211,20 +261,120 @@ void PlaybackController::playback_thread_main() {
                 // Update performance stats
                 auto frame_time = std::chrono::duration<double, std::milli>(last_frame_time - frame_start);
                 update_frame_stats(frame_time.count());
+
+                // Periodic frame log (every 30 frames) for diagnostics
+                if ((stats_.frames_displayed % 30) == 0) {
+                    ve::log::debug("Playback frames displayed=" + std::to_string(stats_.frames_displayed));
+                }
             }
             
             // Read audio frame
             auto audio_frame = decoder_->read_audio();
-            if (audio_frame && audio_callback_) {
-                audio_callback_(*audio_frame);
+            if (audio_frame) {
+                {
+                    std::vector<CallbackEntry<AudioFrameCallback>> copy;
+                    { std::scoped_lock lk(callbacks_mutex_); copy = audio_entries_; }
+                    for(auto &entry : copy) if(entry.fn) entry.fn(*audio_frame);
+                }
             }
         } else {
             // Not playing, sleep longer
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
         }
+
+        // Handle single-step completion (after any frame decode above)
+        if(single_step_.load() && state_.load() == PlaybackState::Playing) {
+            // After issuing single step we pause right after first new pts displayed
+            // We track last_pts_us; when it changes post-step we pause.
+            static thread_local int64_t step_start_pts = -1;
+            if(step_start_pts < 0) step_start_pts = current_time_us_.load();
+            if(current_time_us_.load() != step_start_pts) {
+                single_step_.store(false);
+                step_start_pts = -1;
+                set_state(PlaybackState::Paused);
+            }
+        }
     }
     
     ve::log::debug("Playback thread ended");
+}
+
+int64_t PlaybackController::frame_duration_guess_us() const {
+    // Prefer probed fps
+    // If timeline snapshot present, attempt to use active clip's fps
+    if(timeline_snapshot_) {
+        // Determine active time
+        int64_t cur = current_time_us_.load();
+        for(const auto &trk : timeline_snapshot_->tracks) {
+            if(trk.type() != ve::timeline::Track::Video) continue;
+            for(const auto &seg : trk.segments()) {
+                auto start = seg.start_time.to_rational();
+                auto dur = seg.duration.to_rational();
+                int64_t seg_start_us = (start.num * 1'000'000) / start.den;
+                int64_t seg_end_us = seg_start_us + (dur.num * 1'000'000) / dur.den;
+                if(cur >= seg_start_us && cur < seg_end_us) {
+                    auto clip_it = timeline_snapshot_->clips.find(seg.clip_id);
+                    if(clip_it != timeline_snapshot_->clips.end() && clip_it->second.source) {
+                        auto fr = clip_it->second.source->frame_rate;
+                        if(fr.num > 0 && fr.den > 0) {
+                            long double fps = (long double)fr.num / (long double)fr.den;
+                            if(fps > 1.0 && fps < 480.0) return (int64_t)((1'000'000.0L / fps) + 0.5L);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if(probed_fps_ > 1.0 && probed_fps_ < 480.0) {
+        return static_cast<int64_t>( (1'000'000.0 / probed_fps_) + 0.5 );
+    }
+    // Fallback: derive from recent frame stats if available, else 33_333
+    if(stats_.frames_displayed >= 2) {
+        double avg_ms = stats_.avg_frame_time_ms;
+        if(avg_ms > 5 && avg_ms < 100) return static_cast<int64_t>(avg_ms * 1000.0);
+    }
+    return 33'333; // ~30fps
+}
+
+void PlaybackController::decode_one_frame_if_paused(int64_t seek_target_us) {
+    if(!decoder_ || state_.load() == PlaybackState::Playing) return;
+    // Attempt to read a single frame at/after seek target immediately for preview
+    auto frame = decoder_->read_video();
+    if(frame) {
+        current_time_us_.store(frame->pts);
+        // Cache it
+        ve::cache::CachedFrame cf; cf.width = frame->width; cf.height = frame->height; cf.data = frame->data;
+        cf.format = frame->format; cf.color_space = frame->color_space; cf.color_range = frame->color_range;
+        ve::cache::FrameKey putKey; putKey.pts_us = frame->pts; frame_cache_.put(putKey, std::move(cf));
+        std::vector<CallbackEntry<VideoFrameCallback>> copy;
+        { std::scoped_lock lk(callbacks_mutex_); copy = video_video_entries_; }
+        for(auto &entry : copy) if(entry.fn) entry.fn(*frame);
+    } else {
+        // Fallback: keep current_time at seek target
+        current_time_us_.store(seek_target_us);
+    }
+}
+
+bool PlaybackController::remove_video_callback(CallbackId id) {
+    if(id==0) return false; std::scoped_lock lk(callbacks_mutex_);
+    auto it = std::remove_if(video_video_entries_.begin(), video_video_entries_.end(), [id](auto &e){return e.id==id;});
+    bool removed = it != video_video_entries_.end();
+    video_video_entries_.erase(it, video_video_entries_.end());
+    return removed;
+}
+bool PlaybackController::remove_audio_callback(CallbackId id) {
+    if(id==0) return false; std::scoped_lock lk(callbacks_mutex_);
+    auto it = std::remove_if(audio_entries_.begin(), audio_entries_.end(), [id](auto &e){return e.id==id;});
+    bool removed = it != audio_entries_.end();
+    audio_entries_.erase(it, audio_entries_.end());
+    return removed;
+}
+bool PlaybackController::remove_state_callback(CallbackId id) {
+    if(id==0) return false; std::scoped_lock lk(callbacks_mutex_);
+    auto it = std::remove_if(state_entries_.begin(), state_entries_.end(), [id](auto &e){return e.id==id;});
+    bool removed = it != state_entries_.end();
+    state_entries_.erase(it, state_entries_.end());
+    return removed;
 }
 
 } // namespace ve::playback

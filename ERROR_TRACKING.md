@@ -19,6 +19,81 @@ Include a Sev tag in the title line, e.g. `– (Sev3)`.
 
 ---
 
+## 2025-08-27 – Video Loads but Playback Frozen at Frame 0 (Sev2)
+**Area**: Playback Controller / Cache / Time Management
+
+### Symptom
+Videos loaded successfully (metadata, first frame displayed) but playback remained frozen at timestamp 0. Play button activation triggered playback thread start, but no frame progression occurred. Users reported "video player load the video and dont play." Extensive debugging logs showed:
+- Playback thread running continuously in Playing state
+- Cache lookups always hitting same timestamp (0 or initial seek position)
+- Decoder never called during playback (only during initial load)
+- `current_time_us_` never advancing from initial value
+
+### Impact
+Core video editor functionality broken; users unable to preview/edit video content. Playback appeared to work (controls responsive) but was effectively useless. Critical blocker for primary application purpose.
+
+### Environment Snapshot
+- OS: Windows 10
+- Build: qt-debug preset (MSVC multi-config)
+- Dependencies: Qt6, FFmpeg via vcpkg, spdlog
+- Tested with MP4 (H.264/YUV420P) content
+
+### Hypotheses Considered
+1. Playback thread not starting – disproven by logs showing thread main loop active
+2. Decoder failing during playback – disproven by successful initial frame decode
+3. Frame delivery to UI broken – disproven by cache hit logs showing frame retrieval
+4. Timing/sleep issues preventing frame advancement – ruled out by examining playback_thread_main loop
+5. Cache always returning same frame due to time not advancing – CONFIRMED as root cause
+6. seek_requested flag incorrectly set preventing normal playback – disproven by logs showing seek_requested=false
+
+### Actions Taken
+| Step | Action | Result |
+|------|--------|--------|
+| 1 | Added extensive debug logging to playback thread main loop | Revealed thread running but time stuck at 0 |
+| 2 | Traced cache lookup mechanism | Found cache always hits for timestamp 0, never advancing |
+| 3 | Analyzed time advancement logic in controller.cpp | Discovered time only advanced on cache MISS, not HIT |
+| 4 | Identified missing time advancement in cache hit path | Cache hits (common case) left current_time_us_ unchanged |
+| 5 | Implemented time advancement fix in cache hit path | Added `current_time_us_.store(next_pts)` after cache hit |
+| 6 | Built and tested fix | Confirmed smooth frame progression through video timeline |
+
+### Root Cause
+**Time advancement missing in cache hit path.** The playback controller's main loop advanced `current_time_us_` only when calling the decoder (cache miss), but not when frames were retrieved from cache (cache hit). Since the cache is efficient and frequently hits, especially after initial buffering, the playback time remained frozen at the initial position, causing the same frame to be requested repeatedly.
+
+**Code location:** `src/playback/src/controller.cpp` in `playback_thread_main()` function around cache lookup logic.
+
+### Resolution
+Added explicit time advancement in the cache hit path:
+
+```cpp
+// Cache hit - frame already available
+spdlog::info("Cache HIT for pts: {}", current_pts);
+frame = cache_result.value();
+
+// CRITICAL FIX: Advance time even on cache hit
+int64_t next_pts = current_pts + target_frame_interval_us;
+current_time_us_.store(next_pts);
+spdlog::info("Advanced time to: {} (cache hit path)", next_pts);
+```
+
+This ensures time progresses regardless of whether frames come from cache or decoder, maintaining consistent playback timing.
+
+### Preventive Guardrails
+- **Time advancement validation:** Any cache or frame retrieval path must advance playback time appropriately
+- **Playback integration tests:** Add automated tests that verify frame timestamp progression during playback
+- **Debug logging framework:** Maintain comprehensive playback timing logs to quickly identify similar time-related issues
+- **Cache behavior documentation:** Document cache hit/miss implications for time management
+- **Code review focus:** Emphasize time management consistency when modifying playback or cache logic
+
+### Verification
+- **Manual testing:** Video loads and plays with smooth frame progression from 0 to 15+ seconds
+- **Log analysis:** Confirmed timestamps advancing correctly: `11533333 → 11566666 → 11600000 → 11633333...`
+- **Frame delivery:** Both cache hits and misses now properly advance time and deliver frames to UI
+- **Performance:** No degradation in playback performance; cache efficiency maintained
+
+**Debug implementation details:** The fix uses the existing `target_frame_interval_us` (33,333 microseconds for 30fps) to calculate the next presentation timestamp, ensuring frame-accurate time progression matching the video's actual frame rate.
+
+---
+
 ## 2025-08-27 – Phantom viewer_panel.cpp 'switch' Syntax Error (Sev3)
 **Area**: UI module (Qt / AUTOMOC / MSVC incremental build)
 
@@ -203,6 +278,7 @@ How we confirmed fix (commands/tests/logs).
 ---
 
 ## Index
+- 2025-08-27 – Video Loads but Playback Frozen at Frame 0
 - 2025-08-27 – Phantom viewer_panel.cpp 'switch' Syntax Error
 - 2025-08-26 – Pixel Format Conversion Spam & Missing Playback Wiring
 - 2025-08-26 – Phantom Catch2 Header / Stale Test Translation Unit

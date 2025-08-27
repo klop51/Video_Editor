@@ -396,15 +396,11 @@ void MainWindow::set_playback_controller(ve::playback::PlaybackController* contr
     
     // Connect playback state changes to timer control
     if (controller) {
-        controller->set_state_callback([this](ve::playback::PlaybackState state) {
+        controller->add_state_callback([this](ve::playback::PlaybackState state) {
             if (state == ve::playback::PlaybackState::Playing) {
-                if (position_update_timer_) {
-                    position_update_timer_->start();
-                }
+                if (position_update_timer_) position_update_timer_->start();
             } else {
-                if (position_update_timer_) {
-                    position_update_timer_->stop();
-                }
+                if (position_update_timer_) position_update_timer_->stop();
             }
         });
     }
@@ -678,8 +674,31 @@ void MainWindow::connect_signals() {
     
     // Connect timeline panel signals
     if (timeline_panel_) {
+        // Debounced seek scheduling to reduce excessive decoder seeks during rapid scrubbing
+        static QTimer* seekDebounceTimer = nullptr; // static ensures single instance tied to lambda lifetime
+        if(!seekDebounceTimer) {
+            seekDebounceTimer = new QTimer(this);
+            seekDebounceTimer->setSingleShot(true);
+        }
+        static int64_t pendingSeekUs = -1;
         connect(timeline_panel_, &TimelinePanel::time_changed,
-                this, &MainWindow::on_playback_time_changed);
+                this, [this](ve::TimePoint tp){
+                    auto r = tp.to_rational();
+                    pendingSeekUs = (r.num * 1000000) / r.den;
+                    if(time_label_) time_label_->setText(QString("Time: %1s").arg(pendingSeekUs/1'000'000.0,0,'f',2));
+                    if(!seekDebounceTimer) return; // safety
+                    // Restart debounce (issue seek after 35ms inactivity)
+                    seekDebounceTimer->stop();
+                    seekDebounceTimer->setInterval(35); // Tune N ms here
+                    seekDebounceTimer->start();
+                });
+        connect(seekDebounceTimer, &QTimer::timeout, this, [this](){
+            if(pendingSeekUs >= 0 && playback_controller_) {
+                bool was_playing = playback_controller_->state() == ve::playback::PlaybackState::Playing;
+                playback_controller_->seek(pendingSeekUs);
+                if(!was_playing) { /* preview decode handled internally */ }
+            }
+        });
         connect(timeline_panel_, &TimelinePanel::clip_added,
                 this, &MainWindow::on_timeline_clip_added);
     }
@@ -780,22 +799,23 @@ void MainWindow::new_project() {
             timeline_panel_->set_timeline(timeline_);
         }
         
-        // Initialize playback controller with timeline
+        // Initialize or reset playback controller
         if (!playback_controller_) {
             playback_controller_ = new ve::playback::PlaybackController();
-            // Attach controller to viewer so playback controls enable and frames route
             set_playback_controller(playback_controller_);
+        } else {
+            playback_controller_->set_video_callback(nullptr);
+            playback_controller_->clear_state_callbacks();
+            set_playback_controller(playback_controller_); // rewire callbacks
         }
-        
+
         // Update UI state
         project_modified_ = false;
         setWindowTitle("Video Editor - New Project");
         
-        // Update status bar with helpful message
         status_label_->setText("New project created. Use File → Import Media to add content.");
         status_label_->setStyleSheet("color: green;");
         
-        // Show a helpful message to the user
         QMessageBox::information(this, "New Project Created", 
             "New project created successfully!\n\n"
             "Next steps:\n"
@@ -968,60 +988,27 @@ void MainWindow::stop() {
 
 void MainWindow::step_forward() {
     if (!playback_controller_) return;
-
-    // pause so stepping is deterministic
     playback_controller_->pause();
-
-    // compute a single-frame step
-    qint64 frame_us = 33'333;
-    if (timeline_) frame_us = frame_us_from_fps(timeline_->frame_rate());
-
-    // read current time (prefer microseconds if your controller has it)
-    qint64 cur_us = 0;
-    if constexpr (true) { // replace with your actual API
-        cur_us = playback_controller_->current_time_us();    // if you have this
-    }
-    // else: cur_us = td_to_us(playback_controller_->current_time());
-
-    // clamp to timeline duration
-    const qint64 dur_us = timeline_duration_us(timeline_);
-    qint64 tgt = cur_us + frame_us;
-    if (dur_us > 0 && tgt > dur_us) tgt = dur_us;
-
+    qint64 frame_us = playback_controller_->frame_duration_guess_us();
+    qint64 cur_us = playback_controller_->current_time_us();
+    qint64 dur_us = timeline_duration_us(timeline_);
+    qint64 tgt = cur_us + frame_us; if(dur_us>0 && tgt>dur_us) tgt = dur_us;
     playback_controller_->seek(tgt);
-
-    // snap UI immediately
-    if (timeline_panel_) {
-        timeline_panel_->set_current_time(us_to_tp(tgt));
-        timeline_panel_->update();
-    }
+    playback_controller_->step_once(); // decode one frame
+    if (timeline_panel_) { timeline_panel_->set_current_time(us_to_tp(tgt)); timeline_panel_->update(); }
     if (time_label_) time_label_->setText(QString("Time: %1s").arg(tgt / 1'000'000.0, 0, 'f', 2));
 }
 
 
 void MainWindow::step_backward() {
     if (!playback_controller_) return;
-
     playback_controller_->pause();
-
-    qint64 frame_us = 33'333;
-    if (timeline_) frame_us = frame_us_from_fps(timeline_->frame_rate());
-
-    qint64 cur_us = 0;
-    if constexpr (true) {
-        cur_us = playback_controller_->current_time_us();
-    }
-    // else: cur_us = td_to_us(playback_controller_->current_time());
-
-    qint64 tgt = cur_us - frame_us;
-    if (tgt < 0) tgt = 0;
-
+    qint64 frame_us = playback_controller_->frame_duration_guess_us();
+    qint64 cur_us = playback_controller_->current_time_us();
+    qint64 tgt = cur_us - frame_us; if(tgt < 0) tgt = 0;
     playback_controller_->seek(tgt);
-
-    if (timeline_panel_) {
-        timeline_panel_->set_current_time(us_to_tp(tgt));
-        timeline_panel_->update();
-    }
+    playback_controller_->step_once();
+    if (timeline_panel_) { timeline_panel_->set_current_time(us_to_tp(tgt)); timeline_panel_->update(); }
     if (time_label_) time_label_->setText(QString("Time: %1s").arg(tgt / 1'000'000.0, 0, 'f', 2));
 }
 

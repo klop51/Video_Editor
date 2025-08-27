@@ -7,9 +7,10 @@
 #include <thread>
 #include <atomic>
 #include <memory>
+#include <vector>
+#include <mutex>
 #include "cache/frame_cache.hpp"
-// Forward declaration to avoid heavy include
-namespace ve { namespace timeline { class Timeline; } }
+#include "timeline/timeline.hpp" // Need snapshot definition for timeline-based FPS
 
 namespace ve::playback {
 
@@ -20,6 +21,7 @@ public:
     using VideoFrameCallback = std::function<void(const decode::VideoFrame&)>;
     using AudioFrameCallback = std::function<void(const decode::AudioFrame&)>;
     using StateChangeCallback = std::function<void(PlaybackState)>;
+    using CallbackId = uint64_t;
 
     PlaybackController();
     ~PlaybackController();
@@ -32,14 +34,27 @@ public:
     void pause();
     void stop();
     bool seek(int64_t timestamp_us);
+    // Decode exactly one frame at the current (post-seek) position then pause again
+    void step_once();
 
     PlaybackState state() const { return state_.load(); }
     int64_t current_time_us() const { return current_time_us_.load(); }
     int64_t duration_us() const { return duration_us_; }
+    // Approximate microseconds per frame (from probed fps or stats)
+    int64_t frame_duration_guess_us() const;
 
-    void set_video_callback(VideoFrameCallback callback) { video_callback_ = std::move(callback); }
-    void set_audio_callback(AudioFrameCallback callback) { audio_callback_ = std::move(callback); }
-    void set_state_callback(StateChangeCallback callback) { state_callback_ = std::move(callback); }
+    // Legacy single-listener setters (clears previous list)
+    void set_video_callback(VideoFrameCallback callback) { std::scoped_lock lk(callbacks_mutex_); video_video_entries_.clear(); if(callback) video_video_entries_.push_back({next_callback_id_++, std::move(callback)}); }
+    void set_audio_callback(AudioFrameCallback callback) { std::scoped_lock lk(callbacks_mutex_); audio_entries_.clear(); if(callback) audio_entries_.push_back({next_callback_id_++, std::move(callback)}); }
+    void set_state_callback(StateChangeCallback callback) { std::scoped_lock lk(callbacks_mutex_); state_entries_.clear(); if(callback) state_entries_.push_back({next_callback_id_++, std::move(callback)}); }
+    // New multi-listener add/remove APIs (return handle id)
+    CallbackId add_video_callback(VideoFrameCallback callback) { if(!callback) return 0; std::scoped_lock lk(callbacks_mutex_); CallbackId id = next_callback_id_++; video_video_entries_.push_back({id,std::move(callback)}); return id; }
+    CallbackId add_audio_callback(AudioFrameCallback callback) { if(!callback) return 0; std::scoped_lock lk(callbacks_mutex_); CallbackId id = next_callback_id_++; audio_entries_.push_back({id,std::move(callback)}); return id; }
+    CallbackId add_state_callback(StateChangeCallback callback) { if(!callback) return 0; std::scoped_lock lk(callbacks_mutex_); CallbackId id = next_callback_id_++; state_entries_.push_back({id,std::move(callback)}); return id; }
+    bool remove_video_callback(CallbackId id);
+    bool remove_audio_callback(CallbackId id);
+    bool remove_state_callback(CallbackId id);
+    void clear_state_callbacks() { std::scoped_lock lk(callbacks_mutex_); state_entries_.clear(); }
     // Attach a timeline for snapshot-based playback (read-only consumption)
     void set_timeline(ve::timeline::Timeline* tl) { timeline_ = tl; }
 
@@ -51,6 +66,7 @@ private:
     void playback_thread_main();
     void set_state(PlaybackState new_state);
     void update_frame_stats(double frame_time_ms);
+    void decode_one_frame_if_paused(int64_t seek_target_us);
 
     std::unique_ptr<decode::IDecoder> decoder_;
     // Simple frame cache (CPU) for recently decoded frames
@@ -61,10 +77,17 @@ private:
     std::atomic<int64_t> current_time_us_{0};
     std::atomic<bool> seek_requested_{false};
     std::atomic<int64_t> seek_target_us_{0};
+    std::atomic<bool> single_step_{false};
     int64_t duration_us_ = 0;
-    VideoFrameCallback video_callback_;
-    AudioFrameCallback audio_callback_;
-    StateChangeCallback state_callback_;
+    double probed_fps_ = 0.0; // derived from probe if available
+    struct CallbackEntryBase { CallbackId id; };
+    template<typename Fn>
+    struct CallbackEntry : CallbackEntryBase { Fn fn; };
+    std::vector<CallbackEntry<VideoFrameCallback>> video_video_entries_;
+    std::vector<CallbackEntry<AudioFrameCallback>> audio_entries_;
+    std::vector<CallbackEntry<StateChangeCallback>> state_entries_;
+    mutable std::mutex callbacks_mutex_;
+    std::atomic<CallbackId> next_callback_id_{1};
     mutable Stats stats_;
     std::atomic<int64_t> frame_count_{0};
     std::atomic<double> total_frame_time_ms_{0.0};
@@ -74,7 +97,7 @@ private:
     ve::timeline::Timeline* timeline_ = nullptr; // non-owning
     uint64_t observed_timeline_version_ = 0;
     // We keep a lightweight shared_ptr to immutable snapshot; structure defined in timeline
-    std::shared_ptr<void> timeline_snapshot_; // intentionally opaque here to avoid including timeline header
+    std::shared_ptr<ve::timeline::Timeline::Snapshot> timeline_snapshot_;
 };
 
 } // namespace ve::playback

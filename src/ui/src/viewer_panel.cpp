@@ -19,6 +19,10 @@
 #include <QFileInfo>
 #include <algorithm>
 #include <QMetaObject>
+#include <QDir>
+#include <cstdlib>
+#include <fstream>
+#include <QMetaObject>
 
 namespace ve::ui {
 
@@ -39,20 +43,13 @@ void ViewerPanel::set_playback_controller(ve::playback::PlaybackController* cont
     
     if (controller) {
         // Thread-safe frame delivery: marshal to GUI thread (Qt requires widget updates on main thread)
-        controller->set_video_callback([this](const ve::decode::VideoFrame& frame) {
-            // Copy frame metadata + buffer (shallow copy ok if data uses value semantics)
+        controller->add_video_callback([this](const ve::decode::VideoFrame& frame) {
             ve::decode::VideoFrame frame_copy = frame;
-            QMetaObject::invokeMethod(this, [this, frame_copy]() {
-                display_frame(frame_copy);
-            }, Qt::QueuedConnection);
+            QMetaObject::invokeMethod(this, [this, frame_copy]() { display_frame(frame_copy); }, Qt::QueuedConnection);
         });
-
-        // Connect state changes to update playback controls (also on GUI thread)
-        controller->set_state_callback([this](ve::playback::PlaybackState state) {
+        controller->add_state_callback([this](ve::playback::PlaybackState state) {
             QMetaObject::invokeMethod(this, [this, state]() {
-                if (play_pause_button_) {
-                    play_pause_button_->setText(state == ve::playback::PlaybackState::Playing ? "Pause" : "Play");
-                }
+                if (play_pause_button_) play_pause_button_->setText(state == ve::playback::PlaybackState::Playing ? "Pause" : "Play");
                 update_playback_controls();
             }, Qt::QueuedConnection);
         });
@@ -64,6 +61,31 @@ void ViewerPanel::set_playback_controller(ve::playback::PlaybackController* cont
 void ViewerPanel::display_frame(const ve::decode::VideoFrame& frame) {
     current_frame_ = frame;
     has_frame_ = true;
+
+    // Optional frame dump (RGBA) for debugging conversion path
+    static int dumped = 0;
+    static const bool dump_enabled = qEnvironmentVariableIsSet("VE_DUMP_FRAMES");
+    if (dump_enabled && dumped < 5) {
+        auto rgba_opt = ve::decode::to_rgba(frame);
+        if (rgba_opt) {
+            const auto& rf = *rgba_opt;
+            QDir().mkpath("frame_dumps");
+            std::string fname = "frame_dumps/frame_" + std::to_string(rf.pts) + "_" + std::to_string(dumped) + ".ppm";
+            std::ofstream ofs(fname, std::ios::binary);
+            if (ofs) {
+                ofs << "P6\n" << rf.width << " " << rf.height << "\n255\n";
+                const uint8_t* data = rf.data.data();
+                size_t pixels = static_cast<size_t>(rf.width) * rf.height;
+                for (size_t i = 0; i < pixels; ++i) {
+                    ofs.put(static_cast<char>(data[i*4 + 0])); // R
+                    ofs.put(static_cast<char>(data[i*4 + 1])); // G
+                    ofs.put(static_cast<char>(data[i*4 + 2])); // B
+                }
+                ve::log::info("Dumped frame to " + fname);
+                ++dumped;
+            }
+        }
+    }
     update_frame_display();
 }
 
@@ -299,21 +321,23 @@ void ViewerPanel::on_position_slider_changed(int value) {
 
 void ViewerPanel::on_step_forward_clicked() {
     if (!playback_controller_) return;
-    
-    // Step forward by one frame (assuming 30fps for now)
-    int64_t current_time = playback_controller_->current_time_us();
-    int64_t frame_duration = 1000000 / 30; // 30fps
-    emit seek_requested(current_time + frame_duration);
+    // Derive approximate frame duration (fallback 30fps)
+    int64_t frame_duration = 1000000 / 30;
+    int64_t cur = playback_controller_->current_time_us();
+    int64_t tgt = cur + frame_duration;
+    if (playback_controller_->duration_us() > 0 && tgt > playback_controller_->duration_us())
+        tgt = playback_controller_->duration_us();
+    playback_controller_->seek(tgt);
+    playback_controller_->step_once();
 }
 
 void ViewerPanel::on_step_backward_clicked() {
     if (!playback_controller_) return;
-    
-    // Step backward by one frame (assuming 30fps for now)
-    int64_t current_time = playback_controller_->current_time_us();
-    int64_t frame_duration = 1000000 / 30; // 30fps
-    int64_t new_time = std::max(0LL, current_time - frame_duration);
-    emit seek_requested(new_time);
+    int64_t frame_duration = 1000000 / 30;
+    int64_t cur = playback_controller_->current_time_us();
+    int64_t tgt = cur - frame_duration; if (tgt < 0) tgt = 0;
+    playback_controller_->seek(tgt);
+    playback_controller_->step_once();
 }
 
 bool ViewerPanel::load_media(const QString& filePath) {
