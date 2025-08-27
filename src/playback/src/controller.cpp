@@ -204,6 +204,12 @@ void PlaybackController::playback_thread_main() {
                     
                     // IMPORTANT: Advance time for next frame even when cache hits
                     int64_t next_pts = current_pts + target_frame_interval_us;
+                    if (duration_us_ > 0 && next_pts >= duration_us_) {
+                        current_time_us_.store(duration_us_);
+                        set_state(ve::playback::PlaybackState::Stopped);   // notify UI we're done
+                        ve::log::info("Reached end of stream at: " + std::to_string(duration_us_) + " us (cache hit path) — stopping");
+                        continue; // exit playback loop cleanly
+                    }
                     current_time_us_.store(next_pts);
                     ve::log::info("Advanced time to: " + std::to_string(next_pts) + " (cache hit path)");
                     
