@@ -8,6 +8,23 @@ option(ENABLE_QT_TOOLS "Build Qt preview tools" ON)
 option(ENABLE_TESTS "Build tests" ON)
 option(ENABLE_FFMPEG "Enable FFmpeg integration" ON)
 option(ENABLE_COVERAGE "Enable code coverage instrumentation (GCC/Clang, non-Windows)" OFF)
+option(ENABLE_RUNTIME_DEBUG "Enable verbose runtime debug checks" OFF)
+
+# Configure debug settings globally
+if(ENABLE_RUNTIME_DEBUG)
+  add_compile_definitions(
+    VE_RUNTIME_DEBUG=1
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_DEBUG  # compile in debug logs
+  )
+  message(STATUS "Runtime debug enabled: verbose logging and debug checks active")
+else()
+  add_compile_definitions(
+    VE_RUNTIME_DEBUG=0
+    SPDLOG_ACTIVE_LEVEL=SPDLOG_LEVEL_INFO   # compile OUT debug/trace logs
+    QT_NO_DEBUG_OUTPUT                       # strips qDebug() calls
+  )
+  message(STATUS "Runtime debug disabled: debug logs compiled out for performance")
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
