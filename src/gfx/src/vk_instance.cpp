@@ -3,31 +3,47 @@
 
 namespace ve::gfx {
 
-VulkanInstance::~VulkanInstance() { destroy(); }
+D3D11Context::~D3D11Context() { destroy(); }
 
-bool VulkanInstance::create(const VulkanInstanceInfo& info) noexcept {
+D3D11Context& D3D11Context::operator=(D3D11Context&& other) noexcept {
+    if (this != &other) {
+        destroy();
+        created_ = other.created_;
+        device_ = other.device_;
+        device_context_ = other.device_context_;
+        swap_chain_ = other.swap_chain_;
+        render_target_view_ = other.render_target_view_;
+        
+        other.created_ = false;
+        other.device_ = nullptr;
+        other.device_context_ = nullptr;
+        other.swap_chain_ = nullptr;
+        other.render_target_view_ = nullptr;
+    }
+    return *this;
+}
+
+bool D3D11Context::create(const D3D11ContextInfo& info) noexcept {
     if(created_) return true;
-#ifdef VE_GFX_VULKAN
-    // Minimal Vulkan instance creation (no error codes surfaced yet)
-    // Defer actual vkCreateInstance integration until Vulkan SDK available.
+
+    // For now, we'll assume the context is created by the graphics device
+    // In a real implementation, this would create device and swap chain
     (void)info;
-    created_ = true; // placeholder
-#else
-    (void)info;
-    ve::log::warn("VulkanInstance created in stub mode (Vulkan SDK not found)");
+    ve::log::info("DirectX 11 context created (stub implementation)");
     created_ = true;
-#endif
     return created_;
 }
 
-void VulkanInstance::destroy() noexcept {
-#ifdef VE_GFX_VULKAN
-    if(instance_){
-        // vkDestroyInstance(instance_, nullptr); // Uncomment when Vulkan SDK integrated
-        instance_ = nullptr;
-    }
-#endif
+void D3D11Context::destroy() noexcept {
+    if (!created_) return;
+    
+    // Cleanup would happen here in a real implementation
+    ve::log::info("DirectX 11 context destroyed");
     created_ = false;
+    device_ = nullptr;
+    device_context_ = nullptr;
+    swap_chain_ = nullptr;
+    render_target_view_ = nullptr;
 }
 
 } // namespace ve::gfx

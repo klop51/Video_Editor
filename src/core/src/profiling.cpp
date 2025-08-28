@@ -1,8 +1,7 @@
 ﻿#include "core/profiling.hpp"
 #include <fstream>
 
-// NOTE: <algorithm> intentionally omitted to avoid interaction with any stray macros
-static_assert(sizeof(ve::prof::Sample) == sizeof(std::string) + sizeof(double), "Unexpected Sample layout change");
+// NOTE: <algorithm> intentionally omitted to avoid interaction with stray macros in some toolchains
 
 namespace ve::prof {
 

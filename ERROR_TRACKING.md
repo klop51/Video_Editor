@@ -19,6 +19,100 @@ Include a Sev tag in the title line, e.g. `– (Sev3)`.
 
 ---
 
+## 2025-08-28 – MSVC OpenGL Header Conflicts Blocking GPU Rendering (Sev2)
+**Area**: Graphics / Build System (MSVC + OpenGL)
+
+### Symptom
+Persistent compilation failures in `vk_device.cpp` with hundreds of errors related to missing C++ standard library symbols when OpenGL headers are included. Errors include:
+- `error C2061: syntax error: identifier 'streampos'` (and similar for `streamoff`, `strong_ordering`)
+- `error C3861: 'is_same_v': identifier not found` (and similar for other C++17 type traits)
+- `error C2039: 'fabs': not a member of 'global namespace'` (and similar for C standard library functions)
+- Build succeeds for other modules but fails specifically when compiling OpenGL-dependent code
+
+### Impact
+Blocks Phase 2 GPU rendering implementation; prevents completion of OpenGL-based graphics device, shader pipeline, and render graph. Core video editor GPU acceleration features cannot be developed or tested. Significant productivity blocker for graphics subsystem development.
+
+### Environment Snapshot
+- Date observed: 2025-08-28
+- OS: Windows 10
+- Toolchain: MSVC 14.44.35207 (VS 2022) via CMake multi-config
+- Build preset: qt-debug
+- OpenGL: System OpenGL via Qt6 (no dedicated OpenGL SDK)
+- C++ Standard: Initially C++20, attempted C++17 fallback
+- Dependencies: Qt6, OpenGL system headers
+
+### Hypotheses Considered
+1. Incorrect include order causing macro conflicts – attempted fixes with `NOMINMAX`, `WIN32_LEAN_AND_MEAN`, isolated header files
+2. C++20 standard library incompatibility with OpenGL headers – attempted C++17 downgrade
+3. Missing OpenGL extension definitions – attempted fixed-function pipeline instead of GLSL shaders
+4. PIMPL pattern implementation issues – attempted manual memory management to avoid standard library
+5. MSVC-specific OpenGL header compatibility issues – CONFIRMED as root cause (known ecosystem problem)
+
+### Actions Taken
+| Step | Action | Result |
+|------|--------|--------|
+| 1 | Added `NOMINMAX` and `WIN32_LEAN_AND_MEAN` defines before Windows headers | Reduced some conflicts but core issues persisted |
+| 2 | Created isolated `opengl_headers.hpp` to separate OpenGL includes | Header isolation successful but conflicts remained |
+| 3 | Downgraded to C++17 standard for graphics module | Some improvements but fundamental conflicts persisted |
+| 4 | Replaced `std::unique_ptr` with manual memory management | Eliminated memory library conflicts but C standard library issues remained |
+| 5 | Attempted to remove all standard library includes from OpenGL files | Still triggered conflicts through transitive includes |
+| 6 | **2025-08-28:** Converted from OpenGL to DirectX 11 implementation | Same MSVC namespace conflicts persisted |
+| 7 | **2025-08-28:** Created minimal stub implementation outside `ve::gfx` namespace | Still 100+ MSVC operator new/delete conflicts |
+| 8 | **2025-08-28:** Removed all standard library containers, used basic types only | Issue persists - fundamental namespace problem confirmed |
+
+### Root Cause
+**ESCALATED: Fundamental MSVC + ve::gfx Namespace Conflict** 
+
+**Updated Analysis (2025-08-28):** The issue is not specific to OpenGL headers but appears to be a fundamental conflict between the `ve::gfx` namespace and MSVC's implementation of operator new/delete and standard library functions. Even minimal stub implementations trigger identical conflicts:
+
+- `error C2323: 've::gfx::operator new': as funções de exclusão ou novas de um operador não membro podem não ser declaradas estáticas ou em um namespace diferente do namespace global`
+- `error C2039: 'nothrow_t': não é um membro de 'std'`
+- `error C2873: 'div_t': símbolo não pode ser usado em uma declaração de using`
+
+**Key Finding:** The `ve::gfx` namespace itself appears to conflict with MSVC's implementation, causing the compiler to misinterpret standard library symbols as user-defined operators in the graphics namespace. This suggests either:
+1. A macro or preprocessor issue specific to the `ve::gfx` namespace name
+2. A deeper MSVC template instantiation or ADL (Argument-Dependent Lookup) conflict
+3. Some header pollution that specifically affects namespaces containing "gfx"
+
+This is beyond typical MSVC + graphics API compatibility issues and requires specialized MSVC namespace debugging expertise.
+
+### Resolution
+**Status: ESCALATED TO EXTERNAL CONSULTATION**
+
+**Latest Attempt (2025-08-28):**
+- Created minimal DirectX 11 stub implementation moving all code outside `ve::gfx` namespace
+- Replaced all standard library containers with simple types (no `std::unique_ptr`, `std::unordered_map`)
+- **Result:** Same 100+ MSVC namespace conflicts persist even with minimal stub code
+
+**Current Assessment:** This is a fundamental MSVC build environment issue where the `ve::gfx` namespace itself conflicts with MSVC's operator new/delete and standard library implementation. The issue persists regardless of graphics API choice (OpenGL, DirectX 11) or implementation complexity (full API vs minimal stubs).
+
+**Next Action:** ChatGPT consultation requested to explore alternative solutions, as conventional approaches have been exhausted.
+
+**Options Still Available:**
+1. **Switch to DirectX 11** - Native Windows graphics API with better MSVC support (blocked by namespace issue)
+2. **Install Vulkan SDK** - Modern graphics API with proper Windows support (likely blocked by same issue)
+3. **Use MinGW-w64** - GCC-based toolchain with better OpenGL compatibility
+4. **Namespace restructuring** - Complete redesign of graphics module namespace architecture
+5. **Software rendering fallback** - CPU-based rendering for initial development
+
+### Preventive Guardrails
+- **Graphics API selection criteria:** Evaluate MSVC compatibility as primary factor for Windows graphics APIs
+- **Build system documentation:** Document known MSVC + OpenGL conflicts for future contributors
+- **Alternative toolchain support:** Consider MinGW-w64 as secondary Windows build option
+- **API abstraction:** Ensure graphics device interface allows easy API switching (already implemented)
+- **Fallback rendering:** Implement software rendering path for development/testing when GPU APIs fail
+
+### Verification
+- **Current state:** Any compilation within `ve::gfx` namespace consistently fails with 100+ MSVC operator/stdlib conflicts
+- **API-independent:** Issue persists with OpenGL, DirectX 11, or minimal stub implementations  
+- **Architecture intact:** Graphics device abstraction, render graph, and shader framework designed correctly
+- **Namespace-specific:** Problem appears isolated to `ve::gfx` namespace interaction with MSVC
+- **Escalation needed:** Conventional solutions exhausted; requires specialized MSVC namespace debugging
+
+**Recommendation:** Consult external expertise (ChatGPT/MSVC specialists) for namespace conflict resolution before attempting alternative approaches like toolchain changes or complete architecture redesign.
+
+---
+
 ## 2025-08-27 – Video Loads but Playback Frozen at Frame 0 (Sev2)
 **Area**: Playback Controller / Cache / Time Management
 
@@ -278,6 +372,7 @@ How we confirmed fix (commands/tests/logs).
 ---
 
 ## Index
+- 2025-08-28 – MSVC OpenGL Header Conflicts Blocking GPU Rendering
 - 2025-08-27 – Video Loads but Playback Frozen at Frame 0
 - 2025-08-27 – Phantom viewer_panel.cpp 'switch' Syntax Error
 - 2025-08-26 – Pixel Format Conversion Spam & Missing Playback Wiring

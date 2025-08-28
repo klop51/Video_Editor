@@ -3,6 +3,14 @@
 #include <string>
 #include <cstdint>
 
+namespace ve::decode {
+    struct VideoFrame;
+}
+
+namespace ve::gfx {
+    class GraphicsDevice;
+}
+
 namespace ve::render {
 
 // Minimal placeholder node interface; will evolve.
@@ -24,7 +32,35 @@ struct FrameResult {
 class RenderGraph {
 public:
     RenderGraph() = default;
-    FrameResult render(const FrameRequest& req);
+    virtual ~RenderGraph() = default;
+    virtual FrameResult render(const FrameRequest& req);
+    virtual void set_viewport(int width, int height) { (void)width; (void)height; }
+    virtual void set_brightness(float brightness) { (void)brightness; }
 };
+
+// GPU-enabled render graph
+class GpuRenderGraph : public RenderGraph {
+public:
+    GpuRenderGraph() = default;
+    ~GpuRenderGraph() = default;
+    bool initialize(std::shared_ptr<ve::gfx::GraphicsDevice> device);
+    FrameResult render(const FrameRequest& req) override;
+
+    // Set the current frame to render
+    void set_current_frame(const ve::decode::VideoFrame& frame);
+
+    // Set viewport dimensions
+    void set_viewport(int width, int height);
+
+    // Set effect parameters
+    void set_brightness(float brightness);
+
+private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
+
+// Factory function to create GPU-enabled render graph
+std::unique_ptr<RenderGraph> create_gpu_render_graph(std::shared_ptr<ve::gfx::GraphicsDevice> device);
 
 } // namespace ve::render

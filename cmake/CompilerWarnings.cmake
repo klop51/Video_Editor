@@ -1,6 +1,8 @@
 # Centralized compiler warnings configuration
 function(setup_project_warnings)
     if(MSVC)
+        # Enable C++ exception handling (required for standard library usage)
+        add_compile_options(/EHsc)
         # High warning level
         add_compile_options(/W4 /permissive-)
         # Stricter conformance checks (MSVC specific)

@@ -28,6 +28,41 @@ for %%I in ("%VIDEO_EDITOR_PATH%") do set "VIDEO_EDITOR_DIR=%%~dpI"
 REM Prepend vcpkg bins (debug first)
 set "PATH=%ROOT%vcpkg_installed\x64-windows\debug\bin;%ROOT%vcpkg_installed\x64-windows\bin;%PATH%"
 
+REM Ensure Windows SDK tools (rc.exe, mt.exe) are available on PATH for builds
+where rc.exe >nul 2>&1
+if errorlevel 1 (
+    echo Searching for Windows SDK rc.exe...
+    set "_WSDK_RC_DIR="
+    for /R "C:\Program Files (x86)\Windows Kits\10\bin" %%F in (rc.exe) do (
+        set "_WSDK_RC_DIR=%%~dpF"
+        goto :wsdk_found_rc
+    )
+    :wsdk_found_rc
+    if defined _WSDK_RC_DIR (
+        echo Adding Windows SDK bin to PATH: %_WSDK_RC_DIR%
+        set "PATH=%_WSDK_RC_DIR%;%PATH%"
+    ) else (
+        echo WARNING: Windows SDK rc.exe not found. Install Windows 10/11 SDK.
+    )
+)
+
+where mt.exe >nul 2>&1
+if errorlevel 1 (
+    echo Searching for Windows SDK mt.exe...
+    set "_WSDK_MT_DIR="
+    for /R "C:\Program Files (x86)\Windows Kits\10\bin" %%F in (mt.exe) do (
+        set "_WSDK_MT_DIR=%%~dpF"
+        goto :wsdk_found_mt
+    )
+    :wsdk_found_mt
+    if defined _WSDK_MT_DIR (
+        echo Adding Windows SDK bin to PATH: %_WSDK_MT_DIR%
+        set "PATH=%_WSDK_MT_DIR%;%PATH%"
+    ) else (
+        echo WARNING: Windows SDK mt.exe not found. Install Windows 10/11 SDK.
+    )
+)
+
 REM Simple Qt DLL presence note without nested blocks
 if exist "%VIDEO_EDITOR_DIR%Qt6Cored.dll" echo Found Qt debug DLLs beside executable.
 if not exist "%VIDEO_EDITOR_DIR%Qt6Cored.dll" if exist "%VIDEO_EDITOR_DIR%Qt6Core.dll" echo Found Qt release DLLs beside executable.

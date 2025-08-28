@@ -1,4 +1,5 @@
 #pragma once
+#include <string>
 
 // Central logging configuration / helper macros.
 // Define VE_TIMELINE_DEBUG or VE_UI_DEBUG (e.g. via compiler flags) to enable verbose logs.
