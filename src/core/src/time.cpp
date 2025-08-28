@@ -7,10 +7,8 @@
 namespace ve {
 
 TimeRational make_time(int64_t num, int32_t den) noexcept {
-    if(den <= 0) den = 1;
-    // Normalize sign to numerator only
-    if(den < 0) { den = -den; num = -num; }
-    return TimeRational{num, den};
+    if(den == 0) den = 1;
+    return normalize(TimeRational{num, den});
 }
 
 Ticks to_ticks(const TimeRational& t) noexcept {
