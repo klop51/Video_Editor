@@ -222,9 +222,167 @@ namespace {
     }
 }
 
-std::optional<VideoFrame> to_rgba(const VideoFrame& src) noexcept {
-    if(src.format == PixelFormat::RGBA32) return src; // already RGBA
-    
+// FFmpeg swscale fast path (guarded)
+#if VE_HAVE_FFMPEG
+extern "C" {
+#include <libswscale/swscale.h>
+#include <libavutil/pixfmt.h>
+}
+
+static AVPixelFormat to_avpf(PixelFormat pf) {
+    switch(pf) {
+        case PixelFormat::RGB24:   return AV_PIX_FMT_RGB24;
+        case PixelFormat::RGBA32:  return AV_PIX_FMT_RGBA;
+        case PixelFormat::BGR24:   return AV_PIX_FMT_BGR24;
+        case PixelFormat::BGRA32:  return AV_PIX_FMT_BGRA;
+        case PixelFormat::YUV420P: return AV_PIX_FMT_YUV420P;
+        case PixelFormat::YUV422P: return AV_PIX_FMT_YUV422P;
+        case PixelFormat::YUV444P: return AV_PIX_FMT_YUV444P;
+        case PixelFormat::NV12:    return AV_PIX_FMT_NV12;
+        case PixelFormat::NV21:    return AV_PIX_FMT_NV21;
+        case PixelFormat::YUYV422: return AV_PIX_FMT_YUYV422;
+        case PixelFormat::UYVY422: return AV_PIX_FMT_UYVY422;
+        case PixelFormat::GRAY8:   return AV_PIX_FMT_GRAY8;
+        case PixelFormat::P010LE:  return AV_PIX_FMT_P010LE;
+        default: return AV_PIX_FMT_NONE;
+    }
+}
+
+static bool fill_src_planes(const VideoFrame& src, AVPixelFormat avpf,
+                            uint8_t* data[4], int linesize[4]) {
+    const int w = src.width;
+    const int h = src.height;
+    const uint8_t* base = src.data.data();
+    memset(data, 0, sizeof(uint8_t*)*4);
+    memset(linesize, 0, sizeof(int)*4);
+
+    switch(avpf) {
+        case AV_PIX_FMT_YUV420P: {
+            const int y_size = w * h;
+            const int c_w = (w+1)/2, c_h = (h+1)/2;
+            const int c_size = c_w * c_h;
+            data[0] = const_cast<uint8_t*>(base);
+            data[1] = const_cast<uint8_t*>(base + y_size);
+            data[2] = const_cast<uint8_t*>(base + y_size + c_size);
+            linesize[0] = w;
+            linesize[1] = c_w;
+            linesize[2] = c_w;
+            return true;
+        }
+        case AV_PIX_FMT_YUV422P: {
+            const int y_size = w*h;
+            const int c_w = (w+1)/2, c_h = h;
+            const int u_size = c_w * c_h;
+            data[0] = const_cast<uint8_t*>(base);
+            data[1] = const_cast<uint8_t*>(base + y_size);
+            data[2] = const_cast<uint8_t*>(base + y_size + u_size);
+            linesize[0] = w; linesize[1] = c_w; linesize[2] = c_w;
+            return true;
+        }
+        case AV_PIX_FMT_YUV444P: {
+            const int y_size = w*h;
+            const int c_size = y_size;
+            data[0] = const_cast<uint8_t*>(base);
+            data[1] = const_cast<uint8_t*>(base + y_size);
+            data[2] = const_cast<uint8_t*>(base + y_size + c_size);
+            linesize[0] = w; linesize[1] = w; linesize[2] = w;
+            return true;
+        }
+        case AV_PIX_FMT_NV12:
+        case AV_PIX_FMT_NV21: {
+            const int y_size = w*h;
+            data[0] = const_cast<uint8_t*>(base);
+            data[1] = const_cast<uint8_t*>(base + y_size);
+            linesize[0] = w; linesize[1] = w;
+            return true;
+        }
+        case AV_PIX_FMT_YUYV422:
+        case AV_PIX_FMT_UYVY422: {
+            data[0] = const_cast<uint8_t*>(base);
+            linesize[0] = w * 2;
+            return true;
+        }
+        case AV_PIX_FMT_RGB24:
+        case AV_PIX_FMT_BGR24: {
+            data[0] = const_cast<uint8_t*>(base);
+            linesize[0] = w * 3;
+            return true;
+        }
+        case AV_PIX_FMT_BGRA:
+        case AV_PIX_FMT_RGBA: {
+            data[0] = const_cast<uint8_t*>(base);
+            linesize[0] = w * 4;
+            return true;
+        }
+        case AV_PIX_FMT_GRAY8: {
+            data[0] = const_cast<uint8_t*>(base);
+            linesize[0] = w;
+            return true;
+        }
+        case AV_PIX_FMT_P010LE: {
+            data[0] = const_cast<uint8_t*>(base);
+            linesize[0] = w * 2;
+            // second plane interleaved UV 10-bit
+            const int y_bytes = w * 2 * h;
+            data[1] = const_cast<uint8_t*>(base + y_bytes);
+            linesize[1] = w * 2;
+            return true;
+        }
+        default:
+            return false;
+    }
+}
+
+static std::optional<VideoFrame> to_rgba_scaled_ffmpeg(const VideoFrame& src, int target_w, int target_h) noexcept {
+    if (src.data.empty() || src.width <= 0 || src.height <= 0) return std::nullopt;
+    if (target_w <= 0) target_w = src.width;
+    if (target_h <= 0) target_h = src.height;
+
+    const AVPixelFormat src_fmt = to_avpf(src.format);
+    if (src_fmt == AV_PIX_FMT_NONE) return std::nullopt;
+
+    SwsContext* ctx = sws_getContext(src.width, src.height, src_fmt,
+                                     target_w, target_h, AV_PIX_FMT_RGBA,
+                                     SWS_BILINEAR, nullptr, nullptr, nullptr);
+    if (!ctx) return std::nullopt;
+
+    uint8_t* src_data[4];
+    int src_linesize[4];
+    if (!fill_src_planes(src, src_fmt, src_data, src_linesize)) {
+        sws_freeContext(ctx);
+        return std::nullopt;
+    }
+
+    VideoFrame out;
+    out.width = target_w;
+    out.height = target_h;
+    out.pts = src.pts;
+    out.format = PixelFormat::RGBA32;
+    out.color_space = src.color_space;
+    out.color_range = src.color_range;
+    out.data.resize(static_cast<size_t>(target_w) * target_h * 4);
+
+    uint8_t* dst_data[4] = { out.data.data(), nullptr, nullptr, nullptr };
+    int dst_linesize[4] = { target_w * 4, 0, 0, 0 };
+
+    int res = sws_scale(ctx, src_data, src_linesize, 0, src.height, dst_data, dst_linesize);
+    sws_freeContext(ctx);
+    if (res <= 0) return std::nullopt;
+    return out;
+}
+#endif // VE_HAVE_FFMPEG
+
+std::optional<VideoFrame> to_rgba_scaled(const VideoFrame& src, int target_w, int target_h) noexcept {
+    if(src.format == PixelFormat::RGBA32 && (target_w <=0 || target_h <=0 || (target_w==src.width && target_h==src.height))) return src;
+
+#if VE_HAVE_FFMPEG
+    if (auto out = to_rgba_scaled_ffmpeg(src, target_w, target_h)) {
+        return out;
+    }
+#endif
+
+    // Fallback to existing converters (no scaling here); caller may scale QImage/QPixmap
+    // by display size. If scaling requested, we'll return source-size RGBA and let UI scale it.
     VideoFrame out;
     out.width = src.width;
     out.height = src.height;
@@ -266,6 +424,10 @@ std::optional<VideoFrame> to_rgba(const VideoFrame& src) noexcept {
             ve::log::error("Unsupported pixel format for conversion: " + std::to_string(static_cast<int>(src.format)));
             return std::nullopt;
     }
+}
+
+std::optional<VideoFrame> to_rgba(const VideoFrame& src) noexcept {
+    return to_rgba_scaled(src, src.width, src.height);
 }
 
 } // namespace ve::decode

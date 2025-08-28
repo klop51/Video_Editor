@@ -128,6 +128,9 @@ bool PlaybackController::seek(int64_t timestamp_us) {
 void PlaybackController::step_once() {
     if(!has_media()) return;
     single_step_.store(true);
+    // Bypass cache for the next iteration so we decode strictly the next frame
+    bypass_cache_once_.store(true);
+    advance_one_frame_.store(false);
     // Force one-frame decode path even if currently paused/stopped
     if(state_.load() != PlaybackState::Playing) {
         set_state(PlaybackState::Playing);
@@ -137,6 +140,7 @@ void PlaybackController::step_once() {
 void PlaybackController::set_state(PlaybackState new_state) {
     PlaybackState old_state = state_.exchange(new_state);
     if (old_state != new_state) {
+        VE_DEBUG_ONLY(ve::log::info(std::string("Playback state change: ") + std::to_string(static_cast<int>(old_state)) + " -> " + std::to_string(static_cast<int>(new_state))));
         std::vector<CallbackEntry<StateChangeCallback>> copy;
         {
             std::scoped_lock lk(callbacks_mutex_);
@@ -196,11 +200,13 @@ void PlaybackController::playback_thread_main() {
                 ve::log::info("Processing frame in playback thread, state=Playing, seek_requested=" + std::string(seek_req ? "true" : "false"));
             });
             
+            // If a single-step is pending, we will bypass cache below and ask decoder for next frame.
+            bool bypass_cache = bypass_cache_once_.exchange(false);
+
             int64_t current_pts = current_time_us_.load();
-            int64_t target_frame_interval_us = 33333; // ~30fps default, TODO: get from video stream info
             
-            // Attempt cache reuse first (only exact pts match for now)
-            if(seek_requested_.load()==false) { // if not in middle of seek handling
+            // Attempt cache reuse first (only exact pts match for now), unless bypassed for single-step
+            if(seek_requested_.load()==false && !bypass_cache) { // if not in middle of seek handling
                     ve::cache::CachedFrame cached; cache_lookups_.fetch_add(1);
                 ve::cache::FrameKey key; key.pts_us = current_pts;
                 VE_DEBUG_ONLY(ve::log::info("Cache lookup for pts: " + std::to_string(key.pts_us)));
@@ -214,31 +220,43 @@ void PlaybackController::playback_thread_main() {
                     {
                         std::vector<CallbackEntry<VideoFrameCallback>> copy;
                         { std::scoped_lock lk(callbacks_mutex_); copy = video_video_entries_; }
+                        VE_DEBUG_ONLY(ve::log::info("Dispatching " + std::to_string(copy.size()) + " video callbacks (cache hit) for pts=" + std::to_string(vf.pts)));
                         for(auto &entry : copy) if(entry.fn) entry.fn(vf);
+                        VE_DEBUG_ONLY(ve::log::info("Dispatched video callbacks (cache hit) for pts=" + std::to_string(vf.pts)));
                     }
-                    
                     // IMPORTANT: Advance time for next frame even when cache hits
-                    int64_t delta = target_frame_interval_us > 0 ? target_frame_interval_us
-                                                                 : step_.next_delta_us();
+                    // Prefer drift-proof step accumulator for fractional framerates
+                    int64_t delta = step_.next_delta_us();
                     int64_t next_pts = current_pts + delta;
                     if (duration_us_ > 0 && next_pts >= duration_us_) {
                         current_time_us_.store(duration_us_);
                         set_state(ve::playback::PlaybackState::Stopped);   // notify UI we're done
-                        ve::log::info("Reached end of stream at: " + std::to_string(duration_us_) + " us (cache hit path) — stopping");
+                        ve::log::info("Reached end of stream at: " + std::to_string(duration_us_) + " us (cache hit path) - stopping");
                         continue; // exit playback loop cleanly
                     }
                     current_time_us_.store(next_pts);
                     VE_DEBUG_ONLY(ve::log::info("Advanced time to: " + std::to_string(next_pts) + " (cache hit path)"));
-                    
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    // Frame pacing for cache hit: sleep remaining time of this frame interval
+                    {
+                        auto target_interval = std::chrono::microseconds(delta);
+                        auto frame_end = std::chrono::high_resolution_clock::now();
+                        auto actual_duration = frame_end - last_frame_time;
+                        if (actual_duration < target_interval) {
+                            auto sleep_time = target_interval - actual_duration;
+                            std::this_thread::sleep_for(sleep_time);
+                        }
+                        last_frame_time = std::chrono::high_resolution_clock::now();
+                        first_frame = false;
+                        last_pts_us = current_pts;
+                    }
                     continue; // Skip decoding new frame this iteration
                 } else {
                     VE_DEBUG_ONLY(ve::log::info("Cache MISS for pts: " + std::to_string(key.pts_us) + ", proceeding to decoder"));
                 }
             } else {
-                VE_DEBUG_ONLY(ve::log::info("Skipping frame processing because seek_requested=true"));
+                VE_DEBUG_ONLY(ve::log::info(bypass_cache ? "Bypassing cache for single-step" : "Skipping frame processing because seek_requested=true"));
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                continue;
+                if (!bypass_cache) continue; // for seek, skip; for bypass, fall-through to decoder read
             }
 
             // Read video frame (decode path)
@@ -253,13 +271,18 @@ void PlaybackController::playback_thread_main() {
                 cf.color_space = video_frame->color_space;
                 cf.color_range = video_frame->color_range;
                 ve::cache::FrameKey putKey; putKey.pts_us = video_frame->pts;
+                VE_DEBUG_ONLY(ve::log::info("Cache PUT for pts=" + std::to_string(putKey.pts_us) + 
+                                             ", size=" + std::to_string(cf.width) + "x" + std::to_string(cf.height)));
                 frame_cache_.put(putKey, std::move(cf));
+                VE_DEBUG_ONLY(ve::log::info("Cache size now=" + std::to_string(frame_cache_.size())));
                 current_time_us_.store(video_frame->pts);
 
                 {
                     std::vector<CallbackEntry<VideoFrameCallback>> copy;
                     { std::scoped_lock lk(callbacks_mutex_); copy = video_video_entries_; }
+                    VE_DEBUG_ONLY(ve::log::info("Dispatching " + std::to_string(copy.size()) + " video callbacks (decode) for pts=" + std::to_string(video_frame->pts)));
                     for(auto &entry : copy) if(entry.fn) entry.fn(*video_frame);
+                    VE_DEBUG_ONLY(ve::log::info("Dispatched video callbacks (decode) for pts=" + std::to_string(video_frame->pts)));
                 }
 
                 // Adaptive frame timing based on PTS
@@ -297,8 +320,24 @@ void PlaybackController::playback_thread_main() {
                 {
                     std::vector<CallbackEntry<AudioFrameCallback>> copy;
                     { std::scoped_lock lk(callbacks_mutex_); copy = audio_entries_; }
+                    VE_DEBUG_ONLY(ve::log::info("Dispatching " + std::to_string(copy.size()) + " audio callbacks for pts=" + std::to_string(audio_frame->pts)));
                     for(auto &entry : copy) if(entry.fn) entry.fn(*audio_frame);
+                    VE_DEBUG_ONLY(ve::log::info("Dispatched audio callbacks for pts=" + std::to_string(audio_frame->pts)));
                 }
+            } else {
+                // Handle end-of-stream and avoid busy loop when decoder has no more frames
+                int64_t cur = current_time_us_.load();
+                int64_t delta = step_.next_delta_us();
+                int64_t next_pts = cur + delta;
+                if (duration_us_ > 0 && next_pts >= duration_us_) {
+                    current_time_us_.store(duration_us_);
+                    set_state(ve::playback::PlaybackState::Stopped);
+                    ve::log::info("Reached end of stream (decoder no frame) at: " + std::to_string(duration_us_) + " us - stopping");
+                    continue;
+                }
+                current_time_us_.store(next_pts);
+                VE_DEBUG_ONLY(ve::log::info("Advanced time to: " + std::to_string(next_pts) + " (no-frame path)"));
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
         } else {
             // Not playing, sleep longer

@@ -398,7 +398,15 @@ void MainWindow::set_playback_controller(ve::playback::PlaybackController* contr
     if (controller) {
         controller->add_state_callback([this](ve::playback::PlaybackState state) {
             if (state == ve::playback::PlaybackState::Playing) {
-                if (position_update_timer_) position_update_timer_->start();
+                if (position_update_timer_) {
+                    // Adapt UI update rate to the media frame duration (cap to 10-100ms)
+                    int64_t us = playback_controller_->frame_duration_guess_us();
+                    int interval_ms = static_cast<int>(us > 0 ? (us / 1000) : 33);
+                    if (interval_ms < 10) interval_ms = 10;
+                    if (interval_ms > 100) interval_ms = 100;
+                    position_update_timer_->setInterval(interval_ms);
+                    position_update_timer_->start();
+                }
             } else {
                 if (position_update_timer_) position_update_timer_->stop();
             }
@@ -545,6 +553,19 @@ void MainWindow::create_menus() {
     mk(view_menu, dummy, "&Timeline", QKeySequence(), &MainWindow::toggle_timeline, true, true);
     mk(view_menu, dummy, "&Media Browser", QKeySequence(), &MainWindow::toggle_media_browser, true, true);
     mk(view_menu, dummy, "&Properties", QKeySequence(), &MainWindow::toggle_properties, true, true);
+    // FPS overlay toggle
+    toggle_fps_overlay_action_ = new QAction("Show FPS Overlay", this);
+    toggle_fps_overlay_action_->setCheckable(true);
+    toggle_fps_overlay_action_->setChecked(true);
+    connect(toggle_fps_overlay_action_, &QAction::triggered, this, &MainWindow::toggle_fps_overlay);
+    view_menu->addAction(toggle_fps_overlay_action_);
+
+    // Preview quality: scale convert to widget size (faster)
+    toggle_preview_fit_action_ = new QAction("Preview: Scale To Fit", this);
+    toggle_preview_fit_action_->setCheckable(true);
+    toggle_preview_fit_action_->setChecked(true);
+    connect(toggle_preview_fit_action_, &QAction::triggered, this, &MainWindow::toggle_preview_quality);
+    view_menu->addAction(toggle_preview_fit_action_);
 
     QMenu* help_menu = menuBar()->addMenu("&Help");
     mk(help_menu, dummy, "&About", QKeySequence(), &MainWindow::about);
@@ -772,6 +793,7 @@ void MainWindow::update_actions() {
     step_backward_action_->setEnabled(has_playback);
     go_to_start_action_->setEnabled(has_playback);
     go_to_end_action_->setEnabled(has_playback);
+    if (toggle_fps_overlay_action_) toggle_fps_overlay_action_->setEnabled(true);
     
     // Update status bar with helpful guidance
     if (!has_timeline) {
@@ -1058,6 +1080,18 @@ void MainWindow::zoom_fit() {
 void MainWindow::toggle_timeline() { timeline_dock_->setVisible(!timeline_dock_->isVisible()); }
 void MainWindow::toggle_media_browser() { media_browser_dock_->setVisible(!media_browser_dock_->isVisible()); }
 void MainWindow::toggle_properties() { properties_dock_->setVisible(!properties_dock_->isVisible()); }
+
+void MainWindow::toggle_fps_overlay() {
+    if (!viewer_panel_) return;
+    bool on = toggle_fps_overlay_action_ && toggle_fps_overlay_action_->isChecked();
+    viewer_panel_->set_fps_overlay_visible(on);
+}
+
+void MainWindow::toggle_preview_quality() {
+    if (!viewer_panel_) return;
+    bool on = toggle_preview_fit_action_ && toggle_preview_fit_action_->isChecked();
+    viewer_panel_->set_preview_scale_to_widget(on);
+}
 
 void MainWindow::about() {
     QMessageBox::about(this, "About Video Editor",
@@ -1441,6 +1475,22 @@ void MainWindow::update_playback_position() {
         if (time_label_) {
             auto seconds = current_time_us / 1000000.0;
             time_label_->setText(QString("Time: %1s").arg(seconds, 0, 'f', 2));
+        }
+
+        // Update FPS indicator from playback stats (lightweight)
+        if (fps_label_) {
+            auto stats = playback_controller_->get_stats();
+            double fps = 0.0;
+            if (stats.avg_frame_time_ms > 0.0) {
+                fps = 1000.0 / stats.avg_frame_time_ms;
+            } else {
+                // Fallback to guessed frame duration
+                auto us = playback_controller_->frame_duration_guess_us();
+                if (us > 0) fps = 1'000'000.0 / static_cast<double>(us);
+            }
+            if (fps > 0.0 && fps < 300.0) {
+                fps_label_->setText(QString("%1 fps").arg(fps, 0, 'f', 1));
+            }
         }
     }
 }

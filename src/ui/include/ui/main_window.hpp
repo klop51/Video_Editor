@@ -108,6 +108,8 @@ private slots:
     void toggle_timeline();
     void toggle_media_browser();
     void toggle_properties();
+    void toggle_fps_overlay();
+    void toggle_preview_quality();
     
     // Help menu
     void about();
@@ -204,6 +206,8 @@ private:
     QAction* step_backward_action_;
     QAction* go_to_start_action_;
     QAction* go_to_end_action_;
+    QAction* toggle_fps_overlay_action_{};
+    QAction* toggle_preview_fit_action_{};
     
     // Status bar
     QLabel* status_label_;

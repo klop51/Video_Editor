@@ -23,6 +23,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <QMetaObject>
+#include <QDateTime>
 
 namespace ve::ui {
 
@@ -59,8 +60,59 @@ void ViewerPanel::set_playback_controller(ve::playback::PlaybackController* cont
 }
 
 void ViewerPanel::display_frame(const ve::decode::VideoFrame& frame) {
+    // Coalesce incoming frames if we are still rendering the previous one
+    if (render_in_progress_) {
+        pending_frame_ = frame;
+        pending_frame_valid_ = true;
+        return;
+    }
+    render_in_progress_ = true;
     current_frame_ = frame;
     has_frame_ = true;
+
+    // Update small FPS overlay (throttle ~500ms)
+    fps_frames_accum_++;
+    qint64 now_ms = QDateTime::currentMSecsSinceEpoch();
+    if (fps_last_ms_ == 0) fps_last_ms_ = now_ms;
+    qint64 elapsed_ms = now_ms - fps_last_ms_;
+    if (elapsed_ms >= 500 && fps_overlay_) {
+        double inst_fps = (elapsed_ms > 0) ? (fps_frames_accum_ * 1000.0 / elapsed_ms) : 0.0;
+        double avg_ms = 0.0;
+        double avg_fps = 0.0;
+        if (playback_controller_) {
+            auto stats = playback_controller_->get_stats();
+            avg_ms = stats.avg_frame_time_ms;
+            if (avg_ms > 0.0) avg_fps = 1000.0 / avg_ms;
+        }
+        double target_fps = 0.0;
+        if (playback_controller_) {
+            auto us = playback_controller_->frame_duration_guess_us();
+            if (us > 0) target_fps = 1'000'000.0 / static_cast<double>(us);
+        }
+        double show_fps = (avg_fps > 0.0 ? avg_fps : inst_fps);
+        if (show_fps > 0.0) {
+            // Decide overlay color: green ok, yellow warn, red bad
+            double warn_threshold = (target_fps > 0.0) ? target_fps * 0.9 : 24.0;
+            double bad_threshold  = (target_fps > 0.0) ? target_fps * 0.6 : 18.0;
+            QString color = "#00ff66"; // green
+            if (show_fps < warn_threshold) color = "#ffd24d"; // yellow
+            if (show_fps < bad_threshold)  color = "#ff4d4d"; // red
+            fps_overlay_->setStyleSheet(
+                QString("QLabel { background-color: rgba(0,0,0,120); color: %1; padding: 2px 6px; border-radius: 3px; font: 10pt 'Segoe UI'; }")
+                .arg(color)
+            );
+            if (avg_ms > 0.0) {
+                fps_overlay_->setText(QString("%1 fps  %2 ms")
+                                      .arg(show_fps, 0, 'f', 1)
+                                      .arg(avg_ms, 0, 'f', 1));
+            } else {
+                fps_overlay_->setText(QString("%1 fps").arg(show_fps, 0, 'f', 1));
+            }
+            fps_overlay_->adjustSize();
+        }
+        fps_frames_accum_ = 0;
+        fps_last_ms_ = now_ms;
+    }
 
     // Optional frame dump (RGBA) for debugging conversion path
     static int dumped = 0;
@@ -87,6 +139,14 @@ void ViewerPanel::display_frame(const ve::decode::VideoFrame& frame) {
         }
     }
     update_frame_display();
+
+    render_in_progress_ = false;
+    if (pending_frame_valid_) {
+        // Display the most recent pending frame, dropping older ones
+        auto next = pending_frame_;
+        pending_frame_valid_ = false;
+        QMetaObject::invokeMethod(this, [this, next]() { display_frame(next); }, Qt::QueuedConnection);
+    }
 }
 
 void ViewerPanel::update_time_display(int64_t time_us) {
@@ -124,6 +184,11 @@ void ViewerPanel::update_playback_controls() {
 void ViewerPanel::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
     update_frame_display();
+    if (fps_overlay_) fps_overlay_->move(8, 8);
+}
+
+void ViewerPanel::set_fps_overlay_visible(bool on) {
+    if (fps_overlay_) fps_overlay_->setVisible(on);
 }
 
 void ViewerPanel::setup_ui() {
@@ -140,8 +205,22 @@ void ViewerPanel::setup_ui() {
     video_display_->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     video_display_->setText("No Video");
     video_display_->setMinimumHeight(200);
-    
+
     main_layout->addWidget(video_display_, 1); // Give it most of the space
+
+    // Lightweight FPS overlay on top-left of the video display
+    fps_overlay_ = new QLabel(video_display_);
+    fps_overlay_->setText("fps");
+    fps_overlay_->setStyleSheet(
+        "QLabel { background-color: rgba(0,0,0,120); color: white;"
+        " padding: 2px 6px; border-radius: 3px; font: 10pt 'Segoe UI'; }"
+    );
+    fps_overlay_->setAttribute(Qt::WA_TransparentForMouseEvents);
+    fps_overlay_->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Minimum);
+    fps_overlay_->setMinimumWidth(70);
+    fps_overlay_->setMinimumHeight(22);
+    fps_overlay_->move(8, 8);
+    fps_overlay_->raise();
     
     // Transport controls
     QHBoxLayout* transport_layout = new QHBoxLayout();
@@ -224,8 +303,30 @@ QPixmap ViewerPanel::convert_frame_to_pixmap(const ve::decode::VideoFrame& frame
     // Convert frame data to QImage based on format
     QImage image;
 
-    auto convert_yuv_like = [&frame]() -> QPixmap {
-        auto rgba_frame = ve::decode::to_rgba(frame);
+    auto convert_yuv_like = [this,&frame]() -> QPixmap {
+        // Compute target size if scaling preview is enabled
+        int target_w = frame.width;
+        int target_h = frame.height;
+        if (preview_scale_to_widget_ && video_display_) {
+            QSize disp = video_display_->size();
+            if (disp.width() > 0 && disp.height() > 0 && frame.width > 0 && frame.height > 0) {
+                double sx = static_cast<double>(disp.width()) / static_cast<double>(frame.width);
+                double sy = static_cast<double>(disp.height()) / static_cast<double>(frame.height);
+                double s = std::min(sx, sy);
+                s = std::max(0.01, std::min(4.0, s)); // clamp sanity
+                target_w = std::max(1, static_cast<int>(frame.width * s + 0.5));
+                target_h = std::max(1, static_cast<int>(frame.height * s + 0.5));
+            }
+        }
+
+        // Cache lookup for converted pixmap
+        for (auto it = pix_cache_.begin(); it != pix_cache_.end(); ++it) {
+            if (it->pts == frame.pts && it->w == target_w && it->h == target_h) {
+                return it->pix;
+            }
+        }
+
+        auto rgba_frame = ve::decode::to_rgba_scaled(frame, target_w, target_h);
         if (!rgba_frame) {
             return QPixmap();
         }
@@ -236,7 +337,13 @@ QPixmap ViewerPanel::convert_frame_to_pixmap(const ve::decode::VideoFrame& frame
         }
         int bytes_per_line = rgba_frame->width * 4;
         QImage temp_image(rgba_frame->data.data(), rgba_frame->width, rgba_frame->height, bytes_per_line, QImage::Format_RGBA8888);
-        return QPixmap::fromImage(temp_image);
+        QPixmap pix = QPixmap::fromImage(temp_image);
+        // Insert into small cache (avoid caching massive full-res pixmaps)
+        if (preview_scale_to_widget_ && pix_cache_capacity_ > 0) {
+            if (static_cast<int>(pix_cache_.size()) >= pix_cache_capacity_) pix_cache_.pop_front();
+            pix_cache_.push_back(PixCacheEntry{frame.pts, rgba_frame->width, rgba_frame->height, pix});
+        }
+        return pix;
     };
 
     switch (frame.format) {
@@ -321,19 +428,15 @@ void ViewerPanel::on_position_slider_changed(int value) {
 
 void ViewerPanel::on_step_forward_clicked() {
     if (!playback_controller_) return;
-    // Derive approximate frame duration (fallback 30fps)
-    int64_t frame_duration = 1000000 / 30;
-    int64_t cur = playback_controller_->current_time_us();
-    int64_t tgt = cur + frame_duration;
-    if (playback_controller_->duration_us() > 0 && tgt > playback_controller_->duration_us())
-        tgt = playback_controller_->duration_us();
-    playback_controller_->seek(tgt);
+    // Do not seek for forward step: many decoders jump to previous keyframe.
+    // Instead request the controller to advance by one frame internally.
     playback_controller_->step_once();
 }
 
 void ViewerPanel::on_step_backward_clicked() {
     if (!playback_controller_) return;
-    int64_t frame_duration = 1000000 / 30;
+    int64_t frame_duration = playback_controller_->frame_duration_guess_us();
+    if (frame_duration <= 0) frame_duration = 1000000 / 30;
     int64_t cur = playback_controller_->current_time_us();
     int64_t tgt = cur - frame_duration; if (tgt < 0) tgt = 0;
     playback_controller_->seek(tgt);

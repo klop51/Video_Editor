@@ -5,6 +5,7 @@
 #include <QPushButton>
 #include <QSlider>
 #include <QPixmap>
+#include <deque>
 
 QT_BEGIN_NAMESPACE
 class QDragEnterEvent;
@@ -22,6 +23,8 @@ public:
     explicit ViewerPanel(QWidget* parent = nullptr);
     
     void set_playback_controller(ve::playback::PlaybackController* controller);
+    void set_fps_overlay_visible(bool on);
+    void set_preview_scale_to_widget(bool on) { preview_scale_to_widget_ = on; }
     
     // Media loading
     bool load_media(const QString& filePath);
@@ -56,6 +59,7 @@ private:
     // UI components
     QLabel* video_display_;
     QLabel* time_label_;
+    QLabel* fps_overlay_;
     QPushButton* play_pause_button_;
     QPushButton* stop_button_;
     QPushButton* step_backward_button_;
@@ -70,6 +74,21 @@ private:
     // Display scaling
     QSize display_size_;
     Qt::AspectRatioMode aspect_ratio_mode_;
+
+    // Overlay FPS updater (throttled)
+    qint64 fps_last_ms_ = 0;
+    int fps_frames_accum_ = 0;
+
+    // Simple rendering coalescing to keep UI responsive
+    bool render_in_progress_ = false;
+    bool pending_frame_valid_ = false;
+    ve::decode::VideoFrame pending_frame_{};
+
+    // Preview scaling and small RGBA pixmap cache
+    bool preview_scale_to_widget_ = true;
+    struct PixCacheEntry { int64_t pts; int w; int h; QPixmap pix; };
+    std::deque<PixCacheEntry> pix_cache_;
+    int pix_cache_capacity_ = 8;
 };
 
 } // namespace ve::ui

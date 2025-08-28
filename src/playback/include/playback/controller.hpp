@@ -78,6 +78,8 @@ private:
     std::atomic<bool> seek_requested_{false};
     std::atomic<int64_t> seek_target_us_{0};
     std::atomic<bool> single_step_{false};
+    std::atomic<bool> advance_one_frame_{false};
+    std::atomic<bool> bypass_cache_once_{false};
     int64_t duration_us_ = 0;
     double probed_fps_ = 0.0; // derived from probe if available
     struct CallbackEntryBase { CallbackId id; };
