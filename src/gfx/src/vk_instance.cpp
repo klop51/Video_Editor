@@ -1,7 +1,21 @@
+// ---- global scope: ALL system/third-party/STD includes here
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+
+#include <memory>
+#include <new>
+
+// ---- your project headers
 #include "gfx/vk_instance.hpp"
 #include "core/log.hpp"
 
 namespace ve::gfx {
+
+// ---- ONLY your declarations/definitions here. No system/STD includes.
 
 D3D11Context::~D3D11Context() { destroy(); }
 

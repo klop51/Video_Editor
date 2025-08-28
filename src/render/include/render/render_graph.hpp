@@ -41,8 +41,8 @@ public:
 // GPU-enabled render graph
 class GpuRenderGraph : public RenderGraph {
 public:
-    GpuRenderGraph() = default;
-    ~GpuRenderGraph() = default;
+    GpuRenderGraph();
+    ~GpuRenderGraph();
     bool initialize(std::shared_ptr<ve::gfx::GraphicsDevice> device);
     FrameResult render(const FrameRequest& req) override;
 

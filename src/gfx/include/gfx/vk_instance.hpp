@@ -1,6 +1,6 @@
 #pragma once
-#include <cstdint>
-#include <memory>
+
+// NO standard library includes inside headers to avoid MSVC namespace conflicts!
 
 // Forward declare Windows types
 using HWND = struct HWND__*;
@@ -20,7 +20,7 @@ public:
     ~D3D11Context();
     D3D11Context(const D3D11Context&) = delete;
     D3D11Context& operator=(const D3D11Context&) = delete;
-    D3D11Context(D3D11Context&& other) noexcept { *this = std::move(other); }
+    D3D11Context(D3D11Context&& other) noexcept; 
     D3D11Context& operator=(D3D11Context&& other) noexcept;
 
     bool create(const D3D11ContextInfo& info) noexcept;

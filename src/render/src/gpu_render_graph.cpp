@@ -69,6 +69,8 @@ struct GpuRenderGraph::Impl {
 
 GpuRenderGraph::GpuRenderGraph() : impl_(std::make_unique<Impl>()) {}
 
+GpuRenderGraph::~GpuRenderGraph() = default;
+
 bool GpuRenderGraph::initialize(std::shared_ptr<ve::gfx::GraphicsDevice> device) {
     return impl_->initialize(device);
 }

@@ -1,5 +1,6 @@
 #pragma once
-#include <cstdint>
+
+// NO standard library includes inside headers to avoid MSVC namespace conflicts!
 
 namespace ve::gfx {
 
@@ -21,23 +22,23 @@ public:
 
     bool create(const GraphicsDeviceInfo& info) noexcept;
     void destroy() noexcept;
-    bool is_valid() const noexcept { return created_; }
+    bool is_valid() const noexcept;
 
     // Texture management
-    uint32_t create_texture(int width, int height, int format) noexcept;
-    void destroy_texture(uint32_t texture_id) noexcept;
-    void upload_texture(uint32_t texture_id, const void* data, int width, int height, int format) noexcept;
+    unsigned int create_texture(int width, int height, int format) noexcept;
+    void destroy_texture(unsigned int texture_id) noexcept;
+    void upload_texture(unsigned int texture_id, const void* data, int width, int height, int format) noexcept;
 
     // Shader management
-    uint32_t create_shader_program(const char* vertex_src, const char* fragment_src) noexcept;
-    void destroy_shader_program(uint32_t program_id) noexcept;
-    void use_shader_program(uint32_t program_id) noexcept;
-    void set_uniform1f(uint32_t program_id, const char* name, float v) noexcept;
-    void set_uniform1i(uint32_t program_id, const char* name, int v) noexcept;
+    unsigned int create_shader_program(const char* vertex_src, const char* fragment_src) noexcept;
+    void destroy_shader_program(unsigned int program_id) noexcept;
+    void use_shader_program(unsigned int program_id) noexcept;
+    void set_uniform1f(unsigned int program_id, const char* name, float v) noexcept;
+    void set_uniform1i(unsigned int program_id, const char* name, int v) noexcept;
 
     // Rendering
     void clear(float r, float g, float b, float a) noexcept;
-    void draw_texture(uint32_t texture_id, float x, float y, float width, float height) noexcept;
+    void draw_texture(unsigned int texture_id, float x, float y, float width, float height) noexcept;
     // Viewport / projection
     void set_viewport(int width, int height) noexcept;
 
@@ -46,3 +47,5 @@ private:
     Impl* impl_;
     bool created_ = false;
 };
+
+} // namespace ve::gfx

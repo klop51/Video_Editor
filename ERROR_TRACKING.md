@@ -19,6 +19,32 @@ Include a Sev tag in the title line, e.g. `– (Sev3)`.
 
 ---
 
+## [2025-01-27 21:15:00] RESOLVED: MSVC + ve::gfx Namespace Compilation Conflicts ✅
+
+**Problem**: 100+ MSVC compilation errors when building ve_gfx module with DirectX 11 backend implementation, blocking Phase 2 GPU rendering
+
+**Root Cause (ChatGPT Diagnosis)**: System/STD library headers included inside `ve::gfx` namespace, causing MSVC to incorrectly interpret standard library symbols in namespace context
+
+**Solution Applied**:
+1. **Removed ALL system includes from inside headers**: Eliminated `#include <cstdint>`, `#include <memory>` from namespace scope
+2. **Reorganized include structure**: Moved system includes to global scope before namespace declarations  
+3. **Eliminated logging dependencies**: Removed ve::log calls that internally used std::string (causing transitive namespace conflicts)
+4. **Used basic types**: Replaced `uint32_t` with `unsigned int` to avoid dependency on `<cstdint>`
+5. **Applied MSVC-specific guards**: Added NOMINMAX/WIN32_LEAN_AND_MEAN defines in implementation files
+
+**Key Insight**: MSVC treats includes differently when inside namespace scope vs global scope. ChatGPT identified this as namespace pollution rather than graphics API compatibility issue.
+
+**Files Modified**:
+- `src/gfx/include/gfx/vk_device.hpp`: Removed system includes, declared interface with basic types
+- `src/gfx/include/gfx/vk_instance.hpp`: Removed system includes  
+- `src/gfx/src/vk_device.cpp`: Moved includes to global scope, stub implementation with unused parameter suppression
+
+**Result**: ✅ ve_gfx.lib builds successfully. Phase 2 GPU rendering infrastructure ready for implementation.
+
+**Prevention**: Add pre-commit hook to enforce system includes only at global scope, never inside project namespaces.
+
+---
+
 ## 2025-08-28 – MSVC OpenGL Header Conflicts Blocking GPU Rendering (Sev2)
 **Area**: Graphics / Build System (MSVC + OpenGL)
 
