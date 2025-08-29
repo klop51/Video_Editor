@@ -1,6 +1,6 @@
 # Project Progress Snapshot
 
-_Last updated: 2025-08-26_
+_Last updated: 2025-08-28_
 
 This file summarizes current implementation status versus `ARCHITECTURE.md` and `ROADMAP.md`, plus the focused objectives for the next three sprints. Keep it short and update when major features land.
 
@@ -37,7 +37,7 @@ This file summarizes current implementation status versus `ARCHITECTURE.md` and 
 | Fuzz / stress tests | 🟡 | Random macro command test only; broader fuzz & stress harness absent. |
 | Golden image / frame tests | ❌ | Not started. |
 | Decision Records (DRs) | 🟡 | DR-0001 (GPU), 0002 (vcpkg accepted), 0003 (exceptions), 0004 (timebase) present. |
-| CI build & unit tests | ✅ | Green locally with 155 assertions (31 cases). |
+| CI build & unit tests | ✅ | Green locally with 214 assertions (expanded profiling & playback tests). |
 
 ## Technical Debt / Gaps (Top 10)
 1. No GPU render path or effect DAG — blocks effects, transitions, color.
@@ -52,7 +52,7 @@ This file summarizes current implementation status versus `ARCHITECTURE.md` and 
 10. Enforcement tooling for DR policies (no-throw audit script, time normalization use) incomplete.
 
 ## Near-Term Strategic Focus
-Establish vertical slice from decode → timeline edit → GPU effect → audio → export. Prioritize enabling earliest user-visible value and risk reduction (GPU + audio sync).
+Establish vertical slice from decode → timeline edit → (shim) render path → audio → export. GPU work temporarily slowed by MSVC namespace/compiler conflicts (see Risk Watch); focus on de-risking playback correctness & profiling while isolating graphics issues.
 
 ## Upcoming Sprints (Assuming 2-week cadence)
 
@@ -72,6 +72,7 @@ Acceptance Criteria (updated progress inline):
 - GFX Vulkan bootstrap stub builds even without Vulkan SDK (DONE).
 - expected<T,E> utility in core for exception-free APIs (DONE).
 - Time rational normalize() + tests (DONE).
+- Playback controller advances time on cache hits (FIXED: regression resolved 2025-08-27; added tests increasing assertion count).
 
 ### Sprint 2 (+2 → +4 weeks) : "Effects & Keyframes Seed"
 Objectives:
@@ -102,7 +103,7 @@ Acceptance Criteria:
 ## Risk Watch (Current Top)
 | Risk | Status | Mitigation Next Step |
 |------|--------|----------------------|
-| GPU path delay stalls effects | Open | Allow CPU shim graph first to unblock API design |
+| GPU path delay stalls effects (MSVC namespace conflicts in gfx) | Elevated | Isolate gfx build, reproduce in minimal TU, consider temporary rename of namespace &/or switch to Vulkan SDK validation branch |
 | Audio engine complexity underestimated | Open | Start minimal mixing + master clock early (Sprint 1) |
 | Lack of metrics hides regressions | Open | Add JSON profiling aggregator Sprint 1 |
 | Export licensing (x264/x265) | Open | Start with software x264; isolate licensing in DR |
@@ -125,8 +126,9 @@ Acceptance Criteria:
 Ownership: Update alongside major feature PRs; reviewers ensure consistency with `ARCHITECTURE.md` & `ROADMAP.md`.
 
 ### Sprint 0 Outcome (Bootstrap)
-- Extended timeline invariants; all tests passing (155 assertions).
+- Extended timeline invariants; initial test suite green (155 assertions then, now 214 after added playback & profiling tests).
 - Established DR framework with initial records (GPU, exceptions, timebase, vcpkg).
 - Added `expected` utility & enforced no-throw policy note in `.clang-tidy`.
 - Implemented time rational normalization + tests.
 - Introduced `gfx` module with Vulkan bootstrap stubs compiling w/o SDK.
+- Fixed early playback stagnation bug (time not advancing on cache hits) prior to Sprint 1 objectives – increased reliability baseline.
