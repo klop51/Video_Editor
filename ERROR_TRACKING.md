@@ -20,6 +20,59 @@ Include a Sev tag in the title line, e.g. `– (Sev3)`.
 
 ---
 
+## 2025-08-30 – RESOLVED: Qt DPI Scaling Initialization Warning (Sev4 → Closed)
+**Area**: Qt Application / Main Entry Point (`main.cpp`) / DPI Settings
+
+### Symptom
+Runtime warning during video editor application startup:
+
+```
+setHighDpiScaleFactorRoundingPolicy must be called before creating the QGuiApplication instance
+```
+
+Warning appeared despite DPI policy being set before `ve::app::Application` construction in `main.cpp`. Application functioned correctly but produced annoying startup noise.
+
+### Impact
+- Cosmetic warning message during startup
+- No functional impact on application behavior
+- Minor user experience degradation (unnecessary warning in console output)
+
+### Root Cause (Confirmed)
+Header include order issue in `main.cpp`. The Qt documentation requires `setHighDpiScaleFactorRoundingPolicy()` to be called before **any** Qt application object creation, but the include order was:
+1. `#include "app/application.hpp"` (which includes Qt headers)
+2. `#include <QApplication>`
+
+This could potentially cause Qt to initialize some internal state before the DPI policy was set.
+
+### Resolution (2025-08-30)
+**Code Fix:** Reorganized includes in `src/tools/video_editor/main.cpp`:
+```cpp
+// Before (potential issue):
+#include "app/application.hpp"
+#include <QApplication>
+
+// After (correct order):
+#include <QApplication>
+#include "app/application.hpp"
+```
+
+This ensures Qt system headers are included in proper order before any application-specific headers that might trigger Qt initialization.
+
+### Verification
+- **Manual testing:** Launched video editor application - no DPI scaling warnings
+- **Startup behavior:** Application starts cleanly without console noise
+- **Functionality:** No regression in application behavior or DPI handling
+
+### Preventive Guardrails
+- **Include order guidelines:** Always include Qt system headers before application headers in main entry points
+- **Build validation:** Consider adding automated check for common Qt initialization warnings in CI output
+- **Documentation:** Add note to developer guidelines about Qt DPI initialization requirements
+
+### Status
+**RESOLVED** - Warning eliminated through proper include ordering. Application startup is now clean.
+
+---
+
 ## 2025-08-30 – RESOLVED: Phantom MSVC C4189 Warning After Variable Removal (Sev3 → Closed)
 **Area**: UI / OpenGL widget (`gl_video_widget.cpp`) / Build System (MSVC incremental, CMake multi-config)
 

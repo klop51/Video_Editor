@@ -1,7 +1,7 @@
 // Ensure high DPI policy is applied before constructing QApplication-derived instance.
+#include <QApplication>
 #include "app/application.hpp"
 #include <iostream>
-#include <QApplication>
 
 int main(int argc, char** argv) {
     // Apply DPI rounding policy early (before any Q(Gui)Application is created)
