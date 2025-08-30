@@ -52,7 +52,7 @@ This file summarizes current implementation status versus `ARCHITECTURE.md` and 
 10. Enforcement tooling for DR policies (no-throw audit script, time normalization use) incomplete.
 
 ## Near-Term Strategic Focus
-Establish vertical slice from decode → timeline edit → (shim) render path → audio → export. GPU work temporarily slowed by MSVC namespace/compiler conflicts (see Risk Watch); focus on de-risking playback correctness & profiling while isolating graphics issues.
+Establish vertical slice from decode → timeline edit → (shim) render path → audio → export. GPU namespace issue resolved; shift to wiring render graph & initial audio engine stub plus performance metric aggregation.
 
 ## Upcoming Sprints (Assuming 2-week cadence)
 
@@ -73,6 +73,7 @@ Acceptance Criteria (updated progress inline):
 - expected<T,E> utility in core for exception-free APIs (DONE).
 - Time rational normalize() + tests (DONE).
 - Playback controller advances time on cache hits (FIXED: regression resolved 2025-08-27; added tests increasing assertion count).
+- Playback controller instrumented with profiling scopes (cache_hit, decode_video, decode_audio, dispatch callbacks) feeding `profiling.json`.
 
 ### Sprint 2 (+2 → +4 weeks) : "Effects & Keyframes Seed"
 Objectives:
@@ -103,7 +104,7 @@ Acceptance Criteria:
 ## Risk Watch (Current Top)
 | Risk | Status | Mitigation Next Step |
 |------|--------|----------------------|
-| GPU path delay stalls effects (MSVC namespace conflicts in gfx) | Elevated | Isolate gfx build, reproduce in minimal TU, consider temporary rename of namespace &/or switch to Vulkan SDK validation branch |
+| GPU path delay stalls effects (namespace conflict) | Resolved 2025-08-29 | Guards + minimal TU test in CI; proceed with Vulkan bootstrap & node prototypes |
 | Audio engine complexity underestimated | Open | Start minimal mixing + master clock early (Sprint 1) |
 | Lack of metrics hides regressions | Open | Add JSON profiling aggregator Sprint 1 |
 | Export licensing (x264/x265) | Open | Start with software x264; isolate licensing in DR |

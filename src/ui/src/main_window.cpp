@@ -34,13 +34,6 @@ static qint64 td_to_us(const ve::TimeDuration& d) {
 // Make a TimePoint from microseconds
 static inline ve::TimePoint us_to_tp(qint64 us) { return ve::TimePoint{ us, 1'000'000 }; }
 
-// Compute frame duration in microseconds from fps (num/den = frames per second)
-static qint64 frame_us_from_fps(const ve::TimeRational& fps) {
-    if (fps.num <= 0) return 33'333;                // ~30 fps fallback
-    long double us = 1'000'000.0L * (long double)fps.den / (long double)fps.num; // 1/fps
-    if (us < 1) us = 1;
-    return (qint64)us;
-}
 
 // Get timeline duration and current pos in microseconds (works even if controller has only rational APIs)
 static qint64 timeline_duration_us(const ve::timeline::Timeline* tl) {
@@ -573,6 +566,25 @@ void MainWindow::create_menus() {
 
     QMenu* dev_menu = menuBar()->addMenu("&Development");
     mk(dev_menu, dummy, "Create &Test Timeline Content", QKeySequence(), &MainWindow::create_test_timeline_content);
+    // GPU pipeline toggle (experimental)
+    QAction* toggleGpuAction = new QAction("Enable GPU Pipeline", this);
+    toggleGpuAction->setCheckable(true);
+    toggleGpuAction->setChecked(false);
+    connect(toggleGpuAction, &QAction::toggled, this, [this, toggleGpuAction](bool on){
+        if(!viewer_panel_) return;
+        if(on) {
+            if(!viewer_panel_->enable_gpu_pipeline()) {
+                QMessageBox::warning(this, "GPU Pipeline", "Failed to initialize GPU pipeline.");
+                toggleGpuAction->setChecked(false);
+            } else {
+                toggleGpuAction->setText("Disable GPU Pipeline");
+            }
+        } else {
+            viewer_panel_->disable_gpu_pipeline();
+            toggleGpuAction->setText("Enable GPU Pipeline");
+        }
+    });
+    dev_menu->addAction(toggleGpuAction);
 }
 
 void MainWindow::create_toolbars() {

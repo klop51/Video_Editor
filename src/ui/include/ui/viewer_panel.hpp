@@ -6,6 +6,10 @@
 #include <QSlider>
 #include <QPixmap>
 #include <deque>
+#include <memory>
+// Forward declarations to reduce header coupling; implementation includes full definitions.
+namespace ve { namespace gfx { class GraphicsDevice; struct GraphicsDeviceInfo; } }
+namespace ve { namespace render { class RenderGraph; } }
 
 QT_BEGIN_NAMESPACE
 class QDragEnterEvent;
@@ -21,10 +25,15 @@ class ViewerPanel : public QWidget {
     
 public:
     explicit ViewerPanel(QWidget* parent = nullptr);
+    ~ViewerPanel(); // defined in .cpp after including full RenderGraph type
     
     void set_playback_controller(ve::playback::PlaybackController* controller);
     void set_fps_overlay_visible(bool on);
     void set_preview_scale_to_widget(bool on) { preview_scale_to_widget_ = on; }
+    // Experimental GPU pipeline control (no-op if initialization fails)
+    bool enable_gpu_pipeline(); // returns true if GPU path initialized and enabled
+    void disable_gpu_pipeline();
+    bool gpu_pipeline_enabled() const { return gpu_enabled_; }
     
     // Media loading
     bool load_media(const QString& filePath);
@@ -57,7 +66,9 @@ private:
     QPixmap convert_frame_to_pixmap(const ve::decode::VideoFrame& frame);
     
     // UI components
-    QLabel* video_display_;
+    class GLVideoWidget* gl_widget_ = nullptr; // created on-demand
+    QWidget* video_display_ = nullptr; // active display widget
+    QLabel* video_display_label_ = nullptr; // QLabel used for CPU path
     QLabel* time_label_;
     QLabel* fps_overlay_;
     QPushButton* play_pause_button_;
@@ -89,6 +100,12 @@ private:
     struct PixCacheEntry { int64_t pts; int w; int h; QPixmap pix; };
     std::deque<PixCacheEntry> pix_cache_;
     int pix_cache_capacity_ = 8;
+
+    // GPU pipeline state (experimental)
+    bool gpu_enabled_ = false;
+    bool gpu_initialized_ = false;
+    std::shared_ptr<ve::gfx::GraphicsDevice> gfx_device_;
+    std::unique_ptr<ve::render::RenderGraph> render_graph_;
 };
 
 } // namespace ve::ui

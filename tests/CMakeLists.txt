@@ -8,6 +8,7 @@ set(UNIT_TEST_SOURCES
     test_decoder.cpp
     test_frame_cache.cpp
     test_color_convert.cpp
+    test_color_convert_guards.cpp
     test_playback_scheduler.cpp
     test_persistence.cpp
     test_timeline_basic.cpp
@@ -41,3 +42,8 @@ endif()
 
 include(CTest)
 add_test(NAME unit_tests COMMAND unit_tests)
+
+# Minimal gfx header compile test (no Catch2) to ensure public headers stay clean
+add_executable(test_gfx_headers test_gfx_headers.cpp)
+target_link_libraries(test_gfx_headers PRIVATE ve_gfx)
+add_test(NAME test_gfx_headers COMMAND test_gfx_headers)

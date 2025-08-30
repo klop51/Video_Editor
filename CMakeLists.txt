@@ -9,6 +9,11 @@ option(ENABLE_TESTS "Build tests" ON)
 option(ENABLE_FFMPEG "Enable FFmpeg integration" ON)
 option(ENABLE_COVERAGE "Enable code coverage instrumentation (GCC/Clang, non-Windows)" OFF)
 option(ENABLE_RUNTIME_DEBUG "Enable verbose runtime debug checks" OFF)
+option(VE_ENABLE_PBO_UPLOAD "Enable OpenGL PBO upload path (double-buffered) for GLVideoWidget" ON)
+option(VE_ENABLE_DETAILED_PROFILING "Enable fine-grained (inner loop / GPU sub-stage) profiling scopes" ON)
+option(VE_HEAP_DEBUG "Enable extra heap guard checks in hot paths (Windows CRT + manual guards)" OFF)
+option(VE_GL_PBO_TRIPLE "Use triple PBO ring instead of double for GL upload (reduces chance of stall)" OFF)
+option(VE_GL_PBO_PERSISTENT_MAP "Experimental: persistently map PBOs (if driver supports)" OFF)
 
 # Configure debug settings globally
 if(ENABLE_RUNTIME_DEBUG)
@@ -24,6 +29,47 @@ else()
     QT_NO_DEBUG_OUTPUT                       # strips qDebug() calls
   )
   message(STATUS "Runtime debug disabled: debug logs compiled out for performance")
+endif()
+
+# Propagate PBO upload toggle globally so headers can test it
+if(VE_ENABLE_PBO_UPLOAD)
+  add_compile_definitions(VE_ENABLE_PBO_UPLOAD=1)
+  message(STATUS "PBO upload path ENABLED (VE_ENABLE_PBO_UPLOAD=1)")
+else()
+  add_compile_definitions(VE_ENABLE_PBO_UPLOAD=0)
+  message(STATUS "PBO upload path DISABLED (VE_ENABLE_PBO_UPLOAD=0)")
+endif()
+
+# Detailed profiling toggle
+if(VE_ENABLE_DETAILED_PROFILING)
+  add_compile_definitions(VE_ENABLE_DETAILED_PROFILING=1)
+  message(STATUS "Detailed profiling ENABLED (VE_ENABLE_DETAILED_PROFILING=1)")
+else()
+  add_compile_definitions(VE_ENABLE_DETAILED_PROFILING=0)
+  message(STATUS "Detailed profiling DISABLED (VE_ENABLE_DETAILED_PROFILING=0)")
+endif()
+
+# Heap debug toggle
+if(VE_HEAP_DEBUG)
+  add_compile_definitions(VE_HEAP_DEBUG=1)
+  message(STATUS "Heap debug ENABLED (VE_HEAP_DEBUG=1)")
+else()
+  add_compile_definitions(VE_HEAP_DEBUG=0)
+endif()
+
+# PBO advanced options
+if(VE_GL_PBO_TRIPLE)
+  add_compile_definitions(VE_GL_PBO_TRIPLE=1)
+  message(STATUS "Triple PBO ring ENABLED (VE_GL_PBO_TRIPLE=1)")
+else()
+  add_compile_definitions(VE_GL_PBO_TRIPLE=0)
+endif()
+
+if(VE_GL_PBO_PERSISTENT_MAP)
+  add_compile_definitions(VE_GL_PBO_PERSISTENT_MAP=1)
+  message(STATUS "Persistent mapped PBOs ENABLED (VE_GL_PBO_PERSISTENT_MAP=1) [experimental]")
+else()
+  add_compile_definitions(VE_GL_PBO_PERSISTENT_MAP=0)
 endif()
 
 set(CMAKE_CXX_STANDARD 20)

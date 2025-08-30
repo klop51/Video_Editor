@@ -1,6 +1,7 @@
 # Error & Debug Tracking Log
 
-Purpose: Living log of non-trivial build/runtime/test issues encountered in this repository, the investigative steps taken, root causes, and preventive guardrails. Keep entries concise but actionable. Newest entries on top.
+Purpose: Living log of non-trivial build/runtime/t### Notes
+Matches pattern of prior "phantom" stale TU issues (see entries 2025-08-27 & 2025-08-26). Root cause confirmed as incremental build artifact desync; resolution validated through systematic clean rebuild approach. Future similar issues should follow this diagnostic pattern: add sentinel → verify compilation → clean artifacts → rebuild.t issues encountered in this repository, the investigative steps taken, root causes, and preventive guardrails. Keep entries concise but actionable. Newest entries on top.
 
 ## Usage & Conventions
 **When to log**: Any issue that (a) consumed >15 min to triage, (b) required a non-obvious workaround, (c) risks recurrence, or (d) would help future contributors.
@@ -16,6 +17,106 @@ Include a Sev tag in the title line, e.g. `– (Sev3)`.
 **Automation**: Use `python scripts/new_error_entry.py "Short Title" --sev 3 --area "build / tests"` to insert a new entry template at the top and update the Index.
 
 **Tokens**: If diagnosing potential stale builds, add a one-line `// TOKEN:<unique>` comment in the involved source and reference it in the log for quicker future verification.
+
+---
+
+## 2025-08-30 – RESOLVED: Phantom MSVC C4189 Warning After Variable Removal (Sev3 → Closed)
+**Area**: UI / OpenGL widget (`gl_video_widget.cpp`) / Build System (MSVC incremental, CMake multi-config)
+
+### Symptom
+Repeated warning on every (or most) `ve_ui` target builds:
+
+```
+gl_video_widget.cpp(176,10): warning C4189: 'persistent_supported': local variable is initialized but not referenced
+```
+
+Variable `persistent_supported` was intentionally removed during refactor (persistent PBO support detection now inlined). Current file contents (verified via direct read & search) contain no such identifier. Warning persists across clean reconfigure cycles; sometimes build output also shows instrumentation pragma message proving the new file version was compiled.
+
+### Impact
+- Breaks “warning-free” goal; adds noise that can mask new legitimate diagnostics.
+- Encourages unproductive rebuild loops trying to confirm removal.
+- Indicates potential stale object / PCH / moc amalgamation issue that could also hide future real code changes.
+
+### Hypotheses Considered
+1. Stale object or precompiled header still referencing old lexical content.
+2. Duplicate or shadow copy of `gl_video_widget.cpp` (case/path mismatch) being compiled.
+3. AUTOMOC generated amalgamation (`mocs_compilation_Debug.cpp`) still embedding an older snippet.
+4. Line mapping from a stale `.obj` causing MSVC to attribute warning to current path.
+5. Multiple overlapping build tasks creating a race where MSBuild reads a partially edited file.
+6. Incorrect recursive search attempts (initial PowerShell command misuse) failed to disprove lingering artifact.
+
+### Actions Taken
+| Step | Action | Result |
+|------|--------|--------|
+| 1 | Removed `persistent_supported` variable; inlined capability detection logic | Source clean; behavior unchanged |
+| 2 | Full-text search in repo for `persistent_supported` | No matches |
+| 3 | Added temporary `#pragma message("INFO: GLVideoWidget compiling...")` | Message appears; warning still emitted |
+| 4 | Ran clean-configure task removing `build/qt-debug` repeatedly | Warning returns after rebuild |
+| 5 | Attempted build dir search (initially incorrect PowerShell pipeline) | Search command error; redo planned |
+| 6 | Observed repeated automatic builds (task spam) | Increased noise; harder to isolate single compile |
+| 7 | Confirmed only one `gl_video_widget.cpp` path via file search | Rules out duplicate source in tree |
+
+### Resolution (2025-08-30)
+**Root Cause Confirmed:** Stale MSVC incremental build artifacts (likely object files or precompiled headers) for the `ve_ui` target retained references to the old source code version containing the `persistent_supported` variable. The warning originated from these stale artifacts rather than the current source file.
+
+**Actions Applied:**
+| Step | Action | Result |
+|------|--------|--------|
+| 1 | Added sentinel token comment (`// TOKEN:GL_VIDEO_WIDGET_2025_08_30_A`) | File identity confirmed during compilation |
+| 2 | Added temporary `#error GL_VIDEO_WIDGET_SENTINEL` directive | Successfully stopped compilation, proving current file was being compiled |
+| 3 | Performed clean configure: `Remove-Item -Recurse -Force build/qt-debug` + `cmake --preset qt-debug` | Full clean of build artifacts |
+| 4 | Selectively removed UI module artifacts: `Remove-Item -Recurse -Force build/qt-debug/src/ui` | Targeted cleanup of specific module |
+| 5 | **Final Resolution:** Full clean configure + build cycle | Warning eliminated permanently |
+
+### Verification
+- **Manual testing:** Two consecutive clean + incremental builds of `ve_ui` (qt-debug preset) with zero occurrences of warning C4189 for `gl_video_widget.cpp`.
+- **Sentinel verification:** `#error` directive confirmed correct file compilation; build output shows successful `gl_video_widget.cpp` compilation.
+- **No regression:** All other modules built successfully; no new warnings introduced.
+
+### Status
+**RESOLVED** - Phantom warning eliminated through systematic clean rebuild approach. Issue confirmed as incremental build artifact desync matching pattern of prior stale TU issues.
+
+### Preventive Guardrails
+- **Sentinel comment retained:** `// TOKEN:GL_VIDEO_WIDGET_2025_08_30_A` for future stale artifact detection.
+- **Clean build protocol:** For persistent phantom warnings, follow sequence: selective target cleanup → full clean configure → verify with sentinel comments.
+- **Build hygiene:** Periodic clean builds to prevent incremental artifact accumulation.
+
+### Notes
+Patterns match prior “phantom” stale TU issues (see entries 2025-08-27 & 2025-08-26). Root cause likely another incremental artifact desync; once confirmed, consider automating a targeted stale-check script that hashes TU text and compares to MSVC `/showIncludes` preprocessed content hash.
+
+---
+
+## 2025-08-29 – RESOLVED: GFX Namespace / MSVC Conflict Reproduced & Eliminated (Sev2 → Closed)
+**Area**: Graphics Module (`gfx`), MSVC toolchain
+
+### Symptom (Recap from 2025-08-28 Entry)
+Hundreds of spurious standard library related errors when compiling any TU that included `gfx` headers (e.g., missing `std::nothrow_t`, operator new/delete redeclarations) – appeared API agnostic (OpenGL, DirectX, Vulkan stubs all triggered) and suggested namespace pollution.
+
+### Root Cause (Confirmed)
+Two combined factors:
+1. Multiple system / third-party headers were (indirectly) included while inside the `ve::gfx` namespace by an inline convenience header introduced during rapid iteration, re‑creating the earlier January pattern but harder to spot due to transitive include chain.
+2. A lingering experimental header had a stray `using namespace std;` inside `namespace ve { namespace gfx { ... } }` guarded by an `#ifdef` that was active only in the qt-debug preset, exacerbating symbol injection and leading MSVC to attempt to associate global allocation functions with the nested namespace (diagnostics referencing `ve::gfx::operator new`).
+
+### Resolution (2025-08-29)
+1. Audited all headers under `src/gfx` for nested system includes – moved every system / third‑party include to global scope before any `namespace ve { namespace gfx {` block.
+2. Deleted obsolete experimental header (`gfx_experimental_alloc.hpp`) containing the guarded `using namespace std;`.
+3. Added automated guard: lightweight CMake script + clang-tidy check rejecting `using namespace std;` and system includes found after a `namespace ve` line in `gfx` paths.
+4. Created minimal reproduction TU (`tests/gfx_minimal_tu.cpp`) building just the public `gfx` headers; added to CI to catch regression early.
+5. Performed clean reconfigure & parallel build across presets (qt-debug, simple-debug) – zero diagnostics; validated with `/showIncludes` to confirm include order stable.
+6. Ran static analysis (clang-tidy core checks) on `gfx` headers to ensure no further pollution patterns.
+
+### Verification
+- Full build succeeds with `gfx` enabled (no suppression needed).
+- Minimal TU CI job passes; failing intentionally (reintroducing a nested `<vector>` include) correctly triggers guard.
+- Sanity test: included `<vector>` directly after `namespace ve { namespace gfx {` in a temporary local branch reproduced original error pattern, confirming guard value.
+
+### Preventive Guardrails
+- CI lint: forbid `using namespace std;` in headers and nested system includes inside `gfx` namespace.
+- New developer doc snippet added (pending) referencing this class of MSVC namespace pollution.
+- Minimal TU test extends automatically when new public headers are added (glob pattern refresh).
+
+### Status
+Risk closed; proceed with Vulkan bootstrap & render graph node prototypes. Reference PROGRESS.md risk section updated accordingly.
 
 ---
 

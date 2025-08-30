@@ -7,6 +7,8 @@ A modern Qt6-based video editor demonstrating comprehensive solutions for UI res
 - **Responsive UI**: No freezing during media import/processing
 - **Background Processing**: Worker threads with chunked operations
 - **Optimized Rendering**: Fast timeline paint events with caching
+- **Asynchronous GPU Upload**: Optional double-buffered OpenGL PBO path (toggle with `-DVE_ENABLE_PBO_UPLOAD=ON/OFF`, default ON)
+ - **Asynchronous GPU Upload**: Optional OpenGL PBO path (double or triple buffered) with runtime disable + persistent map experiment
 - **Modern Qt6**: Built with latest Qt6 framework via vcpkg
 - **Cross-Platform**: CMake build system (Windows focus)
 
@@ -24,8 +26,13 @@ A modern Qt6-based video editor demonstrating comprehensive solutions for UI res
 git clone <your-repo-url>
 cd Video_Editor
 
-# Configure with vcpkg dependencies
+# Configure with vcpkg dependencies (PBO upload ON by default)
 cmake --preset qt-debug
+
+# (Optional) Disable PBO upload path or enable advanced modes
+cmake -S . -B build/qt-debug -DVE_ENABLE_PBO_UPLOAD=OFF
+cmake -S . -B build/qt-debug -DVE_GL_PBO_TRIPLE=ON            # triple buffering
+cmake -S . -B build/qt-debug -DVE_GL_PBO_PERSISTENT_MAP=ON    # experimental
 
 # Build
 cmake --build build/qt-debug --config Debug
@@ -85,6 +92,26 @@ This project specifically addresses **UI responsiveness issues** commonly found 
 - `src/ui/src/main_window.cpp` - UI responsiveness implementation
 - `src/ui/src/timeline_panel.cpp` - Optimized paint events
 - `CMakeLists.txt` - Build configuration
+ - `src/ui/include/ui/gl_video_widget.hpp` & `src/ui/src/gl_video_widget.cpp` - PBO upload logic & runtime/env toggles
+### Build / Profiling / Debug Options
+
+| CMake Option | Default | Description |
+|--------------|---------|-------------|
+| `VE_ENABLE_PBO_UPLOAD` | ON | Compile PBO upload path (falls back to direct glTexSubImage2D if OFF or runtime disabled) |
+| `VE_GL_PBO_TRIPLE` | OFF | Use triple ring of PBOs to further reduce risk of driver sync stalls |
+| `VE_GL_PBO_PERSISTENT_MAP` | OFF | Experimental persistent mapping (requires GL 4.4 + `GL_ARB_buffer_storage`) |
+| `VE_ENABLE_DETAILED_PROFILING` | ON | Enables fine-grained profiling scopes (inner loops, sub-stages) |
+| `VE_HEAP_DEBUG` | OFF | Adds guard allocations & CRT heap checks for diagnosing memory issues |
+| `ENABLE_RUNTIME_DEBUG` | OFF | Verbose logging & extra runtime assertions |
+
+Environment variables:
+
+| Env Var | Effect |
+|---------|--------|
+| `VE_DISABLE_PBO` | Forces runtime fallback path (useful for A/B testing without rebuild) |
+| `VE_DISABLE_FFMPEG_CONVERT` | Forces manual color converters instead of swscale |
+
+These toggles allow rapid experimentation with upload strategies and profiling granularity during performance tuning.
 - `vcpkg.json` - Dependencies
 
 ### Debugging Tools

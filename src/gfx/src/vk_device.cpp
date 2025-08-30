@@ -20,30 +20,20 @@
 struct MinimalGraphicsDevice {
     bool created = false;
     unsigned int next_id = 1;
-
     bool create() {
         if (created) return true;
-        // ve::log::info("DirectX 11 graphics device created (stub)");
         created = true;
         return true;
     }
-
     void destroy() {
         if (!created) return;
-        // ve::log::info("DirectX 11 graphics device destroyed");
         created = false;
     }
-
     unsigned int create_texture(int width, int height, int format) {
-        (void)width; (void)height; (void)format; // unused parameters
-        if (!created) return 0;
-        unsigned int id = next_id++;
-        // ve::log::debug("Created texture {} ({}x{}) [stub]", id, width, height);
-        return id;
-    }
+        (void)width; (void)height; (void)format; if (!created) return 0; return next_id++; }
 };
 
-static MinimalGraphicsDevice g_device;
+static MinimalGraphicsDevice g_device; // only global state: id counter & created flag
 
 namespace ve::gfx {
 
@@ -52,6 +42,10 @@ namespace ve::gfx {
 // PIMPL implementation
 struct GraphicsDevice::Impl {
     bool created_ = false;
+    // Back buffer stub data lives here (avoid globals for data storage)
+    int back_w = 0;
+    int back_h = 0;
+    std::unique_ptr<uint8_t[]> back_buffer; // RGBA8
 
     bool create(const GraphicsDeviceInfo& info) {
         (void)info; // unused parameter
@@ -116,13 +110,38 @@ struct GraphicsDevice::Impl {
     }
 
     void draw_texture(unsigned int texture_id, float x, float y, float width, float height) {
-        (void)texture_id; (void)x; (void)y; (void)width; (void)height; // unused parameters
-        // ve::log::debug("draw_texture({}, {}, {}, {}, {}) [stub]", texture_id, x, y, width, height);
+        (void)texture_id; (void)x; (void)y; (void)width; (void)height;
+        int iw = static_cast<int>(width + 0.5f);
+        int ih = static_cast<int>(height + 0.5f);
+        if (iw <= 0 || ih <= 0) return;
+        if (back_w != iw || back_h != ih) {
+            back_w = iw; back_h = ih;
+            back_buffer = std::make_unique<uint8_t[]>(static_cast<size_t>(back_w) * back_h * 4);
+        }
+        if (back_buffer) {
+            for (int y2 = 0; y2 < back_h; ++y2) {
+                for (int x2 = 0; x2 < back_w; ++x2) {
+                    size_t idx = (static_cast<size_t>(y2) * back_w + x2) * 4;
+                    back_buffer[idx + 0] = static_cast<uint8_t>((x2 * 255) / (back_w ? back_w : 1));
+                    back_buffer[idx + 1] = static_cast<uint8_t>((y2 * 255) / (back_h ? back_h : 1));
+                    back_buffer[idx + 2] = static_cast<uint8_t>((g_device.next_id * 13) & 0xFF);
+                    back_buffer[idx + 3] = 255;
+                }
+            }
+        }
     }
 
     void set_viewport(int width, int height) {
         (void)width; (void)height; // unused parameters
         // ve::log::debug("set_viewport({}, {}) [stub]", width, height);
+    }
+    bool get_last_present_rgba(const void** data, int* w, int* h, int* stride) {
+        if (!back_buffer || back_w <= 0 || back_h <= 0) return false;
+        if (data) *data = back_buffer.get();
+        if (w) *w = back_w;
+        if (h) *h = back_h;
+        if (stride) *stride = back_w * 4;
+        return true;
     }
 };
 
@@ -203,6 +222,10 @@ void GraphicsDevice::draw_texture(unsigned int texture_id, float x, float y, flo
 
 void GraphicsDevice::set_viewport(int width, int height) noexcept {
     if (impl_) impl_->set_viewport(width, height);
+}
+
+bool GraphicsDevice::get_last_present_rgba(const void** data, int* width, int* height, int* stride) noexcept {
+    return impl_ ? impl_->get_last_present_rgba(data, width, height, stride) : false;
 }
 
 } // namespace ve::gfx

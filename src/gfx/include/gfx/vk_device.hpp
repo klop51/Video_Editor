@@ -42,6 +42,10 @@ public:
     // Viewport / projection
     void set_viewport(int width, int height) noexcept;
 
+    // Experimental CPU readback of last presented RGBA frame (stub path only).
+    // Returns true if a frame is available; data points to internal buffer valid until next draw.
+    bool get_last_present_rgba(const void** data, int* width, int* height, int* stride) noexcept;
+
 private:
     struct Impl;
     Impl* impl_;

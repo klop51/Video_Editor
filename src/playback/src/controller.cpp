@@ -1,5 +1,6 @@
 #include "playback/controller.hpp" // renamed class PlaybackController
 #include "core/log.hpp"
+#include "core/profiling.hpp"
 #include "media_io/media_probe.hpp"
 #include "../../config/debug.hpp"
 #include <vector>
@@ -206,11 +207,12 @@ void PlaybackController::playback_thread_main() {
             int64_t current_pts = current_time_us_.load();
             
             // Attempt cache reuse first (only exact pts match for now), unless bypassed for single-step
-            if(seek_requested_.load()==false && !bypass_cache) { // if not in middle of seek handling
+        if(seek_requested_.load()==false && !bypass_cache) { // if not in middle of seek handling
                     ve::cache::CachedFrame cached; cache_lookups_.fetch_add(1);
                 ve::cache::FrameKey key; key.pts_us = current_pts;
                 VE_DEBUG_ONLY(ve::log::info("Cache lookup for pts: " + std::to_string(key.pts_us)));
                 if(frame_cache_.get(key, cached)) {
+                        VE_PROFILE_SCOPE_UNIQ("playback.cache_hit");
                     cache_hits_.fetch_add(1);
                     VE_DEBUG_ONLY(ve::log::info("Cache HIT for pts: " + std::to_string(key.pts_us)));
                     decode::VideoFrame vf; vf.width = cached.width; vf.height = cached.height; vf.pts = current_pts; vf.data = cached.data; // copy buffer
@@ -260,6 +262,7 @@ void PlaybackController::playback_thread_main() {
             }
 
             // Read video frame (decode path)
+            VE_PROFILE_SCOPE_UNIQ("playback.decode_video");
             auto video_frame = decoder_->read_video();
             VE_DEBUG_ONLY(ve::log::info(std::string("Called decoder_->read_video(), result: ") + (video_frame ? "got frame" : "no frame")));
             if (video_frame) {
@@ -277,7 +280,7 @@ void PlaybackController::playback_thread_main() {
                 VE_DEBUG_ONLY(ve::log::info("Cache size now=" + std::to_string(frame_cache_.size())));
                 current_time_us_.store(video_frame->pts);
 
-                {
+                { // video callback dispatch (profiling removed to avoid variable shadow warning on MSVC)
                     std::vector<CallbackEntry<VideoFrameCallback>> copy;
                     { std::scoped_lock lk(callbacks_mutex_); copy = video_video_entries_; }
                     VE_DEBUG_ONLY(ve::log::info("Dispatching " + std::to_string(copy.size()) + " video callbacks (decode) for pts=" + std::to_string(video_frame->pts)));
@@ -315,9 +318,9 @@ void PlaybackController::playback_thread_main() {
             }
             
             // Read audio frame
-            auto audio_frame = decoder_->read_audio();
+            auto audio_frame = [&](){ VE_PROFILE_SCOPE_UNIQ("playback.decode_audio"); return decoder_->read_audio(); }();
             if (audio_frame) {
-                {
+                { // audio callback dispatch (profiling removed to avoid variable shadow warning on MSVC)
                     std::vector<CallbackEntry<AudioFrameCallback>> copy;
                     { std::scoped_lock lk(callbacks_mutex_); copy = audio_entries_; }
                     VE_DEBUG_ONLY(ve::log::info("Dispatching " + std::to_string(copy.size()) + " audio callbacks for pts=" + std::to_string(audio_frame->pts)));

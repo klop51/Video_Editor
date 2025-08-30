@@ -7,7 +7,7 @@ if(NOT ENABLE_QT_TOOLS)
 endif()
 
 # Find Qt6
-find_package(Qt6 QUIET COMPONENTS Core Widgets Multimedia)
+find_package(Qt6 QUIET COMPONENTS Core Widgets Multimedia OpenGLWidgets)
 if(NOT Qt6_FOUND)
     message(WARNING "Qt6 not found, skipping UI module")
     return()
@@ -22,11 +22,13 @@ add_library(ve_ui
     src/main_window.cpp
     src/timeline_panel.cpp
     src/viewer_panel.cpp
+    src/gl_video_widget.cpp
     
     # Headers with Q_OBJECT (for MOC processing)
     include/ui/main_window.hpp
     include/ui/timeline_panel.hpp
     include/ui/viewer_panel.hpp
+    include/ui/gl_video_widget.hpp
 )
 
 target_include_directories(ve_ui
@@ -45,9 +47,12 @@ target_link_libraries(ve_ui
         ve_timeline
         ve_playback
         ve_commands
-        Qt6::Core
-        Qt6::Widgets
-        Qt6::Multimedia
+    ve_render
+    ve_gfx
+    Qt6::Core
+    Qt6::Widgets
+    Qt6::Multimedia
+    Qt6::OpenGLWidgets
 )
 
 target_compile_features(ve_ui PUBLIC cxx_std_20)

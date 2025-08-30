@@ -5,6 +5,7 @@
 #include "persistence/project_serializer.hpp"
 #include <QDir>
 #include <QStandardPaths>
+#include <QTimer>
 
 namespace ve::app {
 
@@ -49,6 +50,11 @@ int Application::run() {
     }
     
     main_window_->show();
+    // Schedule a mid-run profiling snapshot after a short delay (e.g., 5s)
+    QTimer::singleShot(5000, this, [](){
+        ve::log::info("Writing mid-run profiling snapshot: profiling_runtime.json");
+        ve::prof::Accumulator::instance().write_json("profiling_runtime.json");
+    });
     // ve::log::info("Application started successfully");
     
     return exec();

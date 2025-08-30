@@ -49,10 +49,20 @@ cmake --build build\simple-debug --config Release --target video_editor
 
 ## Technical Information
 
-- **Framework:** Qt6 with Widgets and OpenGL support
-- **Language:** C++20
-- **Build System:** CMake with vcpkg package management
-- **Dependencies:** Automatically bundled for standalone execution
+**GPU Upload Path:** OpenGL PBO upload path reduces stalls (default ON).
+
+### Build / Runtime Tunables
+
+| Option / Env Var | Default | Purpose |
+|------------------|---------|---------|
+| `-DVE_ENABLE_PBO_UPLOAD=ON/OFF` | ON | Compile PBO upload path (falls back automatically if disabled at runtime) |
+| `VE_DISABLE_PBO` (env) | unset | At runtime, force fallback (no PBO) without rebuild |
+| `-DVE_GL_PBO_TRIPLE=ON` | OFF | Use triple PBO ring to further hide stalls on spiky workloads |
+| `-DVE_GL_PBO_PERSISTENT_MAP=ON` | OFF | Experimental persistent mapped PBOs (requires GL 4.4 + `GL_ARB_buffer_storage`) |
+| `-DVE_ENABLE_DETAILED_PROFILING=ON/OFF` | ON | Enables fine‑grained profiling scopes (inner loops, GL sub-stages) |
+| `-DVE_HEAP_DEBUG=ON` | OFF | Adds extra guard checks and CRT heap validations in hot paths (debug / diagnostics) |
+
+All options are standard CMake cache entries; pass them during configure. Environment variable toggles can be set in your shell before running.
 
 ## Logging
 
