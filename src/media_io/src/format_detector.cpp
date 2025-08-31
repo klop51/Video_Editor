@@ -9,7 +9,8 @@
 
 namespace ve::media_io {
 
-FormatDetector::FormatDetector() {
+FormatDetector::FormatDetector() 
+    : hdr_infrastructure_(std::make_unique<HDRInfrastructure>()) { // Phase 2 Week 5: HDR infrastructure
     initialize_professional_capabilities();
     initialize_broadcast_capabilities();
     initialize_modern_codec_capabilities();
@@ -207,6 +208,9 @@ std::optional<DetectedFormat> FormatDetector::detect_format_from_header(
     
     // Get capability information
     format.capability = get_format_capability(format.codec, format.container);
+    
+    // Phase 2 Week 5: Assess HDR capability
+    assess_hdr_capability(format);
     
     // Calculate professional score
     format.professional_score = calculate_professional_score(format);
@@ -543,5 +547,89 @@ bool supports_hdr_workflow(CodecFamily codec) {
 }
 
 } // namespace format_utils
+
+// Phase 2 Week 5: HDR Detection Methods
+std::optional<HDRMetadata> FormatDetector::detect_hdr_metadata(const std::vector<uint8_t>& stream_data) {
+    if (!hdr_infrastructure_) {
+        return std::nullopt;
+    }
+    
+    // Use HDR infrastructure to detect metadata
+    auto hdr_metadata = hdr_infrastructure_->detect_hdr_metadata(stream_data.data(), stream_data.size());
+    
+    if (hdr_infrastructure_->validate_hdr_metadata(hdr_metadata)) {
+        return hdr_metadata;
+    }
+    
+    return std::nullopt;
+}
+
+void FormatDetector::assess_hdr_capability(DetectedFormat& format) {
+    if (!hdr_infrastructure_) {
+        return;
+    }
+    
+    // Check if codec supports HDR
+    bool codec_supports_hdr = format_utils::supports_hdr_workflow(format.codec);
+    
+    if (codec_supports_hdr) {
+        format.capability.supports_hdr = true;
+        
+        // Check for existing HDR metadata
+        if (format.hdr_metadata.has_value()) {
+            format.has_hdr_content = true;
+            
+            // Add HDR-specific recommendations
+            const auto& hdr_meta = format.hdr_metadata.value();
+            
+            switch (hdr_meta.hdr_standard) {
+                case HDRStandard::HDR10:
+                    format.recommendations.push_back("HDR10 detected - suitable for streaming platforms");
+                    break;
+                case HDRStandard::DOLBY_VISION:
+                    format.recommendations.push_back("Dolby Vision detected - premium HDR format");
+                    format.professional_score += 0.2f; // Boost professional score
+                    break;
+                case HDRStandard::HLG:
+                    format.recommendations.push_back("HLG detected - broadcast HDR standard");
+                    break;
+                case HDRStandard::HDR10_PLUS:
+                    format.recommendations.push_back("HDR10+ detected - dynamic metadata available");
+                    break;
+                default:
+                    break;
+            }
+            
+            // Check system HDR capabilities
+            auto system_caps = hdr_infrastructure_->get_system_hdr_capabilities();
+            if (!system_caps.supports_hdr10 && !system_caps.supports_hlg && !system_caps.supports_dolby_vision) {
+                format.warnings.push_back("HDR content detected but system may not support HDR display");
+            }
+            
+            // Validate HDR metadata consistency
+            if (hdr_meta.mastering_display.max_display_mastering_luminance > 10000.0f) {
+                format.warnings.push_back("Very high peak luminance may not be displayable on most monitors");
+            }
+            
+            if (hdr_meta.content_light_level.max_content_light_level > 4000) {
+                format.warnings.push_back("High content light level may require tone mapping");
+            }
+        } else {
+            // Codec supports HDR but no HDR metadata found
+            if (format.bit_depth >= 10) {
+                format.recommendations.push_back("10-bit content detected - suitable for HDR workflows");
+            }
+            
+            if (format.color_space == ve::decode::ColorSpace::BT2020) {
+                format.recommendations.push_back("BT.2020 color space - HDR-capable");
+            }
+        }
+    } else {
+        // Codec doesn't support HDR
+        if (format.bit_depth >= 10 || format.color_space == ve::decode::ColorSpace::BT2020) {
+            format.warnings.push_back("Wide color gamut detected but codec may not support HDR");
+        }
+    }
+}
 
 } // namespace ve::media_io

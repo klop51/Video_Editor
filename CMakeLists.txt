@@ -134,6 +134,21 @@ endif()
 if(ENABLE_TESTS)
     enable_testing()
     add_subdirectory(tests)
+    
+    # Phase 2 Week 5: Simple HDR Infrastructure Test
+    add_executable(test_hdr_infrastructure_simple 
+        test_hdr_infrastructure_simple.cpp
+    )
+    
+    target_link_libraries(test_hdr_infrastructure_simple PRIVATE ve_media_io ve_core)
+    
+    target_include_directories(test_hdr_infrastructure_simple PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/media_io/include
+        ${CMAKE_SOURCE_DIR}/src/decode/include
+        ${CMAKE_SOURCE_DIR}/src/core/include
+    )
+    
+    add_test(NAME test_hdr_infrastructure_simple COMMAND test_hdr_infrastructure_simple)
 endif()
 
 # Week 2 Memory Management Test
@@ -305,6 +320,23 @@ if(ENABLE_TOOLS)
         PRIVATE 
         ${CMAKE_CURRENT_SOURCE_DIR}/src/media_io/include
         ${CMAKE_CURRENT_SOURCE_DIR}/src/decode/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
+    )
+
+    # Phase 2 Week 5: HDR Infrastructure Validation Test
+    add_executable(hdr_validation_test 
+        hdr_validation_test.cpp
+    )
+    
+    target_link_libraries(hdr_validation_test 
+        PRIVATE 
+        ve_media_io 
+        ve_core
+    )
+    
+    target_include_directories(hdr_validation_test 
+        PRIVATE 
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/media_io/include
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
     )
 endif()

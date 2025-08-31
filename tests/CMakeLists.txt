@@ -19,6 +19,7 @@ set(UNIT_TEST_SOURCES
     test_command_coalescing.cpp
     test_profiling_stats.cpp
     test_project_roundtrip.cpp
+    test_hdr_infrastructure.cpp  # Phase 2 Week 5: HDR Infrastructure tests
 )
 
 if(VE_ENABLE_QT_UI_TESTS)
@@ -27,7 +28,7 @@ endif()
 
 add_executable(unit_tests ${UNIT_TEST_SOURCES})
 
-target_link_libraries(unit_tests PRIVATE VideoEditor::core VideoEditor::decode VideoEditor::timeline VideoEditor::persistence VideoEditor::commands Catch2::Catch2WithMain)
+target_link_libraries(unit_tests PRIVATE VideoEditor::core VideoEditor::decode VideoEditor::timeline VideoEditor::persistence VideoEditor::commands VideoEditor::media_io Catch2::Catch2WithMain)
 
 # Explicit include for commands until propagated include dirs confirmed across all generators
 target_include_directories(unit_tests PRIVATE

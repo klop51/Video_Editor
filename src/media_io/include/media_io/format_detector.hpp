@@ -6,6 +6,7 @@
 #include <optional>
 #include <functional>
 #include "decode/frame.hpp"
+#include "media_io/hdr_infrastructure.hpp"  // Phase 2 Week 5: HDR integration
 
 namespace ve::media_io {
 
@@ -116,6 +117,10 @@ struct DetectedFormat {
     std::optional<std::string> timecode;
     std::vector<std::string> metadata_keys;
     
+    // Phase 2 Week 5: HDR metadata integration
+    std::optional<HDRMetadata> hdr_metadata;
+    bool has_hdr_content = false;
+    
     // Capability assessment
     FormatCapability capability;
     
@@ -205,6 +210,19 @@ public:
     void register_codec_detector(const std::string& codec_name, CodecDetectorFunction detector_func);
     
     /**
+     * Detect HDR metadata from stream data (Phase 2 Week 5)
+     * @param stream_data Stream metadata/SEI messages
+     * @return Detected HDR metadata or nullopt
+     */
+    std::optional<HDRMetadata> detect_hdr_metadata(const std::vector<uint8_t>& stream_data);
+    
+    /**
+     * Assess HDR capability for detected format (Phase 2 Week 5)
+     * @param format Format to assess for HDR support
+     */
+    void assess_hdr_capability(DetectedFormat& format);
+    
+    /**
      * Get list of all supported professional formats
      * @return Vector of supported codec/container combinations
      */
@@ -216,6 +234,9 @@ private:
     
     // Modern codec detector functions (Phase 1 Week 4)
     std::unordered_map<std::string, CodecDetectorFunction> codec_detectors_;
+    
+    // HDR infrastructure integration (Phase 2 Week 5)
+    std::unique_ptr<HDRInfrastructure> hdr_infrastructure_;
     
     // Format detection helpers
     CodecFamily detect_codec_from_fourcc(uint32_t fourcc);

@@ -6,6 +6,8 @@ add_library(ve_media_io STATIC
     src/dnxhd_support.cpp    # Phase 1 Week 3: DNxHD/DNxHR broadcast codec support
     src/modern_codec_support.cpp  # Phase 1 Week 4: Modern codec support (AV1, HEVC, VP9)
     src/modern_codec_format_integration.cpp  # Phase 1 Week 4: Modern codec integration
+    src/hdr_infrastructure.cpp  # Phase 2 Week 5: HDR Infrastructure and processing
+    src/hdr_utilities.cpp       # Phase 2 Week 5: HDR Workflow utilities
 )
 
 add_library(VideoEditor::media_io ALIAS ve_media_io)
