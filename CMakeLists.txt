@@ -222,6 +222,57 @@ if(ENABLE_TOOLS)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
     )
 
+    # FORMAT_SUPPORT_ROADMAP.md Phase 1 Week 1 validation executable
+    add_executable(format_support_phase1_week1_validation
+        format_support_phase1_week1_validation.cpp
+    )
+    
+    target_link_libraries(format_support_phase1_week1_validation PRIVATE
+        ve_media_io
+        ve_decode  
+        ve_core
+    )
+    
+    target_include_directories(format_support_phase1_week1_validation PRIVATE
+        src/media_io/include
+        src/decode/include
+        src/core/include
+    )
+
+    # FORMAT_SUPPORT_ROADMAP.md Phase 1 Week 2 validation executable
+    add_executable(format_support_phase1_week2_validation
+        format_support_phase1_week2_validation.cpp
+    )
+    
+    target_link_libraries(format_support_phase1_week2_validation PRIVATE
+        ve_media_io
+        ve_decode  
+        ve_core
+    )
+    
+    target_include_directories(format_support_phase1_week2_validation PRIVATE
+        src/media_io/include
+        src/decode/include
+        src/core/include
+    )
+
+    # FORMAT_SUPPORT_ROADMAP.md Phase 1 Week 3 validation executable
+    add_executable(format_support_phase1_week3_validation
+        format_support_phase1_week3_validation.cpp
+    )
+    
+    target_link_libraries(format_support_phase1_week3_validation PRIVATE
+        ve_media_io
+        ve_decode  
+        ve_core
+    )
+    
+    target_include_directories(format_support_phase1_week3_validation PRIVATE
+        src/media_io/include
+        src/decode/include
+        src/core/include
+    )
+
     # Phase 6: Production Readiness Testing validation executable
     add_executable(gpu_bridge_phase6_production_validation 
         gpu_bridge_phase6_production_validation.cpp
@@ -236,6 +287,24 @@ if(ENABLE_TOOLS)
     target_include_directories(gpu_bridge_phase6_production_validation 
         PRIVATE 
         ${CMAKE_CURRENT_SOURCE_DIR}/src/gfx/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
+    )
+
+    # Phase 1 Week 4: Modern Codec Integration Test
+    add_executable(simple_modern_codec_test 
+        simple_modern_codec_test.cpp
+    )
+    
+    target_link_libraries(simple_modern_codec_test 
+        PRIVATE 
+        ve_media_io 
+        ve_core
+    )
+    
+    target_include_directories(simple_modern_codec_test 
+        PRIVATE 
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/media_io/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/decode/include
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
     )
 endif()

@@ -1,6 +1,11 @@
 add_library(ve_media_io STATIC
     src/media_probe.cpp
     src/demuxer.cpp
+    src/format_detector.cpp  # Phase 1 Week 1: Professional format detection system
+    src/prores_support.cpp   # Phase 1 Week 2: ProRes professional codec support
+    src/dnxhd_support.cpp    # Phase 1 Week 3: DNxHD/DNxHR broadcast codec support
+    src/modern_codec_support.cpp  # Phase 1 Week 4: Modern codec support (AV1, HEVC, VP9)
+    src/modern_codec_format_integration.cpp  # Phase 1 Week 4: Modern codec integration
 )
 
 add_library(VideoEditor::media_io ALIAS ve_media_io)
@@ -12,6 +17,7 @@ target_include_directories(ve_media_io
         $<INSTALL_INTERFACE:include>
     PRIVATE
         ${CMAKE_SOURCE_DIR}/src/core/include
+        ${CMAKE_SOURCE_DIR}/src/decode/include  # For format_detector.hpp dependency
 )
 
 if(ENABLE_FFMPEG)
