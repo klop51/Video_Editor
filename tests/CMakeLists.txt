@@ -70,3 +70,14 @@ target_include_directories(gpu_system_validation PRIVATE
     ${CMAKE_SOURCE_DIR}/src/gfx/include
 )
 add_test(NAME gpu_system_validation COMMAND gpu_system_validation)
+
+# Color Management Integration Validation Test
+add_executable(color_management_validation_test 
+    ${CMAKE_SOURCE_DIR}/color_management_validation_test.cpp
+)
+target_link_libraries(color_management_validation_test PRIVATE VideoEditor::media_io)
+target_include_directories(color_management_validation_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/media_io/include
+    ${CMAKE_SOURCE_DIR}/src/core/include
+)
+add_test(NAME color_management_validation_test COMMAND color_management_validation_test)

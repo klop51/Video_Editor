@@ -339,6 +339,40 @@ if(ENABLE_TOOLS)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/media_io/include
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
     )
+
+    # Phase 2 Week 6: Log Format Support Validation Test
+    add_executable(log_format_validation_test 
+        log_format_validation_test.cpp
+    )
+    
+    target_link_libraries(log_format_validation_test 
+        PRIVATE 
+        ve_media_io 
+        ve_core
+    )
+    
+    target_include_directories(log_format_validation_test 
+        PRIVATE 
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/media_io/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
+    )
+    
+    # Phase 2 Week 7: High Bit Depth Pipeline Validation Test
+    add_executable(high_bitdepth_validation_test 
+        high_bitdepth_validation_test.cpp
+    )
+    
+    target_link_libraries(high_bitdepth_validation_test 
+        PRIVATE 
+        ve_media_io 
+        ve_core
+    )
+    
+    target_include_directories(high_bitdepth_validation_test 
+        PRIVATE 
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/media_io/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
+    )
 endif()
 
 set(CPACK_PACKAGE_NAME "VideoEditor")

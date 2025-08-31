@@ -8,6 +8,9 @@ add_library(ve_media_io STATIC
     src/modern_codec_format_integration.cpp  # Phase 1 Week 4: Modern codec integration
     src/hdr_infrastructure.cpp  # Phase 2 Week 5: HDR Infrastructure and processing
     src/hdr_utilities.cpp       # Phase 2 Week 5: HDR Workflow utilities
+    src/log_format_support.cpp  # Phase 2 Week 6: Log Format Support for color grading
+    src/high_bitdepth_support.cpp  # Phase 2 Week 7: High Bit Depth Pipeline
+    src/color_management.cpp    # Phase 2 Week 8: Color Management Integration
 )
 
 add_library(VideoEditor::media_io ALIAS ve_media_io)
