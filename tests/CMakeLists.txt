@@ -81,3 +81,14 @@ target_include_directories(color_management_validation_test PRIVATE
     ${CMAKE_SOURCE_DIR}/src/core/include
 )
 add_test(NAME color_management_validation_test COMMAND color_management_validation_test)
+
+# High Resolution 8K Support Validation Test
+add_executable(high_resolution_validation_test 
+    ${CMAKE_SOURCE_DIR}/high_resolution_validation_test.cpp
+)
+target_link_libraries(high_resolution_validation_test PRIVATE VideoEditor::media_io)
+target_include_directories(high_resolution_validation_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/media_io/include
+    ${CMAKE_SOURCE_DIR}/src/core/include
+)
+add_test(NAME high_resolution_validation_test COMMAND high_resolution_validation_test)

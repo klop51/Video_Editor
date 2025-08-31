@@ -11,6 +11,7 @@ add_library(ve_media_io STATIC
     src/log_format_support.cpp  # Phase 2 Week 6: Log Format Support for color grading
     src/high_bitdepth_support.cpp  # Phase 2 Week 7: High Bit Depth Pipeline
     src/color_management.cpp    # Phase 2 Week 8: Color Management Integration
+    src/high_resolution_support.cpp  # Phase 3 Week 9: 8K Support Infrastructure
 )
 
 add_library(VideoEditor::media_io ALIAS ve_media_io)
