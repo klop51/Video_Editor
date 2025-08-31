@@ -47,3 +47,25 @@ add_test(NAME unit_tests COMMAND unit_tests)
 add_executable(test_gfx_headers test_gfx_headers.cpp)
 target_link_libraries(test_gfx_headers PRIVATE ve_gfx)
 add_test(NAME test_gfx_headers COMMAND test_gfx_headers)
+
+# GPU System Comprehensive Test Suite
+add_executable(gpu_test_suite 
+    ${CMAKE_SOURCE_DIR}/src/gfx/gpu_test_suite.cpp
+)
+target_link_libraries(gpu_test_suite PRIVATE ve_gfx)
+target_include_directories(gpu_test_suite PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/gfx
+    ${CMAKE_SOURCE_DIR}/src/gfx/include
+)
+add_test(NAME gpu_test_suite COMMAND gpu_test_suite)
+
+# GPU System Production Validation
+add_executable(gpu_system_validation 
+    ${CMAKE_SOURCE_DIR}/src/gpu_system_validation.cpp
+)
+target_link_libraries(gpu_system_validation PRIVATE ve_gfx)
+target_include_directories(gpu_system_validation PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/gfx
+    ${CMAKE_SOURCE_DIR}/src/gfx/include
+)
+add_test(NAME gpu_system_validation COMMAND gpu_system_validation)

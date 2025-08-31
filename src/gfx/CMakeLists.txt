@@ -1,6 +1,7 @@
 add_library(ve_gfx STATIC
     src/vk_instance.cpp
     src/vk_device.cpp
+    graphics_device_bridge.cpp
 )
 
 # Consumers include this for GPU rendering abstraction

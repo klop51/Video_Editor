@@ -153,6 +153,23 @@ if(ENABLE_TOOLS)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/gfx/include
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
     )
+
+    # Phase 2 GPU Bridge Validation
+    add_executable(gpu_bridge_phase2_complete 
+        gpu_bridge_phase2_complete.cpp
+    )
+    
+    target_link_libraries(gpu_bridge_phase2_complete 
+        PRIVATE 
+        ve_gfx 
+        ve_core
+    )
+    
+    target_include_directories(gpu_bridge_phase2_complete 
+        PRIVATE 
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/gfx/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
+    )
 endif()
 
 set(CPACK_PACKAGE_NAME "VideoEditor")

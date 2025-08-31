@@ -82,6 +82,7 @@ struct D3D11ShaderProgram {
 
 // Week 4: Command Buffer & Synchronization structures
 struct GPUFence {
+    uint32_t id = 0;
     ID3D11Query* fence_query = nullptr;
     bool signaled = false;
     
@@ -151,6 +152,10 @@ struct YUVTexture {
     UINT y_stride = 0;
     UINT uv_stride = 0;
     
+    // Scaling factors for color space conversion
+    float chroma_scale[2] = {1.0f, 1.0f};  // UV plane scaling factors
+    float luma_scale[2] = {1.0f, 1.0f};    // Y plane scaling factors
+    
     ~YUVTexture() {
         if (chroma_srv) chroma_srv->Release();
         if (luma_srv) luma_srv->Release();
@@ -171,17 +176,18 @@ enum class RenderCommandType {
     SET_TEXTURE,
     SET_UNIFORM,
     DRAW_QUAD,
-    CLEAR
+    CLEAR,
+    CLEAR_COLOR
 };
 
 struct RenderCommand {
     RenderCommandType type;
     union {
-        struct { unsigned int texture_id; } set_render_target;
-        struct { unsigned int shader_id; } set_shader_program;
-        struct { unsigned int texture_id; int slot; } set_texture;
-        struct { unsigned int shader_id; float value; const char* name; } set_uniform;
-        struct { unsigned int texture_id; float x, y, width, height; } draw_quad;
+        struct { ID3D11RenderTargetView* rtv; ID3D11DepthStencilView* dsv; } render_target;
+        struct { ID3D11VertexShader* vertex_shader; ID3D11PixelShader* pixel_shader; } shader_program;
+        struct { ID3D11ShaderResourceView* srv; int slot; } texture;
+        struct { ID3D11RenderTargetView* rtv; float color[4]; } clear_color;
+        struct { float x, y, width, height; } draw_quad;
         struct { float r, g, b, a; } clear;
     };
 };
@@ -199,6 +205,7 @@ private:
     std::unordered_map<unsigned int, std::unique_ptr<D3D11Texture>> textures;
     std::unordered_map<unsigned int, std::unique_ptr<D3D11ShaderProgram>> shaders;
     std::unordered_map<unsigned int, std::unique_ptr<D3D11Buffer>> buffers;
+    std::unordered_map<unsigned int, ID3D11RenderTargetView*> render_targets;
     unsigned int next_texture_id = 1;
     unsigned int next_shader_id = 1;
     unsigned int next_buffer_id = 1;
@@ -220,8 +227,8 @@ private:
     
     // Week 5: YUV to RGB Conversion members
     std::vector<std::unique_ptr<YUVTexture>> yuv_textures;
-    D3D11ShaderProgram yuv_to_rgb_planar_shader;    // For YUV420P/422P/444P
-    D3D11ShaderProgram yuv_to_rgb_nv12_shader;      // For NV12/NV21
+    std::unique_ptr<D3D11ShaderProgram> yuv_to_rgb_planar_shader;    // For YUV420P/422P/444P
+    std::unique_ptr<D3D11ShaderProgram> yuv_to_rgb_nv12_shader;      // For NV12/NV21
     ID3D11Buffer* color_space_constants_buffer = nullptr;
     
     DXGI_FORMAT get_dxgi_format(int format) {
@@ -850,6 +857,137 @@ public:
         if (total) *total = total_gpu_memory;
         if (used) *used = used_gpu_memory;
         if (available) *available = (total_gpu_memory > used_gpu_memory) ? total_gpu_memory - used_gpu_memory : 0;
+    }
+
+    // Helper function for compiling shader programs (used by YUV shaders)
+    bool compile_shader_program(const char* vertex_src, const char* fragment_src, std::unique_ptr<D3D11ShaderProgram>& shader_out) {
+        if (!device) return false;
+        
+        auto shader = std::make_unique<D3D11ShaderProgram>();
+        
+        // Compile vertex shader
+        ID3DBlob* vs_blob = nullptr;
+        ID3DBlob* error_blob = nullptr;
+        
+        HRESULT hr = D3DCompile(
+            vertex_src, strlen(vertex_src), nullptr, nullptr, nullptr,
+            "main", "vs_5_0", 0, 0, &vs_blob, &error_blob
+        );
+        
+        if (FAILED(hr)) {
+            if (error_blob) {
+                const char* error_msg = static_cast<const char*>(error_blob->GetBufferPointer());
+                ve::log::error("Vertex shader compilation failed: " + std::string(error_msg));
+                error_blob->Release();
+            }
+            if (vs_blob) vs_blob->Release();
+            return false;
+        }
+        
+        hr = device->CreateVertexShader(
+            vs_blob->GetBufferPointer(),
+            vs_blob->GetBufferSize(),
+            nullptr,
+            &shader->vertex_shader
+        );
+        
+        if (FAILED(hr)) {
+            ve::log::error("Failed to create vertex shader: 0x" + std::to_string(static_cast<unsigned int>(hr)));
+            vs_blob->Release();
+            return false;
+        }
+        
+        // Compile pixel shader
+        ID3DBlob* ps_blob = nullptr;
+        hr = D3DCompile(
+            fragment_src, strlen(fragment_src), nullptr, nullptr, nullptr,
+            "main", "ps_5_0", 0, 0, &ps_blob, &error_blob
+        );
+        
+        if (FAILED(hr)) {
+            if (error_blob) {
+                const char* error_msg = static_cast<const char*>(error_blob->GetBufferPointer());
+                ve::log::error("Pixel shader compilation failed: " + std::string(error_msg));
+                error_blob->Release();
+            }
+            vs_blob->Release();
+            if (ps_blob) ps_blob->Release();
+            return false;
+        }
+        
+        hr = device->CreatePixelShader(
+            ps_blob->GetBufferPointer(),
+            ps_blob->GetBufferSize(),
+            nullptr,
+            &shader->pixel_shader
+        );
+        
+        if (FAILED(hr)) {
+            ve::log::error("Failed to create pixel shader: 0x" + std::to_string(static_cast<unsigned int>(hr)));
+            ps_blob->Release();
+            vs_blob->Release();
+            return false;
+        }
+        
+        // Create input layout
+        D3D11_INPUT_ELEMENT_DESC layout[] = {
+            {"POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
+            {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 8, D3D11_INPUT_PER_VERTEX_DATA, 0}
+        };
+        
+        hr = device->CreateInputLayout(
+            layout,
+            ARRAYSIZE(layout),
+            vs_blob->GetBufferPointer(),
+            vs_blob->GetBufferSize(),
+            &shader->input_layout
+        );
+        
+        if (FAILED(hr)) {
+            ve::log::error("Failed to create input layout: 0x" + std::to_string(static_cast<unsigned int>(hr)));
+            ps_blob->Release();
+            vs_blob->Release();
+            return false;
+        }
+        
+        // Create constant buffer
+        D3D11_BUFFER_DESC cb_desc = {};
+        cb_desc.ByteWidth = 256; // 256 bytes should be enough for most uniforms
+        cb_desc.Usage = D3D11_USAGE_DYNAMIC;
+        cb_desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+        cb_desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+        
+        hr = device->CreateBuffer(&cb_desc, nullptr, &shader->constant_buffer);
+        if (FAILED(hr)) {
+            ve::log::error("Failed to create constant buffer: 0x" + std::to_string(static_cast<unsigned int>(hr)));
+            ps_blob->Release();
+            vs_blob->Release();
+            return false;
+        }
+        
+        // Create sampler state
+        D3D11_SAMPLER_DESC sampler_desc = {};
+        sampler_desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+        sampler_desc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
+        sampler_desc.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
+        sampler_desc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+        sampler_desc.ComparisonFunc = D3D11_COMPARISON_NEVER;
+        sampler_desc.MinLOD = 0;
+        sampler_desc.MaxLOD = D3D11_FLOAT32_MAX;
+        
+        hr = device->CreateSamplerState(&sampler_desc, &shader->sampler_state);
+        if (FAILED(hr)) {
+            ve::log::error("Failed to create sampler state: 0x" + std::to_string(static_cast<unsigned int>(hr)));
+            ps_blob->Release();
+            vs_blob->Release();
+            return false;
+        }
+        
+        ps_blob->Release();
+        vs_blob->Release();
+        
+        shader_out = std::move(shader);
+        return true;
     }
 
     unsigned int create_shader_program(const char* vertex_src, const char* fragment_src) {
@@ -1637,13 +1775,12 @@ public:
         if (yuv_texture_id >= yuv_textures.size() || rgb_texture_id >= textures.size() || !context) return;
         
         auto& yuv_tex = *yuv_textures[yuv_texture_id];
-        auto& rgb_tex = textures[rgb_texture_id];
         
         // Set render target
         ID3D11RenderTargetView* rtv = nullptr;
         for (auto& [id, rt] : render_targets) {
             if (id == rgb_texture_id) {
-                rtv = rt.get();
+                rtv = rt;
                 break;
             }
         }
@@ -1662,9 +1799,9 @@ public:
         // Select appropriate shader based on YUV format
         D3D11ShaderProgram* shader_program = nullptr;
         if (yuv_tex.format == YUVFormat::YUV420P || yuv_tex.format == YUVFormat::YUV422P || yuv_tex.format == YUVFormat::YUV444P) {
-            shader_program = &yuv_to_rgb_planar_shader;
+            shader_program = yuv_to_rgb_planar_shader.get();
         } else if (yuv_tex.format == YUVFormat::NV12 || yuv_tex.format == YUVFormat::NV21) {
-            shader_program = &yuv_to_rgb_nv12_shader;
+            shader_program = yuv_to_rgb_nv12_shader.get();
         }
         
         if (!shader_program || !shader_program->vertex_shader || !shader_program->pixel_shader) return;
@@ -1698,7 +1835,7 @@ public:
         }
         
         // Set sampler
-        context->PSSetSamplers(0, 1, &sampler_state);
+        context->PSSetSamplers(0, 1, &shader_program->sampler_state);
         
         // Draw fullscreen quad
         UINT stride = sizeof(float) * 4; // 2 floats position + 2 floats texcoord
@@ -1778,6 +1915,7 @@ public:
 
     EffectShaders effect_shaders;
     ID3D11Buffer* effect_constants_buffer = nullptr;
+    ID3D11SamplerState* shared_sampler_state = nullptr;
 
     bool initialize_effect_shaders() {
         ve::log::info("Initializing Week 6 effect shaders");
@@ -1792,6 +1930,21 @@ public:
         HRESULT hr = device->CreateBuffer(&buffer_desc, nullptr, &effect_constants_buffer);
         if (FAILED(hr)) {
             ve::log::error("Failed to create effect constants buffer");
+            return false;
+        }
+
+        // Create shared sampler state for effects
+        D3D11_SAMPLER_DESC sampler_desc = {};
+        sampler_desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+        sampler_desc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
+        sampler_desc.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
+        sampler_desc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+        sampler_desc.MinLOD = 0;
+        sampler_desc.MaxLOD = D3D11_FLOAT32_MAX;
+        
+        hr = device->CreateSamplerState(&sampler_desc, &shared_sampler_state);
+        if (FAILED(hr)) {
+            ve::log::error("Failed to create shared sampler state");
             return false;
         }
 
@@ -1817,9 +1970,9 @@ public:
         
         // Set input texture and render
         auto it = textures.find(input_texture_id);
-        if (it != textures.end() && it->second.srv) {
-            context->PSSetShaderResources(0, 1, &it->second.srv);
-            context->PSSetSamplers(0, 1, &sampler_state);
+        if (it != textures.end() && it->second->srv) {
+            context->PSSetShaderResources(0, 1, &it->second->srv);
+            context->PSSetSamplers(0, 1, &shared_sampler_state);
             
             // Set output render target
             auto rt_it = render_targets.find(output_texture_id);
@@ -1829,8 +1982,8 @@ public:
                 // Set viewport to match texture size
                 auto& tex = it->second;
                 D3D11_VIEWPORT viewport = {};
-                viewport.Width = static_cast<float>(tex.width);
-                viewport.Height = static_cast<float>(tex.height);
+                viewport.Width = static_cast<float>(tex->width);
+                viewport.Height = static_cast<float>(tex->height);
                 viewport.MaxDepth = 1.0f;
                 context->RSSetViewports(1, &viewport);
                 
@@ -1859,8 +2012,8 @@ public:
         
         BlurParams params;
         params.blur_radius = radius;
-        params.texture_size[0] = static_cast<float>(it->second.width);
-        params.texture_size[1] = static_cast<float>(it->second.height);
+        params.texture_size[0] = static_cast<float>(it->second->width);
+        params.texture_size[1] = static_cast<float>(it->second->height);
         params.kernel_size = static_cast<int>(radius * 2.0f) + 1;
         
         // Horizontal pass
@@ -1875,8 +2028,8 @@ public:
         }
 
         context->PSSetConstantBuffers(0, 1, &effect_constants_buffer);
-        context->PSSetShaderResources(0, 1, &it->second.srv);
-        context->PSSetSamplers(0, 1, &sampler_state);
+        context->PSSetShaderResources(0, 1, &it->second->srv);
+        context->PSSetSamplers(0, 1, &shared_sampler_state);
         
         // Render horizontal pass to intermediate texture
         auto intermediate_rt = render_targets.find(intermediate_texture_id);
@@ -1884,8 +2037,8 @@ public:
             context->OMSetRenderTargets(1, &intermediate_rt->second, nullptr);
             
             D3D11_VIEWPORT viewport = {};
-            viewport.Width = static_cast<float>(it->second.width);
-            viewport.Height = static_cast<float>(it->second.height);
+            viewport.Width = static_cast<float>(it->second->width);
+            viewport.Height = static_cast<float>(it->second->height);
             viewport.MaxDepth = 1.0f;
             context->RSSetViewports(1, &viewport);
             
@@ -1909,7 +2062,7 @@ public:
         // Use intermediate texture as input for vertical pass
         auto intermediate_it = textures.find(intermediate_texture_id);
         if (intermediate_it != textures.end()) {
-            context->PSSetShaderResources(0, 1, &intermediate_it->second.srv);
+            context->PSSetShaderResources(0, 1, &intermediate_it->second->srv);
             
             // Render to final output
             auto output_rt = render_targets.find(output_texture_id);
@@ -1936,8 +2089,8 @@ public:
         SharpenParams params;
         params.sharpen_strength = strength;
         params.edge_threshold = edge_threshold;
-        params.texture_size[0] = static_cast<float>(it->second.width);
-        params.texture_size[1] = static_cast<float>(it->second.height);
+        params.texture_size[0] = static_cast<float>(it->second->width);
+        params.texture_size[1] = static_cast<float>(it->second->height);
         params.clamp_strength = 0.3f;
         
         D3D11_MAPPED_SUBRESOURCE mapped_resource;
@@ -1948,16 +2101,16 @@ public:
         }
 
         context->PSSetConstantBuffers(0, 1, &effect_constants_buffer);
-        context->PSSetShaderResources(0, 1, &it->second.srv);
-        context->PSSetSamplers(0, 1, &sampler_state);
+        context->PSSetShaderResources(0, 1, &it->second->srv);
+        context->PSSetSamplers(0, 1, &shared_sampler_state);
         
         auto rt_it = render_targets.find(output_texture_id);
         if (rt_it != render_targets.end()) {
             context->OMSetRenderTargets(1, &rt_it->second, nullptr);
             
             D3D11_VIEWPORT viewport = {};
-            viewport.Width = static_cast<float>(it->second.width);
-            viewport.Height = static_cast<float>(it->second.height);
+            viewport.Width = static_cast<float>(it->second->width);
+            viewport.Height = static_cast<float>(it->second->height);
             viewport.MaxDepth = 1.0f;
             context->RSSetViewports(1, &viewport);
             
@@ -1997,17 +2150,17 @@ public:
         context->PSSetConstantBuffers(0, 1, &effect_constants_buffer);
         
         // Bind both input texture and LUT texture
-        ID3D11ShaderResourceView* srvs[2] = {input_it->second.srv, lut_it->second.srv};
+        ID3D11ShaderResourceView* srvs[2] = {input_it->second->srv, lut_it->second->srv};
         context->PSSetShaderResources(0, 2, srvs);
-        context->PSSetSamplers(0, 1, &sampler_state);
+        context->PSSetSamplers(0, 1, &shared_sampler_state);
         
         auto rt_it = render_targets.find(output_texture_id);
         if (rt_it != render_targets.end()) {
             context->OMSetRenderTargets(1, &rt_it->second, nullptr);
             
             D3D11_VIEWPORT viewport = {};
-            viewport.Width = static_cast<float>(input_it->second.width);
-            viewport.Height = static_cast<float>(input_it->second.height);
+            viewport.Width = static_cast<float>(input_it->second->width);
+            viewport.Height = static_cast<float>(input_it->second->height);
             viewport.MaxDepth = 1.0f;
             context->RSSetViewports(1, &viewport);
             
