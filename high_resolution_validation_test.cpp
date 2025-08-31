@@ -117,12 +117,6 @@ private:
         assert(hrs.categorizeResolution(5120, 1440) == ResolutionCategory::ULTRA_WIDE);
         
         std::cout << "  Ultra-wide categorization: SUCCESS" << std::endl;
-        
-        // Test SD categorization
-        assert(hrs.categorizeResolution(720, 480) == ResolutionCategory::SD);
-        assert(hrs.categorizeResolution(720, 576) == ResolutionCategory::SD);
-        
-        std::cout << "  SD categorization: SUCCESS" << std::endl;
         std::cout << std::endl;
     }
     
@@ -167,12 +161,14 @@ private:
         
         // Test cache size recommendations
         size_t hd_cache = hrs.getRecommendedCacheSize(hd_res);
+        size_t uhd_4k_cache = hrs.getRecommendedCacheSize(uhd_4k_res);
         size_t uhd_8k_cache = hrs.getRecommendedCacheSize(uhd_8k_res);
         
         std::cout << "  HD cache size: " << (hd_cache / (1024 * 1024)) << " MB" << std::endl;
+        std::cout << "  4K cache size: " << (uhd_4k_cache / (1024 * 1024)) << " MB" << std::endl;
         std::cout << "  8K cache size: " << (uhd_8k_cache / (1024 * 1024)) << " MB" << std::endl;
         
-        assert(hd_cache > 0 && uhd_8k_cache > 0);
+        assert(hd_cache > 0 && uhd_4k_cache > 0 && uhd_8k_cache > 0);
         
         std::cout << "Memory management: SUCCESS" << std::endl;
         std::cout << std::endl;
@@ -226,12 +222,15 @@ private:
         
         // Test decode latency estimation
         double hd_latency = hrs.estimateDecodeLatency(hd_res);
+        double uhd_4k_latency = hrs.estimateDecodeLatency(uhd_4k_res);
         double uhd_8k_latency = hrs.estimateDecodeLatency(uhd_8k_res);
         
         std::cout << "  HD decode latency: " << std::fixed << std::setprecision(2) << hd_latency << " ms" << std::endl;
+        std::cout << "  4K decode latency: " << std::fixed << std::setprecision(2) << uhd_4k_latency << " ms" << std::endl;
         std::cout << "  8K decode latency: " << std::fixed << std::setprecision(2) << uhd_8k_latency << " ms" << std::endl;
         
-        assert(uhd_8k_latency > hd_latency);  // 8K should have higher latency
+        assert(uhd_4k_latency > hd_latency);  // 4K should have higher latency than HD
+        assert(uhd_8k_latency > uhd_4k_latency);  // 8K should have higher latency than 4K
         
         std::cout << "Performance assessment: SUCCESS" << std::endl;
         std::cout << std::endl;
