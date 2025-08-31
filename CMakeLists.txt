@@ -170,6 +170,40 @@ if(ENABLE_TOOLS)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/gfx/include
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
     )
+
+    # Phase 3 Compute Pipeline Validation
+    add_executable(gpu_bridge_phase3_compute_validation 
+        gpu_bridge_phase3_compute_validation.cpp
+    )
+    
+    target_link_libraries(gpu_bridge_phase3_compute_validation 
+        PRIVATE 
+        ve_gfx 
+        ve_core
+    )
+    
+    target_include_directories(gpu_bridge_phase3_compute_validation 
+        PRIVATE 
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/gfx/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
+    )
+
+    # Phase 4 Effects Pipeline Validation
+    add_executable(gpu_bridge_phase4_effects_validation 
+        gpu_bridge_phase4_effects_validation.cpp
+    )
+    
+    target_link_libraries(gpu_bridge_phase4_effects_validation 
+        PRIVATE 
+        ve_gfx 
+        ve_core
+    )
+    
+    target_include_directories(gpu_bridge_phase4_effects_validation 
+        PRIVATE 
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/gfx/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
+    )
 endif()
 
 set(CPACK_PACKAGE_NAME "VideoEditor")
