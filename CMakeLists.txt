@@ -121,6 +121,7 @@ if(ENABLE_TOOLS)
     add_subdirectory(src/tools/media_probe)
     add_subdirectory(src/tools/playback_demo)
     add_subdirectory(src/tools/gpu_render_demo)
+    add_subdirectory(src/tools/test_d3d11)
     if(ENABLE_QT_TOOLS)
         add_subdirectory(src/tools/video_editor)
     endif()
@@ -133,6 +134,25 @@ endif()
 if(ENABLE_TESTS)
     enable_testing()
     add_subdirectory(tests)
+endif()
+
+# Week 2 Memory Management Test
+if(ENABLE_TOOLS)
+    add_executable(test_memory_management 
+        test_memory_management.cpp
+    )
+    
+    target_link_libraries(test_memory_management 
+        PRIVATE 
+        ve_gfx 
+        ve_core
+    )
+    
+    target_include_directories(test_memory_management 
+        PRIVATE 
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/gfx/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
+    )
 endif()
 
 set(CPACK_PACKAGE_NAME "VideoEditor")

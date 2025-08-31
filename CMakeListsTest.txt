@@ -1,0 +1,21 @@
+cmake_minimum_required(VERSION 3.20)
+
+# Memory Management Test
+add_executable(test_memory_management 
+    test_memory_management.cpp
+)
+
+target_link_libraries(test_memory_management 
+    PRIVATE 
+    ve_gfx 
+    ve_core
+)
+
+target_include_directories(test_memory_management 
+    PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/gfx/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
+)
+
+# DirectX 11 libraries
+target_link_libraries(test_memory_management PRIVATE d3d11 dxgi d3dcompiler)

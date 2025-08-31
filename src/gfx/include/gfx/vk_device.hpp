@@ -29,6 +29,14 @@ public:
     void destroy_texture(unsigned int texture_id) noexcept;
     void upload_texture(unsigned int texture_id, const void* data, int width, int height, int format) noexcept;
 
+    // Buffer management (Week 2: Memory Management)
+    unsigned int create_buffer(int size, int usage_flags, const void* initial_data = nullptr) noexcept;
+    void destroy_buffer(unsigned int buffer_id) noexcept;
+    void upload_buffer(unsigned int buffer_id, const void* data, int size, int offset = 0) noexcept;
+
+    // Memory usage tracking
+    void get_memory_usage(size_t* total, size_t* used, size_t* available) noexcept;
+
     // Shader management
     unsigned int create_shader_program(const char* vertex_src, const char* fragment_src) noexcept;
     void destroy_shader_program(unsigned int program_id) noexcept;
@@ -45,6 +53,17 @@ public:
     // Experimental CPU readback of last presented RGBA frame (stub path only).
     // Returns true if a frame is available; data points to internal buffer valid until next draw.
     bool get_last_present_rgba(const void** data, int* width, int* height, int* stride) noexcept;
+
+    // Week 6: Advanced Effects Shaders
+    bool create_effect_pipeline() noexcept;
+    bool apply_color_correction(unsigned int input_texture, unsigned int output_texture,
+                               float brightness, float contrast, float saturation, float gamma) noexcept;
+    bool apply_gaussian_blur(unsigned int input_texture, unsigned int intermediate_texture,
+                            unsigned int output_texture, float radius) noexcept;
+    bool apply_sharpen(unsigned int input_texture, unsigned int output_texture,
+                      float strength, float edge_threshold = 0.1f) noexcept;
+    bool apply_lut(unsigned int input_texture, unsigned int lut_texture,
+                  unsigned int output_texture, float strength = 1.0f) noexcept;
 
 private:
     struct Impl;

@@ -28,36 +28,47 @@ private:
     uint32_t shader_program_ = 0;
     bool initialized_ = false;
 
-    // Shader sources
+    // HLSL Shader sources (Week 3: Shader System Implementation)
     static constexpr const char* VERTEX_SHADER = R"(
-        #version 330 core
-        layout (location = 0) in vec2 aPos;
-        layout (location = 1) in vec2 aTexCoord;
+        struct VS_INPUT {
+            float2 position : POSITION;
+            float2 texcoord : TEXCOORD0;
+        };
 
-        out vec2 TexCoord;
+        struct PS_INPUT {
+            float4 position : SV_POSITION;
+            float2 texcoord : TEXCOORD0;
+        };
 
-        void main() {
-            gl_Position = vec4(aPos, 0.0, 1.0);
-            TexCoord = aTexCoord;
+        PS_INPUT main(VS_INPUT input) {
+            PS_INPUT output;
+            output.position = float4(input.position, 0.0, 1.0);
+            output.texcoord = input.texcoord;
+            return output;
         }
     )";
 
     static constexpr const char* FRAGMENT_SHADER = R"(
-        #version 330 core
-        out vec4 FragColor;
+        struct PS_INPUT {
+            float4 position : SV_POSITION;
+            float2 texcoord : TEXCOORD0;
+        };
 
-        in vec2 TexCoord;
+        Texture2D textureSampler : register(t0);
+        SamplerState samplerState : register(s0);
 
-        uniform sampler2D textureSampler;
-        uniform float brightness;
+        cbuffer EffectConstants : register(b0) {
+            float brightness;
+            float3 padding;
+        };
 
-        void main() {
-            vec4 texColor = texture(textureSampler, TexCoord);
+        float4 main(PS_INPUT input) : SV_TARGET {
+            float4 texColor = textureSampler.Sample(samplerState, input.texcoord);
             // Apply brightness adjustment
             texColor.rgb += brightness;
             // Clamp to valid range
-            texColor.rgb = clamp(texColor.rgb, 0.0, 1.0);
-            FragColor = texColor;
+            texColor.rgb = saturate(texColor.rgb);
+            return texColor;
         }
     )";
 };
