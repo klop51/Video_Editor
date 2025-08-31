@@ -204,6 +204,40 @@ if(ENABLE_TOOLS)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/gfx/include
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
     )
+
+    # Phase 5 Advanced Features Validation
+    add_executable(gpu_bridge_phase5_advanced_validation 
+        gpu_bridge_phase5_advanced_validation.cpp
+    )
+    
+    target_link_libraries(gpu_bridge_phase5_advanced_validation 
+        PRIVATE 
+        ve_gfx 
+        ve_core
+    )
+    
+    target_include_directories(gpu_bridge_phase5_advanced_validation 
+        PRIVATE 
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/gfx/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
+    )
+
+    # Phase 6: Production Readiness Testing validation executable
+    add_executable(gpu_bridge_phase6_production_validation 
+        gpu_bridge_phase6_production_validation.cpp
+    )
+    
+    target_link_libraries(gpu_bridge_phase6_production_validation 
+        PRIVATE 
+        ve_gfx 
+        ve_core
+    )
+    
+    target_include_directories(gpu_bridge_phase6_production_validation 
+        PRIVATE 
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/gfx/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
+    )
 endif()
 
 set(CPACK_PACKAGE_NAME "VideoEditor")
