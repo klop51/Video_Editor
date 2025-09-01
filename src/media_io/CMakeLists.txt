@@ -13,6 +13,8 @@ add_library(ve_media_io STATIC
     src/color_management.cpp    # Phase 2 Week 8: Color Management Integration
     src/high_resolution_support.cpp  # Phase 3 Week 9: 8K Support Infrastructure
     src/raw_format_support.cpp  # Phase 3 Week 10: RAW Format Foundation
+    src/container_formats.cpp   # Phase 3 Week 11: Container Format Expansion
+    src/performance_optimizer.cpp  # Phase 3 Week 12: Performance Optimization
 )
 
 add_library(VideoEditor::media_io ALIAS ve_media_io)

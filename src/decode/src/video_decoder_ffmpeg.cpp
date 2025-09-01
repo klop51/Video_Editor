@@ -1,10 +1,18 @@
 #include "decode/decoder.hpp"
+#include "decode/codec_optimizer.hpp"
+#include "decode/gpu_upload.hpp"
 #include "core/log.hpp"
 #if VE_HAVE_FFMPEG
 extern "C" {
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
 #include <libavutil/imgutils.h>
+#include <libavutil/hwcontext.h>
+// TODO: Re-enable D3D11 hardware acceleration when header conflicts resolved
+#ifdef _WIN32_DISABLED_FOR_NOW
+#include <libavutil/hwcontext_d3d11va.h>
+#include <libavutil/hwcontext_dxva2.h>
+#endif
 }
 #include <vector>
 #include <memory>
@@ -245,10 +253,84 @@ void copy_planar_yuv(AVFrame* frame, uint8_t* dst, int width, int height,
     }
 }
 
+// Hardware acceleration context and utilities
+struct HardwareAccelContext {
+    AVBufferRef* hw_device_ctx = nullptr;
+    AVBufferRef* hw_frames_ctx = nullptr;
+    AVHWDeviceType hw_type = AV_HWDEVICE_TYPE_NONE;
+    bool zero_copy_enabled = false;
+    
+    ~HardwareAccelContext() {
+        if (hw_frames_ctx) av_buffer_unref(&hw_frames_ctx);
+        if (hw_device_ctx) av_buffer_unref(&hw_device_ctx);
+    }
+};
+
+// Hardware acceleration helpers
+namespace hw_accel {
+    
+    // Detect best available hardware acceleration
+    AVHWDeviceType detect_best_hw_device() {
+        // TODO: Re-enable hardware acceleration when header conflicts resolved
+        // Priority order for Windows: D3D11VA -> DXVA2 -> None
+        const AVHWDeviceType candidates[] = {
+#ifdef _WIN32_DISABLED_FOR_NOW
+            AV_HWDEVICE_TYPE_D3D11VA,
+            AV_HWDEVICE_TYPE_DXVA2,
+#endif
+            AV_HWDEVICE_TYPE_CUDA,   // NVIDIA (if available)
+            AV_HWDEVICE_TYPE_NONE
+        };
+        
+        for (AVHWDeviceType type : candidates) {
+            if (type == AV_HWDEVICE_TYPE_NONE) break;
+            
+            AVBufferRef* hw_device_ctx = nullptr;
+            if (av_hwdevice_ctx_create(&hw_device_ctx, type, nullptr, nullptr, 0) >= 0) {
+                av_buffer_unref(&hw_device_ctx);
+                ve::log::info("Hardware acceleration available: " + std::string(av_hwdevice_get_type_name(type)));
+                return type;
+            }
+        }
+        
+        ve::log::warn("No hardware acceleration available, using software decode");
+        return AV_HWDEVICE_TYPE_NONE;
+    }
+    
+    // Check if codec supports hardware acceleration
+    bool codec_supports_hwaccel(const AVCodec* codec, AVHWDeviceType hw_type) {
+        if (!codec || hw_type == AV_HWDEVICE_TYPE_NONE) return false;
+        
+        for (int i = 0;; i++) {
+            const AVCodecHWConfig* config = avcodec_get_hw_config(codec, i);
+            if (!config) break;
+            
+            if (config->device_type == hw_type) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    // Hardware frame transfer callback
+    static int hw_get_buffer(AVCodecContext* ctx, AVFrame* frame, int flags) {
+        return av_hwframe_get_buffer(ctx->hw_frames_ctx, frame, 0);
+    }
+    
+} // namespace hw_accel
+
 class FFmpegDecoder final : public IDecoder {
 public:
+    FFmpegDecoder() {
+        initialize_optimization();
+    }
+    
     bool open(const OpenParams& params) override {
         params_ = params;
+        
+        // Initialize hardware acceleration
+        hw_accel_ctx_.hw_type = hw_accel::detect_best_hw_device();
+        
         if(avformat_open_input(&fmt_, params.filepath.c_str(), nullptr, nullptr) < 0) {
             ve::log::error("FFmpegDecoder: open_input failed");
             return false;
@@ -257,16 +339,23 @@ public:
             ve::log::error("FFmpegDecoder: stream_info failed");
             return false;
         }
+        
         video_stream_index_ = av_find_best_stream(fmt_, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
         audio_stream_index_ = av_find_best_stream(fmt_, AVMEDIA_TYPE_AUDIO, -1, video_stream_index_, nullptr, 0);
+        
+        // Apply codec-specific optimizations
         if(params.video && video_stream_index_ >= 0) {
+            apply_codec_optimizations(video_stream_index_);
             if(!open_codec(video_stream_index_, video_codec_ctx_)) return false;
         }
         if(params.audio && audio_stream_index_ >= 0) {
             if(!open_codec(audio_stream_index_, audio_codec_ctx_)) return false;
         }
+        
         packet_ = av_packet_alloc();
         frame_ = av_frame_alloc();
+        hw_transfer_frame_ = av_frame_alloc(); // For hardware frame transfers
+        
         return true;
     }
 
@@ -399,6 +488,7 @@ public:
     const DecoderStats& stats() const override { return stats_; }
 
     ~FFmpegDecoder() override {
+        if(hw_transfer_frame_) av_frame_free(&hw_transfer_frame_);
         if(frame_) av_frame_free(&frame_);
         if(packet_) av_packet_free(&packet_);
         if(video_codec_ctx_) avcodec_free_context(&video_codec_ctx_);
@@ -411,16 +501,100 @@ private:
         AVStream* s = fmt_->streams[index];
         const AVCodec* dec = avcodec_find_decoder(s->codecpar->codec_id);
         if(!dec) return false;
+        
         ctx = avcodec_alloc_context3(dec);
         if(!ctx) return false;
+        
         if(avcodec_parameters_to_context(ctx, s->codecpar) < 0) return false;
+        
+        // Try hardware acceleration for video streams
+        if (s->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && hw_accel_ctx_.hw_type != AV_HWDEVICE_TYPE_NONE) {
+            if (hw_accel::codec_supports_hwaccel(dec, hw_accel_ctx_.hw_type)) {
+                if (setup_hardware_acceleration(ctx)) {
+                    ve::log::info("Hardware acceleration enabled for codec: " + std::string(avcodec_get_name(dec->id)));
+                } else {
+                    ve::log::warn("Hardware acceleration setup failed, falling back to software");
+                }
+            }
+        }
+        
         if(avcodec_open2(ctx, dec, nullptr) < 0) return false;
+        return true;
+    }
+    
+    bool setup_hardware_acceleration(AVCodecContext* ctx) {
+        // Create hardware device context if not already created
+        if (!hw_accel_ctx_.hw_device_ctx) {
+            if (av_hwdevice_ctx_create(&hw_accel_ctx_.hw_device_ctx, hw_accel_ctx_.hw_type, 
+                                      nullptr, nullptr, 0) < 0) {
+                return false;
+            }
+        }
+        
+        // Set hardware device context
+        ctx->hw_device_ctx = av_buffer_ref(hw_accel_ctx_.hw_device_ctx);
+        ctx->get_buffer2 = hw_accel::hw_get_buffer;
+        
+        // Create hardware frames context for zero-copy
+        AVBufferRef* hw_frames_ref = av_hwframe_ctx_alloc(hw_accel_ctx_.hw_device_ctx);
+        if (!hw_frames_ref) return false;
+        
+        AVHWFramesContext* frames_ctx = (AVHWFramesContext*)hw_frames_ref->data;
+        frames_ctx->format = ctx->pix_fmt; // Will be set by hardware
+        frames_ctx->sw_format = AV_PIX_FMT_NV12; // Preferred format for hardware decode
+        frames_ctx->width = ctx->width;
+        frames_ctx->height = ctx->height;
+        frames_ctx->initial_pool_size = 20; // Pool of hardware frames
+        
+        if (av_hwframe_ctx_init(hw_frames_ref) < 0) {
+            av_buffer_unref(&hw_frames_ref);
+            return false;
+        }
+        
+        ctx->hw_frames_ctx = hw_frames_ref;
+        hw_accel_ctx_.zero_copy_enabled = true;
+        
+        return true;
+    }
+    
+    // Transfer hardware frame to system memory if needed
+    bool transfer_hardware_frame(AVFrame* hw_frame, AVFrame* sw_frame) {
+        // TODO: Re-enable D3D11 hardware frame handling when header conflicts resolved
+        if (hw_frame->format == AV_PIX_FMT_DXVA2_VLD ||
+            hw_frame->format == AV_PIX_FMT_CUDA) {
+            // Note: AV_PIX_FMT_D3D11 temporarily disabled due to header conflicts
+            
+            // Transfer from GPU to CPU memory
+            sw_frame->format = AV_PIX_FMT_NV12; // Common output format
+            if (av_hwframe_transfer_data(sw_frame, hw_frame, 0) < 0) {
+                return false;
+            }
+            av_frame_copy_props(sw_frame, hw_frame);
+            return true;
+        }
+        
+        // Frame is already in system memory
+        av_frame_move_ref(sw_frame, hw_frame);
         return true;
     }
 
     bool decode_packet(AVCodecContext* ctx, AVPacket* pkt) {
         if(avcodec_send_packet(ctx, pkt) < 0) return false;
         int r = avcodec_receive_frame(ctx, frame_);
+        
+        // Handle hardware frames
+        if (r == 0 && ctx == video_codec_ctx_ && hw_accel_ctx_.zero_copy_enabled) {
+            // Transfer hardware frame to system memory for processing
+            if (!transfer_hardware_frame(frame_, hw_transfer_frame_)) {
+                ve::log::error("Failed to transfer hardware frame");
+                return false;
+            }
+            // Swap frames so processing uses the transferred frame
+            AVFrame* temp = frame_;
+            frame_ = hw_transfer_frame_;
+            hw_transfer_frame_ = temp;
+        }
+        
         return r == 0;
     }
 
@@ -430,9 +604,75 @@ private:
     AVCodecContext* audio_codec_ctx_ = nullptr;
     AVPacket* packet_ = nullptr;
     AVFrame* frame_ = nullptr;
+    AVFrame* hw_transfer_frame_ = nullptr; // For hardware frame transfers
     int video_stream_index_ = -1;
     int audio_stream_index_ = -1;
     DecoderStats stats_{};
+    HardwareAccelContext hw_accel_ctx_{};
+    
+    // Performance optimization components
+    std::unique_ptr<CodecOptimizer> codec_optimizer_;
+    std::unique_ptr<IGpuUploader> gpu_uploader_;
+    
+    // Initialize performance optimization systems
+    void initialize_optimization() {
+        codec_optimizer_ = std::make_unique<CodecOptimizer>();
+        gpu_uploader_ = create_hardware_uploader();
+        
+        // Enable adaptive optimization
+        codec_optimizer_->enable_adaptive_optimization([this](const CodecOptimizationStats& stats) {
+            this->on_optimization_feedback(stats);
+        });
+    }
+    
+    // Handle optimization feedback for adaptive performance
+    void on_optimization_feedback(const CodecOptimizationStats& stats) {
+        if (stats.decode_fps < 30.0 && stats.gpu_utilization < 50.0) {
+            // Low FPS with low GPU usage - try hardware acceleration
+            ve::log::info("Low performance detected, attempting hardware acceleration");
+        }
+    }
+    
+    // Apply codec-specific optimizations based on stream properties
+    void apply_codec_optimizations(int stream_index) {
+        if (!fmt_ || stream_index < 0) return;
+        
+        AVStream* stream = fmt_->streams[stream_index];
+        AVCodecParameters* params = stream->codecpar;
+        
+        std::string codec_name = avcodec_get_name(params->codec_id);
+        int width = params->width;
+        int height = params->height;
+        
+        // Calculate target frame rate
+        double fps = 30.0; // Default
+        if (stream->avg_frame_rate.den != 0) {
+            fps = static_cast<double>(stream->avg_frame_rate.num) / stream->avg_frame_rate.den;
+        }
+        
+        // Apply format-specific optimizations
+        if (codec_name == "prores") {
+            // Detect ProRes variant from format tag or other metadata
+            std::string variant = "422"; // Default, should be detected
+            codec_optimizer_->apply_prores_optimization(variant);
+        } else if (codec_name == "hevc") {
+            bool is_10bit = (params->bits_per_coded_sample > 8);
+            bool is_hdr = (params->color_trc == AVCOL_TRC_SMPTE2084 || 
+                          params->color_trc == AVCOL_TRC_ARIB_STD_B67);
+            codec_optimizer_->apply_hevc_optimization(is_10bit, is_hdr);
+        } else if (codec_name == "h264") {
+            bool is_high_profile = (params->profile == FF_PROFILE_H264_HIGH);
+            codec_optimizer_->apply_h264_optimization(is_high_profile);
+        }
+        
+        // Get recommended configuration
+        auto recommended_config = codec_optimizer_->recommend_config(codec_name, width, height, fps);
+        codec_optimizer_->configure_codec(codec_name, recommended_config);
+        
+        ve::log::info("Applied codec optimization for " + codec_name + ": " + 
+                     std::to_string(width) + "x" + std::to_string(height) + " @ " + 
+                     std::to_string(fps) + "fps");
+    }
 };
 
 } // anonymous namespace

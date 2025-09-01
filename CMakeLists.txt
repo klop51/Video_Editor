@@ -390,6 +390,23 @@ if(ENABLE_TOOLS)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/media_io/include
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
     )
+
+    # Phase 3 Week 11: Container Format Expansion Validation Test
+    add_executable(container_format_validation_test 
+        container_format_validation_test.cpp
+    )
+    
+    target_link_libraries(container_format_validation_test 
+        PRIVATE 
+        ve_media_io 
+        ve_core
+    )
+    
+    target_include_directories(container_format_validation_test 
+        PRIVATE 
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/media_io/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
+    )
 endif()
 
 set(CPACK_PACKAGE_NAME "VideoEditor")

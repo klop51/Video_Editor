@@ -6,6 +6,7 @@ add_library(ve_decode STATIC
     src/audio_resampler.cpp
     src/playback_controller.cpp
     src/gpu_upload_stub.cpp
+    src/codec_optimizer.cpp
 )
 
 add_library(VideoEditor::decode ALIAS ve_decode)

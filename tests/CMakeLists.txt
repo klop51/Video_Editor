@@ -92,3 +92,14 @@ target_include_directories(high_resolution_validation_test PRIVATE
     ${CMAKE_SOURCE_DIR}/src/core/include
 )
 add_test(NAME high_resolution_validation_test COMMAND high_resolution_validation_test)
+
+# Performance Optimization Validation Test
+add_executable(performance_optimizer_validation 
+    ${CMAKE_SOURCE_DIR}/performance_optimizer_validation.cpp
+)
+target_link_libraries(performance_optimizer_validation PRIVATE VideoEditor::media_io)
+target_include_directories(performance_optimizer_validation PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/media_io/include
+    ${CMAKE_SOURCE_DIR}/src/core/include
+)
+add_test(NAME performance_optimizer_validation COMMAND performance_optimizer_validation)
