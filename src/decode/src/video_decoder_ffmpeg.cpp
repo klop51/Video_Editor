@@ -2,6 +2,8 @@
 #include "decode/codec_optimizer.hpp"
 #include "decode/gpu_upload.hpp"
 #include "core/log.hpp"
+#include <thread>
+#include <algorithm>
 
 // Use isolated wrapper headers to prevent conflicts
 #ifdef _WIN32
@@ -15,6 +17,7 @@ extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/hwcontext.h>
+#include <libavutil/opt.h>
 #ifdef _WIN32
 #include <libavutil/hwcontext_dxva2.h>
 #endif
@@ -29,6 +32,17 @@ namespace ve::decode {
 
 #if VE_HAVE_FFMPEG
 namespace {
+
+// Custom log callback to filter out hardware acceleration warnings
+void custom_ffmpeg_log_callback(void* ptr, int level, const char* fmt, va_list vl) {
+    // Filter out specific POC warnings that are non-fatal but annoying
+    if (fmt && strstr(fmt, "co located POCs unavailable")) {
+        return; // Suppress this specific warning
+    }
+    
+    // Let other messages through using default callback
+    av_log_default_callback(ptr, level, fmt, vl);
+}
 
 // Forward declaration
 void copy_planar_yuv(AVFrame* frame, uint8_t* dst, int width, int height, 
@@ -280,6 +294,34 @@ struct HardwareAccelContext {
     }
 };
 
+// Helper function to get stream frame rate
+double get_stream_fps(const AVStream* stream) {
+    if (!stream) return 30.0; // Default fallback
+    
+    // Try to get FPS from various sources
+    double fps = 30.0; // Default
+    
+    // Method 1: Use r_frame_rate (real frame rate)
+    if (stream->r_frame_rate.den != 0) {
+        fps = av_q2d(stream->r_frame_rate);
+        if (fps > 0 && fps <= 120.0) return fps; // Sanity check
+    }
+    
+    // Method 2: Use avg_frame_rate (average frame rate) 
+    if (stream->avg_frame_rate.den != 0) {
+        fps = av_q2d(stream->avg_frame_rate);
+        if (fps > 0 && fps <= 120.0) return fps; // Sanity check
+    }
+    
+    // Method 3: Use time_base as fallback
+    if (stream->time_base.num != 0) {
+        fps = 1.0 / av_q2d(stream->time_base);
+        if (fps > 0 && fps <= 120.0) return fps; // Sanity check
+    }
+    
+    return 30.0; // Final fallback
+}
+
 // Hardware acceleration helpers
 namespace hw_accel {
     
@@ -343,6 +385,9 @@ public:
     bool open(const OpenParams& params) override {
         params_ = params;
         
+        // Set custom log callback to suppress hardware acceleration warnings
+        av_log_set_callback(custom_ffmpeg_log_callback);
+        
         // Initialize hardware acceleration
         hw_accel_ctx_.hw_type = hw_accel::detect_best_hw_device();
         
@@ -350,6 +395,15 @@ public:
             ve::log::error("FFmpegDecoder: open_input failed");
             return false;
         }
+        
+        // Optimize format context for high frame rate content
+        // Increase buffer sizes for smoother 60 FPS playback
+        fmt_->probesize = 50 * 1024 * 1024;  // 50MB probe size (default is ~5MB)
+        fmt_->max_analyze_duration = 10 * AV_TIME_BASE; // 10 seconds analysis (default is 5)
+        fmt_->max_streams = 100; // Allow more streams if needed
+        fmt_->flags |= AVFMT_FLAG_GENPTS; // Generate missing PTS values
+        fmt_->flags |= AVFMT_FLAG_FAST_SEEK; // Enable fast seeking for performance
+        
         if(avformat_find_stream_info(fmt_, nullptr) < 0) {
             ve::log::error("FFmpegDecoder: stream_info failed");
             return false;
@@ -523,17 +577,30 @@ private:
         if(avcodec_parameters_to_context(ctx, s->codecpar) < 0) return false;
         
         // Try hardware acceleration for video streams
-        if (s->codecpar->codec_type == AVMEDIA_TYPE_VIDEO && hw_accel_ctx_.hw_type != AV_HWDEVICE_TYPE_NONE) {
-            if (hw_accel::codec_supports_hwaccel(dec, hw_accel_ctx_.hw_type)) {
-                if (setup_hardware_acceleration(ctx)) {
-                    ve::log::info("Hardware acceleration enabled for codec: " + std::string(avcodec_get_name(dec->id)));
-                } else {
-                    ve::log::warn("Hardware acceleration setup failed, falling back to software");
-                }
-            }
+        // CONSERVATIVE 4-THREAD MODE: Testing incremental threading for performance
+        // Targeting balance between stability and performance
+        ve::log::info("Using conservative 4-thread configuration for testing");
+        
+        // Minimal threading - trying 4 threads carefully
+        ctx->thread_count = 4; // Four threads - testing if this improves performance without corruption
+        ctx->thread_type = FF_THREAD_FRAME;
+        
+        // Absolutely minimal flags for stability
+        ctx->flags = 0; // No aggressive flags
+        ctx->flags2 = 0; // No aggressive flags
+        
+        // Enable hardware acceleration for performance only if it doesn't cause issues
+        if (setup_hardware_acceleration(ctx)) {
+            ve::log::info("Hardware acceleration enabled with minimal settings");
+        } else {
+            ve::log::warn("Hardware acceleration failed, using pure software decoding");
         }
         
         if(avcodec_open2(ctx, dec, nullptr) < 0) return false;
+        
+        // Minimal mode: No post-open optimizations to prevent corruption
+        ve::log::info("Decoder opened in minimal stability mode");
+        
         return true;
     }
     

@@ -1,11 +1,11 @@
 {
   "samples": [
-    { "name": "playback.cache_hit", "count": 1, "total_ms": 7.8188, "avg_ms": 7.8188, "min_ms": 7.8188, "max_ms": 7.8188, "p50_ms": 7.8188, "p95_ms": 7.8188 },
-    { "name": "to_rgba_scaled_view", "count": 1198, "total_ms": 8816.11, "avg_ms": 7.35902, "min_ms": 6.0749, "max_ms": 12.5239, "p50_ms": 7.1218, "p95_ms": 9.4615 },
-    { "name": "to_rgba_scaled_view.sws_scale", "count": 1198, "total_ms": 8425.77, "avg_ms": 7.0332, "min_ms": 6.064, "max_ms": 12.3036, "p50_ms": 6.7467, "p95_ms": 8.8988 },
-    { "name": "playback.decode_audio", "count": 1199, "total_ms": 1.6133, "avg_ms": 0.00134554, "min_ms": 0.0002, "max_ms": 0.0191, "p50_ms": 0.0012, "p95_ms": 0.0024 },
-    { "name": "viewer.display_frame", "count": 1200, "total_ms": 12970.1, "avg_ms": 10.8084, "min_ms": 1.052, "max_ms": 20.4904, "p50_ms": 10.6634, "p95_ms": 14.0861 },
-    { "name": "to_rgba_scaled_view.ffmpeg", "count": 1198, "total_ms": 8785.05, "avg_ms": 7.3331, "min_ms": 6.0731, "max_ms": 12.5179, "p50_ms": 7.101, "p95_ms": 9.3904 },
-    { "name": "playback.decode_video", "count": 1199, "total_ms": 31114, "avg_ms": 25.95, "min_ms": 0.5135, "max_ms": 42.98, "p50_ms": 25.0159, "p95_ms": 35.062 }
+    { "name": "playback.cache_hit", "count": 1, "total_ms": 7.5862, "avg_ms": 7.5862, "min_ms": 7.5862, "max_ms": 7.5862, "p50_ms": 7.5862, "p95_ms": 7.5862 },
+    { "name": "to_rgba_scaled_view", "count": 1195, "total_ms": 8264.33, "avg_ms": 6.91576, "min_ms": 6.0125, "max_ms": 11.3815, "p50_ms": 6.6201, "p95_ms": 8.5091 },
+    { "name": "to_rgba_scaled_view.sws_scale", "count": 1195, "total_ms": 7881.2, "avg_ms": 6.59515, "min_ms": 6.0026, "max_ms": 10.1664, "p50_ms": 6.3914, "p95_ms": 7.8927 },
+    { "name": "playback.decode_audio", "count": 1199, "total_ms": 1.6366, "avg_ms": 0.00136497, "min_ms": 0.0002, "max_ms": 0.0075, "p50_ms": 0.0011, "p95_ms": 0.0025 },
+    { "name": "viewer.display_frame", "count": 1197, "total_ms": 12195.3, "avg_ms": 10.1882, "min_ms": 0.6807, "max_ms": 17.9273, "p50_ms": 10.2075, "p95_ms": 12.9492 },
+    { "name": "to_rgba_scaled_view.ffmpeg", "count": 1195, "total_ms": 8193.47, "avg_ms": 6.85646, "min_ms": 6.0109, "max_ms": 11.3746, "p50_ms": 6.6022, "p95_ms": 8.4268 },
+    { "name": "playback.decode_video", "count": 1199, "total_ms": 26254.4, "avg_ms": 21.8969, "min_ms": 0.3537, "max_ms": 50.3698, "p50_ms": 23.7311, "p95_ms": 31.3257 }
   ]
 }

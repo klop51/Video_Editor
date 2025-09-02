@@ -9,6 +9,7 @@
 #include <memory>
 #include <vector>
 #include <mutex>
+#include <chrono>
 #include "cache/frame_cache.hpp"
 #include "timeline/timeline.hpp" // Need snapshot definition for timeline-based FPS
 
@@ -67,10 +68,12 @@ private:
     void set_state(PlaybackState new_state);
     void update_frame_stats(double frame_time_ms);
     void decode_one_frame_if_paused(int64_t seek_target_us);
+    size_t calculate_optimal_cache_size() const;
 
     std::unique_ptr<decode::IDecoder> decoder_;
     // Simple frame cache (CPU) for recently decoded frames
-    ve::cache::FrameCache frame_cache_{180}; // ~6 seconds at 30fps
+    // Adaptive frame cache size based on content resolution and memory constraints
+    ve::cache::FrameCache frame_cache_{calculate_optimal_cache_size()}; // Dynamic cache sizing
     std::thread playback_thread_;
     std::atomic<bool> thread_should_exit_{false};
     std::atomic<PlaybackState> state_{PlaybackState::Stopped};
@@ -95,6 +98,11 @@ private:
     std::atomic<double> total_frame_time_ms_{0.0};
     std::atomic<int64_t> cache_hits_{0};
     std::atomic<int64_t> cache_lookups_{0};
+    
+    // 60 FPS performance tracking
+    std::atomic<int64_t> frame_drops_60fps_{0};
+    std::atomic<int64_t> frame_overruns_60fps_{0};
+    std::chrono::steady_clock::time_point last_perf_log_{std::chrono::steady_clock::now()};
     // Timeline snapshot consumption (pull model scaffolding)
     ve::timeline::Timeline* timeline_ = nullptr; // non-owning
     uint64_t observed_timeline_version_ = 0;

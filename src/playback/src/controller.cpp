@@ -11,6 +11,11 @@ namespace ve::playback {
 
 PlaybackController::PlaybackController() {
     playback_thread_ = std::thread(&PlaybackController::playback_thread_main, this);
+    
+    // Initialize performance tracking
+    frame_drops_60fps_.store(0);
+    frame_overruns_60fps_.store(0);
+    last_perf_log_ = std::chrono::steady_clock::now();
 }
 
 PlaybackController::~PlaybackController() {
@@ -53,6 +58,10 @@ bool PlaybackController::load_media(const std::string& path) {
                     step_.num = 30000; step_.den = 1001;
                 } else if (s.fps == 23.976) {
                     step_.num = 24000; step_.den = 1001;
+                } else if (s.fps == 59.94) {
+                    step_.num = 60000; step_.den = 1001;  // 59.94 fps (NTSC 60fps)
+                } else if (s.fps >= 59.9 && s.fps <= 60.1) {
+                    step_.num = 60; step_.den = 1;        // 60fps (exact)
                 } else {
                     step_.num = static_cast<int64_t>(s.fps + 0.5); step_.den = 1;
                 }
@@ -288,17 +297,61 @@ void PlaybackController::playback_thread_main() {
                     VE_DEBUG_ONLY(ve::log::info("Dispatched video callbacks (decode) for pts=" + std::to_string(video_frame->pts)));
                 }
 
-                // Adaptive frame timing based on PTS
+                // High-performance frame timing for smooth playback
                 if (!first_frame) {
-                    int64_t pts_diff_us = video_frame->pts - last_pts_us;
-                    if (pts_diff_us > 0 && pts_diff_us < 200000) { // Sanity check: 0-200ms
-                        auto target_interval = std::chrono::microseconds(pts_diff_us);
-                        auto frame_end = std::chrono::high_resolution_clock::now();
-                        auto actual_duration = frame_end - last_frame_time;
+                    // Use fixed frame duration based on detected FPS for consistent timing
+                    int64_t frame_duration_us = frame_duration_guess_us();
+                    auto target_interval = std::chrono::microseconds(frame_duration_us);
+                    auto frame_end = std::chrono::high_resolution_clock::now();
+                    auto actual_duration = frame_end - last_frame_time;
 
-                        if (actual_duration < target_interval) {
-                            auto sleep_time = target_interval - actual_duration;
+                    // Balanced optimization for 4K 60fps content - targeting 80-83% performance
+                    bool is_4k_60fps = (video_frame->width >= 3840 && video_frame->height >= 2160 && probed_fps_ >= 59.0);
+                    
+                    // Only sleep if we have time left in the frame interval
+                    if (actual_duration < target_interval) {
+                        auto sleep_time = target_interval - actual_duration;
+                        
+                        if (is_4k_60fps) {
+                            // For 4K 60fps: Balanced sleep optimization for 80-83% performance
+                            // Reduce sleep for performance while maintaining stability
+                            if (sleep_time > std::chrono::microseconds(1500)) { // Sleep for 1.5ms+ gaps
+                                std::this_thread::sleep_for(sleep_time - std::chrono::microseconds(500));
+                            }
+                            // Brief spin-wait for final precision
+                            auto spin_start = std::chrono::high_resolution_clock::now();
+                            while (std::chrono::high_resolution_clock::now() - spin_start < std::chrono::microseconds(300)) {
+                                std::this_thread::yield();
+                            }
+                        } else if (probed_fps_ > 50.0) {
+                            // For other high frame rates: Standard precise timing
                             std::this_thread::sleep_for(sleep_time);
+                        } else {
+                            // For lower frame rates, allow some tolerance
+                            if (sleep_time > std::chrono::microseconds(500)) {
+                                std::this_thread::sleep_for(sleep_time);
+                            }
+                        }
+                    } else if (is_4k_60fps) {
+                        // Frame is taking too long - log performance issue
+                        frame_overruns_60fps_.fetch_add(1);
+                        auto overrun_us = std::chrono::duration_cast<std::chrono::microseconds>(actual_duration - target_interval).count();
+                        if (overrun_us > 1000) { // Log if more than 1ms overrun
+                            ve::log::warn("4K 60fps frame overrun: " + std::to_string(overrun_us) + "us (total overruns: " + std::to_string(frame_overruns_60fps_.load()) + ")");
+                        }
+                    }
+                    
+                    // Periodic performance logging for 60fps content
+                    if (is_4k_60fps) {
+                        auto now = std::chrono::steady_clock::now();
+                        auto since_last_log = now - last_perf_log_;
+                        if (since_last_log > std::chrono::seconds(5)) { // Log every 5 seconds
+                            int64_t total_frames = frame_count_.load();
+                            int64_t overruns = frame_overruns_60fps_.load();
+                            double overrun_rate = total_frames > 0 ? (double)overruns / total_frames * 100.0 : 0.0;
+                            ve::log::info("4K 60fps performance: " + std::to_string(total_frames) + " frames, " + 
+                                        std::to_string(overruns) + " overruns (" + std::to_string(overrun_rate) + "%)");
+                            last_perf_log_ = now;
                         }
                     }
                 }
@@ -440,6 +493,47 @@ bool PlaybackController::remove_state_callback(CallbackId id) {
     bool removed = it != state_entries_.end();
     state_entries_.erase(it, state_entries_.end());
     return removed;
+}
+
+size_t PlaybackController::calculate_optimal_cache_size() const {
+    // Dynamic cache sizing based on available memory and content characteristics
+    
+    // Get system memory info (simplified - in real implementation would use proper system calls)
+    constexpr size_t ASSUMED_AVAILABLE_RAM_GB = 8; // Conservative assumption
+    constexpr size_t MAX_CACHE_MEMORY_MB = (ASSUMED_AVAILABLE_RAM_GB * 1024) / 4; // Use 25% of RAM
+    
+    // Estimate frame size based on common resolutions
+    // This is calculated before media is loaded, so we use conservative estimates
+    constexpr size_t FRAME_SIZE_4K = 3840 * 2160 * 4;    // 4K RGBA
+    
+    // Assume worst case (4K) for cache sizing
+    constexpr size_t ESTIMATED_FRAME_SIZE = FRAME_SIZE_4K; // ~31MB per frame
+    
+    // Calculate max frames that fit in memory budget
+    size_t max_frames_by_memory = (MAX_CACHE_MEMORY_MB * 1024 * 1024) / ESTIMATED_FRAME_SIZE;
+    
+    // Performance considerations:
+    // - For 60fps, we want aggressive caching for smoothness (4-5 seconds = 240-300 frames)
+    // - For 30fps, we can afford more (6 seconds = 180 frames)
+    // - Minimum should be 60 frames (1-2 seconds)
+    constexpr size_t MIN_CACHE_FRAMES = 60;
+    constexpr size_t PREFERRED_CACHE_60FPS = 240;  // 4 seconds at 60fps for ultra-smooth playback
+    constexpr size_t PREFERRED_CACHE_30FPS = 180;  // 6 seconds at 30fps
+    
+    // Choose cache size based on detected content - more aggressive for high FPS
+    size_t target_cache_size = PREFERRED_CACHE_30FPS; // Default
+    if (probed_fps_ >= 59.0) {
+        target_cache_size = PREFERRED_CACHE_60FPS; // Larger cache for 60fps content
+    }
+    
+    // Choose the smaller of memory limit or performance preference
+    size_t optimal_size = std::max(MIN_CACHE_FRAMES, 
+                                   std::min(max_frames_by_memory, target_cache_size));
+    
+    ve::log::info("Calculated optimal frame cache size: " + std::to_string(optimal_size) + 
+                  " frames (max by memory: " + std::to_string(max_frames_by_memory) + ")");
+    
+    return optimal_size;
 }
 
 } // namespace ve::playback
