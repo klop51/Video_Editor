@@ -575,13 +575,29 @@ private:
 #ifdef HAVE_D3D11VA
             || hw_frame->format == AV_PIX_FMT_D3D11
 #endif
-            ) {
+            || hw_frame->format == AV_PIX_FMT_VIDEOTOOLBOX) {
             
-            // Transfer from GPU to CPU memory
+            // Clear any existing data in the destination frame
+            av_frame_unref(sw_frame);
+            
+            // Set up the destination frame properties
             sw_frame->format = AV_PIX_FMT_NV12; // Common output format
-            if (av_hwframe_transfer_data(sw_frame, hw_frame, 0) < 0) {
+            sw_frame->width = hw_frame->width;
+            sw_frame->height = hw_frame->height;
+            
+            // Allocate buffer for the software frame
+            if (av_frame_get_buffer(sw_frame, 0) < 0) {
+                ve::log::error("Failed to allocate buffer for software frame");
                 return false;
             }
+            
+            // Transfer from GPU to CPU memory
+            if (av_hwframe_transfer_data(sw_frame, hw_frame, 0) < 0) {
+                ve::log::error("Failed to transfer hardware frame data");
+                return false;
+            }
+            
+            // Copy metadata and properties
             av_frame_copy_props(sw_frame, hw_frame);
             return true;
         }
