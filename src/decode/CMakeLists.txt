@@ -32,10 +32,14 @@ target_link_libraries(ve_decode
 if(ENABLE_FFMPEG)
     target_compile_definitions(ve_decode PUBLIC VE_HAVE_FFMPEG=1)
     
+    # Link D3D11 libraries on Windows (needed for GPU upload and hardware acceleration)
+    if(WIN32)
+        target_link_libraries(ve_decode PRIVATE d3d11 dxgi)
+    endif()
+    
     # Enable D3D11VA hardware acceleration on Windows
     if(WIN32 AND ENABLE_D3D11VA)
         target_compile_definitions(ve_decode PRIVATE HAVE_D3D11VA=1)
-        target_link_libraries(ve_decode PRIVATE d3d11 dxgi)
         message(STATUS "D3D11VA hardware acceleration ENABLED")
     else()
         message(STATUS "D3D11VA hardware acceleration DISABLED")

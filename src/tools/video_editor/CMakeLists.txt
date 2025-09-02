@@ -26,6 +26,11 @@ target_link_libraries(video_editor
         Qt6::Widgets
 )
 
+# Add Windows D3D11 libraries for hardware acceleration
+if(WIN32 AND ENABLE_D3D11VA)
+    target_link_libraries(video_editor PRIVATE d3d11 dxgi)
+endif()
+
 target_compile_features(video_editor PRIVATE cxx_std_20)
 
 # Set the executable as the startup project in Visual Studio

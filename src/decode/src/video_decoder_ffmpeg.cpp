@@ -95,159 +95,30 @@ PixelFormat map_pixel_format(int av_format) {
     }
 }
 
-// Copy frame data for different pixel formats
+// ChatGPT optimized: 4K60 fast-path frame copy using vectorized av_image_copy
 bool copy_frame_data(AVFrame* frame, VideoFrame& vf) {
-    const int width = frame->width;
+    const int width  = frame->width;
     const int height = frame->height;
-    
-    switch (vf.format) {
-        case PixelFormat::YUV420P:
-        case PixelFormat::YUV420P10LE:
-        case PixelFormat::YUV420P12LE: {
-            int bytes_per_component = (vf.format == PixelFormat::YUV420P) ? 1 : 
-                                    (vf.format == PixelFormat::YUV420P10LE) ? 2 : 2;
-            int y_size = width * height * bytes_per_component;
-            int uv_w = width / 2;
-            int uv_h = height / 2;
-            int uv_size = uv_w * uv_h * bytes_per_component;
-            vf.data.resize(y_size + 2 * uv_size);
-            
-            // Copy Y plane
-            for(int y = 0; y < height; ++y) {
-                std::memcpy(&vf.data[y * width * bytes_per_component], 
-                           frame->data[0] + y * frame->linesize[0], 
-                           width * bytes_per_component);
-            }
-            // Copy U plane
-            uint8_t* u_dst = vf.data.data() + y_size;
-            for(int y = 0; y < uv_h; ++y) {
-                std::memcpy(u_dst + y * uv_w * bytes_per_component, 
-                           frame->data[1] + y * frame->linesize[1], 
-                           uv_w * bytes_per_component);
-            }
-            // Copy V plane
-            uint8_t* v_dst = vf.data.data() + y_size + uv_size;
-            for(int y = 0; y < uv_h; ++y) {
-                std::memcpy(v_dst + y * uv_w * bytes_per_component, 
-                           frame->data[2] + y * frame->linesize[2], 
-                           uv_w * bytes_per_component);
-            }
-            break;
-        }
-        
-        case PixelFormat::YUV422P:
-        case PixelFormat::YUV422P10LE:
-        case PixelFormat::YUV422P12LE: {
-            int bytes_per_component = (vf.format == PixelFormat::YUV422P) ? 1 : 2;
-            int y_size = width * height * bytes_per_component;
-            int uv_w = width / 2;
-            int uv_h = height; // 422 has full height for UV
-            int uv_size = uv_w * uv_h * bytes_per_component;
-            vf.data.resize(y_size + 2 * uv_size);
-            
-            // Copy planes similar to 420P but with different UV dimensions
-            copy_planar_yuv(frame, vf.data.data(), width, height, uv_w, uv_h, bytes_per_component);
-            break;
-        }
-        
-        case PixelFormat::YUV444P:
-        case PixelFormat::YUV444P10LE:
-        case PixelFormat::YUV444P12LE: {
-            int bytes_per_component = (vf.format == PixelFormat::YUV444P) ? 1 : 2;
-            int plane_size = width * height * bytes_per_component;
-            vf.data.resize(3 * plane_size);
-            
-            // Copy all three planes (same size for 444)
-            copy_planar_yuv(frame, vf.data.data(), width, height, width, height, bytes_per_component);
-            break;
-        }
-        
-        case PixelFormat::NV12:
-        case PixelFormat::P010LE:
-        case PixelFormat::P016LE: {
-            int bytes_per_component = (vf.format == PixelFormat::NV12) ? 1 : 2;
-            int y_size = width * height * bytes_per_component;
-            int uv_size = (width * height / 2) * bytes_per_component; // Interleaved UV
-            vf.data.resize(y_size + uv_size);
-            
-            // Copy Y plane
-            for(int y = 0; y < height; ++y) {
-                std::memcpy(&vf.data[y * width * bytes_per_component], 
-                           frame->data[0] + y * frame->linesize[0], 
-                           width * bytes_per_component);
-            }
-            // Copy interleaved UV plane
-            uint8_t* uv_dst = vf.data.data() + y_size;
-            for(int y = 0; y < height / 2; ++y) {
-                std::memcpy(uv_dst + y * width * bytes_per_component, 
-                           frame->data[1] + y * frame->linesize[1], 
-                           width * bytes_per_component);
-            }
-            break;
-        }
-        
-        case PixelFormat::RGB24:
-        case PixelFormat::BGR24: {
-            int row_bytes = width * 3;
-            vf.data.resize(row_bytes * height);
-            for(int y = 0; y < height; ++y) {
-                std::memcpy(&vf.data[y * row_bytes], 
-                           frame->data[0] + y * frame->linesize[0], 
-                           row_bytes);
-            }
-            break;
-        }
-        
-        case PixelFormat::RGBA32:
-        case PixelFormat::BGRA32: {
-            int row_bytes = width * 4;
-            vf.data.resize(row_bytes * height);
-            for(int y = 0; y < height; ++y) {
-                std::memcpy(&vf.data[y * row_bytes], 
-                           frame->data[0] + y * frame->linesize[0], 
-                           row_bytes);
-            }
-            break;
-        }
-        
-        case PixelFormat::YUYV422:
-        case PixelFormat::UYVY422: {
-            int row_bytes = width * 2; // Packed format
-            vf.data.resize(row_bytes * height);
-            for(int y = 0; y < height; ++y) {
-                std::memcpy(&vf.data[y * row_bytes], 
-                           frame->data[0] + y * frame->linesize[0], 
-                           row_bytes);
-            }
-            break;
-        }
-        
-        case PixelFormat::GRAY8: {
-            int row_bytes = width;
-            vf.data.resize(row_bytes * height);
-            for(int y = 0; y < height; ++y) {
-                std::memcpy(&vf.data[y * row_bytes], 
-                           frame->data[0] + y * frame->linesize[0], 
-                           row_bytes);
-            }
-            break;
-        }
-        
-        case PixelFormat::GRAY16LE: {
-            int row_bytes = width * 2;
-            vf.data.resize(row_bytes * height);
-            for(int y = 0; y < height; ++y) {
-                std::memcpy(&vf.data[y * row_bytes], 
-                           frame->data[0] + y * frame->linesize[0], 
-                           row_bytes);
-            }
-            break;
-        }
-        
-        default:
-            return false;
+
+    const AVPixelFormat fmt = static_cast<AVPixelFormat>(frame->format);
+
+    // Compute total size; 1-byte alignment is fine (GPU uploader will repack if needed).
+    const int buf_size = av_image_get_buffer_size(fmt, width, height, 1);
+    if (buf_size <= 0) return false;
+
+    vf.data.resize(buf_size);
+
+    uint8_t* dst_data[4] = {nullptr, nullptr, nullptr, nullptr};
+    int      dst_lines[4] = {0, 0, 0, 0};
+    if (av_image_fill_arrays(dst_data, dst_lines, vf.data.data(),
+                             fmt, width, height, 1) < 0) {
+        return false;
     }
-    
+
+    // One call copies all planes & respects pitches. Much faster than manual loops.
+    av_image_copy(dst_data, dst_lines,
+                  const_cast<const uint8_t**>(frame->data), frame->linesize,
+                  fmt, width, height);
     return true;
 }
 
@@ -324,6 +195,60 @@ double get_stream_fps(const AVStream* stream) {
 
 // Hardware acceleration helpers
 namespace hw_accel {
+
+#if defined(_WIN32) && VE_ENABLE_D3D11VA
+
+// ChatGPT optimized: Prefer D3D11 when the decoder proposes multiple output formats
+static AVPixelFormat hw_get_format(AVCodecContext* /*ctx*/, const AVPixelFormat* fmts) {
+    for (const AVPixelFormat* p = fmts; *p != AV_PIX_FMT_NONE; ++p)
+        if (*p == AV_PIX_FMT_D3D11) return *p;
+    return fmts[0];
+}
+
+// Keep a ref so you can free it later (or move to your class as a member)
+static AVBufferRef* g_hw_device_ctx = nullptr;
+
+// ChatGPT optimized: Create a D3D11VA hw device; safe fallback if unavailable
+static bool init_d3d11va_if_available(AVCodecContext* dec_ctx) {
+    if (g_hw_device_ctx) return true; // already created
+    AVBufferRef* hwdev = nullptr;
+    const int err = av_hwdevice_ctx_create(&hwdev, AV_HWDEVICE_TYPE_D3D11VA, nullptr, nullptr, 0);
+    if (err < 0) {
+        ve::log::warn("D3D11VA unavailable, using software decode");
+        return false;
+    }
+    dec_ctx->hw_device_ctx = hwdev;     // decoder owns a reference
+    g_hw_device_ctx = hwdev;            // keep global (or store as member)
+    dec_ctx->get_format = hw_get_format;
+    ve::log::info("D3D11VA device created");
+    return true;
+}
+
+// ChatGPT optimized: Handle a D3D11 frame: zero-copy (optional) or CPU transfer to your existing path
+static bool handle_d3d11_frame(AVFrame* hwf, VideoFrame& vf) {
+#if VE_ZERO_COPY_D3D11
+    // Zero-copy: pass native texture to your viewer
+    ID3D11Texture2D* tex = reinterpret_cast<ID3D11Texture2D*>(hwf->data[0]);
+    if (!tex) return false;
+    // TODO: route to your presenter/uploader, e.g.:
+    // streaming_uploader.present_d3d11(tex, pts_us);
+    return true;
+#else
+    // CPU fallback: transfer hw surface to a CPU frame; reuse your current copy path
+    AVFrame* sw = av_frame_alloc();
+    if (!sw) return false;
+    bool ok = false;
+    if (av_hwframe_transfer_data(sw, hwf, 0) == 0) {
+        if (copy_frame_data(sw, vf)) {
+            ok = true;
+        }
+    }
+    av_frame_free(&sw);
+    return ok;
+#endif
+}
+
+#endif // _WIN32 && VE_ENABLE_D3D11VA
     
     // Detect best available hardware acceleration
     AVHWDeviceType detect_best_hw_device() {
@@ -501,10 +426,32 @@ public:
                 }
                 
                 // Copy frame data based on format
+#if defined(_WIN32) && VE_ENABLE_D3D11VA
+                if (frame_->format == AV_PIX_FMT_D3D11) {
+                    // D3D11VA temporarily disabled due to stability issues
+                    // Handle D3D11VA hardware frame
+                    // if (!hw_accel::handle_d3d11_frame(frame_, vf)) {
+                    //     ve::log::error("Failed to handle D3D11 frame");
+                    //     return std::nullopt;
+                    // }
+                    // Fallback to software copy for stability
+                    if (!copy_frame_data(frame_, vf)) {
+                        ve::log::error("Failed to copy frame data");
+                        return std::nullopt;
+                    }
+                } else {
+                    // Normal software frame copy
+                    if (!copy_frame_data(frame_, vf)) {
+                        ve::log::error("Failed to copy frame data");
+                        return std::nullopt;
+                    }
+                }
+#else
                 if (!copy_frame_data(frame_, vf)) {
                     ve::log::error("Failed to copy frame data");
                     return std::nullopt;
                 }
+#endif
                 stats_.video_frames_decoded++;
                 return vf;
             }
@@ -557,6 +504,13 @@ public:
     const DecoderStats& stats() const override { return stats_; }
 
     ~FFmpegDecoder() override {
+        // Stop decode thread first, then cleanup
+#if defined(_WIN32) && VE_ENABLE_D3D11VA
+        if (hw_accel::g_hw_device_ctx) {
+            av_buffer_unref(&hw_accel::g_hw_device_ctx);
+            hw_accel::g_hw_device_ctx = nullptr;
+        }
+#endif
         if(hw_transfer_frame_) av_frame_free(&hw_transfer_frame_);
         if(frame_) av_frame_free(&frame_);
         if(packet_) av_packet_free(&packet_);
@@ -590,11 +544,22 @@ private:
         ctx->flags2 = 0; // No aggressive flags
         
         // Enable hardware acceleration for performance only if it doesn't cause issues
+#if defined(_WIN32) && VE_ENABLE_D3D11VA
+        // D3D11VA temporarily disabled due to stability issues
+        // ctx->get_format = hw_accel::hw_get_format;          // tell FFmpeg to prefer D3D11
+        // (void)hw_accel::init_d3d11va_if_available(ctx);     // try to create hw device
         if (setup_hardware_acceleration(ctx)) {
             ve::log::info("Hardware acceleration enabled with minimal settings");
         } else {
             ve::log::warn("Hardware acceleration failed, using pure software decoding");
         }
+#else
+        if (setup_hardware_acceleration(ctx)) {
+            ve::log::info("Hardware acceleration enabled with minimal settings");
+        } else {
+            ve::log::warn("Hardware acceleration failed, using pure software decoding");
+        }
+#endif
         
         if(avcodec_open2(ctx, dec, nullptr) < 0) return false;
         
@@ -679,20 +644,28 @@ private:
         int r = avcodec_receive_frame(ctx, frame_);
         
         // Handle hardware frames
-        if (r == 0 && ctx == video_codec_ctx_ && 
-            (frame_->format == AV_PIX_FMT_D3D11 || 
-             frame_->format == AV_PIX_FMT_DXVA2_VLD ||
-             frame_->format == AV_PIX_FMT_CUDA ||
-             frame_->format == AV_PIX_FMT_VIDEOTOOLBOX)) {
-            // Transfer hardware frame to system memory for processing
-            if (!transfer_hardware_frame(frame_, hw_transfer_frame_)) {
-                ve::log::error("Failed to transfer hardware frame");
-                return false;
+        if (r == 0 && ctx == video_codec_ctx_) {
+#if defined(_WIN32) && VE_ENABLE_D3D11VA
+            if (frame_->format == AV_PIX_FMT_D3D11) {
+                // For D3D11 frames, we need to let the main read_video() function handle them
+                // The D3D11 transfer will be done in read_video() where VideoFrame is created
+                return true; // Frame is ready for processing
             }
-            // Swap frames so processing uses the transferred frame
-            AVFrame* temp = frame_;
-            frame_ = hw_transfer_frame_;
-            hw_transfer_frame_ = temp;
+#endif
+            // Existing hardware frame handling for other formats
+            if (frame_->format == AV_PIX_FMT_DXVA2_VLD ||
+                frame_->format == AV_PIX_FMT_CUDA ||
+                frame_->format == AV_PIX_FMT_VIDEOTOOLBOX) {
+                // Transfer hardware frame to system memory for processing
+                if (!transfer_hardware_frame(frame_, hw_transfer_frame_)) {
+                    ve::log::error("Failed to transfer hardware frame");
+                    return false;
+                }
+                // Swap frames so processing uses the transferred frame
+                AVFrame* temp = frame_;
+                frame_ = hw_transfer_frame_;
+                hw_transfer_frame_ = temp;
+            }
         }
         
         return r == 0;

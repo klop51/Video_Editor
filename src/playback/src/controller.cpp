@@ -7,6 +7,26 @@
 #include <chrono>
 #include <thread>
 
+// ChatGPT optimization: High-precision frame pacing helper
+// Sleep most of the interval, spin the final ~200µs for accuracy.
+static inline void precise_sleep_until(std::chrono::steady_clock::time_point target) {
+    using namespace std::chrono;
+    for (;;) {
+        auto now = steady_clock::now();
+        if (now >= target) break;
+        auto remain = target - now;
+        if (remain > 1ms) {
+            std::this_thread::sleep_for(remain - 1ms);
+        } else if (remain > 200us) {
+            std::this_thread::sleep_for(200us);
+        } else {
+            // short busy-wait for sub-200µs precision
+            do { now = steady_clock::now(); } while (now < target);
+            break;
+        }
+    }
+}
+
 namespace ve::playback {
 
 PlaybackController::PlaybackController() {
@@ -247,17 +267,23 @@ void PlaybackController::playback_thread_main() {
                     }
                     current_time_us_.store(next_pts);
                     VE_DEBUG_ONLY(ve::log::info("Advanced time to: " + std::to_string(next_pts) + " (cache hit path)"));
-                    // Frame pacing for cache hit: sleep remaining time of this frame interval
+                    // ChatGPT optimization: Frame pacing for cache hit - precise alignment to frame interval
                     {
-                        auto target_interval = std::chrono::microseconds(delta);
-                        auto frame_end = std::chrono::high_resolution_clock::now();
-                        auto actual_duration = frame_end - last_frame_time;
-                        if (actual_duration < target_interval) {
-                            auto sleep_time = target_interval - actual_duration;
-                            std::this_thread::sleep_for(sleep_time);
+                        using namespace std::chrono;
+
+                        auto target_interval = microseconds(delta);  // delta = frame us (from fps accumulator or 1e6/fps)
+                        if (first_frame) {
+                            last_frame_time = steady_clock::now();
+                            first_frame = false;
                         }
-                        last_frame_time = std::chrono::high_resolution_clock::now();
-                        first_frame = false;
+
+                        auto next_target = last_frame_time + target_interval;
+                        precise_sleep_until(next_target);
+
+                        last_frame_time = steady_clock::now();
+
+                        // keep existing time advance:
+                        // current_time_us_.store(next_pts); // already done above
                         last_pts_us = current_pts;
                     }
                     continue; // Skip decoding new frame this iteration
