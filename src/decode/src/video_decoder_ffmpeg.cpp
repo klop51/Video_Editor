@@ -68,6 +68,15 @@ PixelFormat map_pixel_format(int av_format) {
         case AV_PIX_FMT_GRAY16LE: return PixelFormat::GRAY16LE;
         case AV_PIX_FMT_P010LE: return PixelFormat::P010LE;
         case AV_PIX_FMT_P016LE: return PixelFormat::P016LE;
+        
+        // Hardware acceleration formats
+#ifdef _WIN32
+        case AV_PIX_FMT_D3D11: return PixelFormat::NV12; // D3D11VA frames are typically NV12
+        case AV_PIX_FMT_DXVA2_VLD: return PixelFormat::NV12; // DXVA2 frames are typically NV12
+#endif
+        case AV_PIX_FMT_CUDA: return PixelFormat::NV12; // CUDA frames are typically NV12
+        case AV_PIX_FMT_VIDEOTOOLBOX: return PixelFormat::NV12; // VideoToolbox frames (shouldn't happen on Windows)
+        
         default: return PixelFormat::Unknown;
     }
 }
@@ -533,32 +542,28 @@ private:
         if (!hw_accel_ctx_.hw_device_ctx) {
             if (av_hwdevice_ctx_create(&hw_accel_ctx_.hw_device_ctx, hw_accel_ctx_.hw_type, 
                                       nullptr, nullptr, 0) < 0) {
+                ve::log::error("Failed to create hardware device context");
                 return false;
             }
         }
         
         // Set hardware device context
         ctx->hw_device_ctx = av_buffer_ref(hw_accel_ctx_.hw_device_ctx);
-        ctx->get_buffer2 = hw_accel::hw_get_buffer;
         
-        // Create hardware frames context for zero-copy
-        AVBufferRef* hw_frames_ref = av_hwframe_ctx_alloc(hw_accel_ctx_.hw_device_ctx);
-        if (!hw_frames_ref) return false;
-        
-        AVHWFramesContext* frames_ctx = (AVHWFramesContext*)hw_frames_ref->data;
-        frames_ctx->format = ctx->pix_fmt; // Will be set by hardware
-        frames_ctx->sw_format = AV_PIX_FMT_NV12; // Preferred format for hardware decode
-        frames_ctx->width = ctx->width;
-        frames_ctx->height = ctx->height;
-        frames_ctx->initial_pool_size = 20; // Pool of hardware frames
-        
-        if (av_hwframe_ctx_init(hw_frames_ref) < 0) {
-            av_buffer_unref(&hw_frames_ref);
-            return false;
+        // Find hardware pixel format for this codec
+        for (int i = 0;; i++) {
+            const AVCodecHWConfig* config = avcodec_get_hw_config(ctx->codec, i);
+            if (!config) break;
+            
+            if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX &&
+                config->device_type == hw_accel_ctx_.hw_type) {
+                ctx->pix_fmt = config->pix_fmt;
+                break;
+            }
         }
         
-        ctx->hw_frames_ctx = hw_frames_ref;
-        hw_accel_ctx_.zero_copy_enabled = true;
+        // Set custom get_buffer2 for hardware frames
+        ctx->get_buffer2 = hw_accel::hw_get_buffer;
         
         return true;
     }
@@ -591,7 +596,11 @@ private:
         int r = avcodec_receive_frame(ctx, frame_);
         
         // Handle hardware frames
-        if (r == 0 && ctx == video_codec_ctx_ && hw_accel_ctx_.zero_copy_enabled) {
+        if (r == 0 && ctx == video_codec_ctx_ && 
+            (frame_->format == AV_PIX_FMT_D3D11 || 
+             frame_->format == AV_PIX_FMT_DXVA2_VLD ||
+             frame_->format == AV_PIX_FMT_CUDA ||
+             frame_->format == AV_PIX_FMT_VIDEOTOOLBOX)) {
             // Transfer hardware frame to system memory for processing
             if (!transfer_hardware_frame(frame_, hw_transfer_frame_)) {
                 ve::log::error("Failed to transfer hardware frame");

@@ -1,0 +1,37 @@
+cmake_minimum_required(VERSION 3.20)
+project(D3D11VideoLoadingDiagnostic)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Find vcpkg packages
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(FFMPEG REQUIRED 
+    libavformat
+    libavcodec
+    libavutil
+)
+
+# Create the diagnostic executable
+add_executable(debug_d3d11_video_loading
+    debug_d3d11_video_loading.cpp
+)
+
+# Include directories
+target_include_directories(debug_d3d11_video_loading PRIVATE
+    ${FFMPEG_INCLUDE_DIRS}
+)
+
+# Link libraries
+target_link_libraries(debug_d3d11_video_loading PRIVATE
+    ${FFMPEG_LIBRARIES}
+    d3d11
+    dxgi
+)
+
+# Compiler definitions
+target_compile_definitions(debug_d3d11_video_loading PRIVATE
+    ${FFMPEG_CFLAGS_OTHER}
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+)
