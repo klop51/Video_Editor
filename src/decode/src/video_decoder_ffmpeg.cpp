@@ -2,15 +2,20 @@
 #include "decode/codec_optimizer.hpp"
 #include "decode/gpu_upload.hpp"
 #include "core/log.hpp"
+
+// Use isolated wrapper headers to prevent conflicts
+#ifdef _WIN32
+#include "platform/d3d11_headers.hpp"
+#include "thirdparty/ffmpeg_d3d11_headers.hpp"
+#endif
+
 #if VE_HAVE_FFMPEG
 extern "C" {
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/hwcontext.h>
-// TODO: Re-enable D3D11 hardware acceleration when header conflicts resolved
-#ifdef _WIN32_DISABLED_FOR_NOW
-#include <libavutil/hwcontext_d3d11va.h>
+#ifdef _WIN32
 #include <libavutil/hwcontext_dxva2.h>
 #endif
 }
@@ -271,11 +276,12 @@ namespace hw_accel {
     
     // Detect best available hardware acceleration
     AVHWDeviceType detect_best_hw_device() {
-        // TODO: Re-enable hardware acceleration when header conflicts resolved
-        // Priority order for Windows: D3D11VA -> DXVA2 -> None
+        // Priority order for Windows: D3D11VA -> DXVA2 -> CUDA -> None
         const AVHWDeviceType candidates[] = {
-#ifdef _WIN32_DISABLED_FOR_NOW
+#ifdef _WIN32
+#ifdef HAVE_D3D11VA
             AV_HWDEVICE_TYPE_D3D11VA,
+#endif
             AV_HWDEVICE_TYPE_DXVA2,
 #endif
             AV_HWDEVICE_TYPE_CUDA,   // NVIDIA (if available)
@@ -559,10 +565,12 @@ private:
     
     // Transfer hardware frame to system memory if needed
     bool transfer_hardware_frame(AVFrame* hw_frame, AVFrame* sw_frame) {
-        // TODO: Re-enable D3D11 hardware frame handling when header conflicts resolved
         if (hw_frame->format == AV_PIX_FMT_DXVA2_VLD ||
-            hw_frame->format == AV_PIX_FMT_CUDA) {
-            // Note: AV_PIX_FMT_D3D11 temporarily disabled due to header conflicts
+            hw_frame->format == AV_PIX_FMT_CUDA
+#ifdef HAVE_D3D11VA
+            || hw_frame->format == AV_PIX_FMT_D3D11
+#endif
+            ) {
             
             // Transfer from GPU to CPU memory
             sw_frame->format = AV_PIX_FMT_NV12; // Common output format

@@ -18,6 +18,7 @@ target_include_directories(ve_decode
         $<INSTALL_INTERFACE:include>
     PRIVATE
         ${CMAKE_SOURCE_DIR}/src/core/include
+        ${CMAKE_SOURCE_DIR}/src
 )
 
 target_link_libraries(ve_decode
@@ -30,6 +31,16 @@ target_link_libraries(ve_decode
 
 if(ENABLE_FFMPEG)
     target_compile_definitions(ve_decode PUBLIC VE_HAVE_FFMPEG=1)
+    
+    # Enable D3D11VA hardware acceleration on Windows
+    if(WIN32 AND ENABLE_D3D11VA)
+        target_compile_definitions(ve_decode PRIVATE HAVE_D3D11VA=1)
+        target_link_libraries(ve_decode PRIVATE d3d11 dxgi)
+        message(STATUS "D3D11VA hardware acceleration ENABLED")
+    else()
+        message(STATUS "D3D11VA hardware acceleration DISABLED")
+    endif()
+    
     # Disable warnings as errors for FFmpeg headers on MSVC
     if(MSVC)
         target_compile_options(ve_decode PRIVATE /W3)

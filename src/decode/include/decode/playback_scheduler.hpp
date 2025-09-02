@@ -43,9 +43,6 @@ public:
         if (!running_ || !use_frame_timing_) return true;
         
         auto now = Clock::now();
-        auto end = std::chrono::high_resolution_clock::now();
-        auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-        (void)elapsed_us; // Suppress unused variable warning
         auto target_wall_us = static_cast<int64_t>((target_pts_us - start_media_pts_us_) / rate_);
         auto target_wall_time = start_wall_ + std::chrono::microseconds(target_wall_us);
         
@@ -56,7 +53,8 @@ public:
         }
         
         // Frame is late - check if we should drop it
-        auto late_us = std::chrono::duration_cast<std::chrono::microseconds>(now - target_wall_time).count();
+        auto late_duration = now - target_wall_time;
+        auto late_us = std::chrono::duration_cast<std::chrono::microseconds>(late_duration).count();
         return late_us < frame_duration_us_; // Drop if more than one frame late
     }
     
