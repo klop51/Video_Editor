@@ -24,8 +24,23 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y nasm ninja-build build-essential pkg-config curl zip unzip tar clang-tidy libltdl-dev libtool autotools-dev autoconf automake m4 cmake autoconf-archive
-      
+          # Install basic build tools first
+          sudo apt-get install -y build-essential pkg-config curl zip unzip tar cmake ninja-build
+          # Install autotools chain
+          sudo apt-get install -y autoconf automake libtool libltdl-dev autotools-dev m4 autoconf-archive
+          # Install additional tools
+          sudo apt-get install -y nasm clang-tidy
+
+      - name: Verify autotools installation
+        run: |
+          echo "Checking autotools installation..."
+          autoconf --version
+          automake --version
+          libtool --version
+          pkg-config --version
+          echo "libltdl check:"
+          dpkg -l | grep libltdl
+
       - name: Cache vcpkg
         uses: actions/cache@v4
         with:
