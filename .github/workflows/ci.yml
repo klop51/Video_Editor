@@ -37,8 +37,8 @@ jobs:
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "Windows" ]; then
-            git clone https://github.com/Microsoft/vcpkg.git C:/vcpkg
-            cd C:/vcpkg && ./bootstrap-vcpkg.bat
+            rm -rf C:/vcpkg || true; git clone --depth 1 https://github.com/Microsoft/vcpkg.git C:/vcpkg
+            cd C:/vcpkg && cmd.exe /c "bootstrap-vcpkg.bat"
             echo "VCPKG_ROOT=C:/vcpkg" >> $GITHUB_ENV
             echo "VCPKG_DEFAULT_TRIPLET=x64-windows" >> $GITHUB_ENV
           else
@@ -144,8 +144,8 @@ jobs:
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "Windows" ]; then
-            git clone https://github.com/Microsoft/vcpkg.git C:/vcpkg
-            cd C:/vcpkg && ./bootstrap-vcpkg.bat
+            rm -rf C:/vcpkg || true; git clone --depth 1 https://github.com/Microsoft/vcpkg.git C:/vcpkg
+            cd C:/vcpkg && cmd.exe /c "bootstrap-vcpkg.bat"
             echo "VCPKG_ROOT=C:/vcpkg" >> $GITHUB_ENV
             echo "VCPKG_DEFAULT_TRIPLET=x64-windows" >> $GITHUB_ENV
           else
@@ -456,3 +456,4 @@ jobs:
             flaky_quarantine_output.txt
             .flaky_quarantine_state.json
             flaky_instability_sparkline.txt
+
