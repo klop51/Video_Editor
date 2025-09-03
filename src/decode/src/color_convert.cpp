@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <optional>
 #include <memory>
+#include <thread>
 #include <cstdlib>
 
 #ifndef VE_HEAP_DEBUG
@@ -190,9 +191,41 @@ namespace {
         return std::nullopt;
     }
 
-    std::optional<VideoFrame> convert_nv12_to_rgba([[maybe_unused]] const VideoFrame& src, [[maybe_unused]] VideoFrame& out) {
-        ve::log::warn("NV12 conversion not yet implemented");
-        return std::nullopt;
+    std::optional<VideoFrame> convert_nv12_to_rgba(const VideoFrame& src, VideoFrame& out) {
+    // NV12 -> RGBA conversion (hot path). Avoid per-frame logging.
+        
+        const int W = src.width;
+        const int H = src.height;
+        const size_t y_size = static_cast<size_t>(W) * H;
+        const size_t uv_size = (static_cast<size_t>(W) * H) / 2; // NV12: UV plane is half size but interleaved
+        const size_t needed = y_size + uv_size;
+        
+        if (src.data.size() < needed) {
+            ve::log::error("convert_nv12_to_rgba: undersized buffer guard hit (have=" + std::to_string(src.data.size()) + ", need=" + std::to_string(needed) + ")");
+            return std::nullopt;
+        }
+        
+        const uint8_t* Y_plane = src.data.data();
+        const uint8_t* UV_plane = Y_plane + y_size;
+        uint8_t* rgba_data = out.data.data();
+
+        for(int y = 0; y < H; ++y) {
+            for(int x = 0; x < W; ++x) {
+                const int Y = Y_plane[y * W + x];
+                
+                // NV12 format: UV samples are interleaved and subsampled 2x2
+                const int uv_x = x / 2;
+                const int uv_y = y / 2;
+                const int uv_index = (uv_y * (W / 2) + uv_x) * 2; // 2 bytes per UV pair
+                
+                const int U = UV_plane[uv_index];     // U component
+                const int V = UV_plane[uv_index + 1]; // V component
+                
+                yuv_to_rgb(Y, U, V, src.color_space, src.color_range, &rgba_data[(y * W + x) * 4]);
+            }
+        }
+        
+        return out;
     }
 
     std::optional<VideoFrame> convert_nv21_to_rgba([[maybe_unused]] const VideoFrame& src, [[maybe_unused]] VideoFrame& out) {
@@ -376,10 +409,21 @@ static std::optional<VideoFrame> to_rgba_scaled_ffmpeg(const VideoFrame& src, in
     const AVPixelFormat src_fmt = to_avpf(src.format);
     if (src_fmt == AV_PIX_FMT_NONE) return std::nullopt;
 
+    // Use optimized conversion algorithms based on resolution
+    int algorithm = SWS_FAST_BILINEAR;
+    // For 4K content, prioritize speed
+    if (src.width >= 3840 || src.height >= 2160) {
+        algorithm = SWS_FAST_BILINEAR;
+    }
+    
     SwsContext* ctx = sws_getContext(src.width, src.height, src_fmt,
                                      target_w, target_h, AV_PIX_FMT_RGBA,
-                                     SWS_BILINEAR, nullptr, nullptr, nullptr);
+                                     algorithm, nullptr, nullptr, nullptr);
     if (!ctx) return std::nullopt;
+    
+    // Enable multi-threading for 4K content (simplified)
+    // Note: swscale threading needs careful implementation
+    // For now, rely on decoder threading optimization
 
     uint8_t* src_data[4];
     int src_linesize[4];
@@ -423,6 +467,7 @@ std::optional<VideoFrame> to_rgba_scaled(const VideoFrame& src, int target_w, in
             case PixelFormat::YUV420P: return static_cast<size_t>(w)*h + 2*static_cast<size_t>((w+1)/2)*((h+1)/2);
             case PixelFormat::YUV422P: return static_cast<size_t>(w)*h + 2*static_cast<size_t>((w+1)/2)*h;
             case PixelFormat::YUV444P: return 3ull*static_cast<size_t>(w)*h;
+            case PixelFormat::NV12: return static_cast<size_t>(w)*h + static_cast<size_t>((w+1)/2)*((h+1)/2)*2; // Y plane + interleaved UV plane
             case PixelFormat::RGB24: return 3ull*static_cast<size_t>(w)*h;
             case PixelFormat::BGR24: return 3ull*static_cast<size_t>(w)*h;
             case PixelFormat::RGBA32: return 4ull*static_cast<size_t>(w)*h;
@@ -432,8 +477,7 @@ std::optional<VideoFrame> to_rgba_scaled(const VideoFrame& src, int target_w, in
     };
     size_t expect = expected_src_size(src);
     if (expect && src.data.size() < expect) {
-        ve::log::error("Source frame data undersized for format before conversion: have=" + std::to_string(src.data.size()) + " expect=" + std::to_string(expect) +
-            " fmt=" + std::to_string(static_cast<int>(src.format)) + " " + std::to_string(src.width) + "x" + std::to_string(src.height));
+        return std::nullopt;
     }
 
 #if VE_HAVE_FFMPEG
@@ -519,7 +563,7 @@ std::optional<RgbaView> to_rgba_scaled_view(const VideoFrame& src, int target_w,
     // Thread-local context + ring buffers for reuse.
     struct Scratch {
 #if VE_HAVE_FFMPEG
-        SwsContext* ctx = nullptr; int src_w=0, src_h=0, dst_w=0, dst_h=0; AVPixelFormat fmt = AV_PIX_FMT_NONE;
+        SwsContext* ctx = nullptr; int src_w=0, src_h=0, dst_w=0, dst_h=0; AVPixelFormat fmt = AV_PIX_FMT_NONE; int flags = 0;
         ~Scratch(){ if (ctx) sws_freeContext(ctx); }
 #endif
         std::vector<uint8_t> buffers[2]; int index = 0;
@@ -536,12 +580,14 @@ std::optional<RgbaView> to_rgba_scaled_view(const VideoFrame& src, int target_w,
         const AVPixelFormat src_fmt = to_avpf(src.format);
         if (src_fmt != AV_PIX_FMT_NONE) {
             // Recreate context only when parameters change.
-            if (!tls.ctx || tls.src_w!=src.width || tls.src_h!=src.height || tls.dst_w!=target_w || tls.dst_h!=target_h || tls.fmt!=src_fmt) {
+            const bool no_scale = (src.width == target_w && src.height == target_h);
+            const int new_flags = no_scale ? SWS_POINT : SWS_FAST_BILINEAR;
+            if (!tls.ctx || tls.src_w!=src.width || tls.src_h!=src.height || tls.dst_w!=target_w || tls.dst_h!=target_h || tls.fmt!=src_fmt || tls.flags!=new_flags) {
                 if (tls.ctx) sws_freeContext(tls.ctx);
                 tls.ctx = sws_getContext(src.width, src.height, src_fmt,
                                          target_w, target_h, AV_PIX_FMT_RGBA,
-                                         SWS_BILINEAR, nullptr, nullptr, nullptr);
-                tls.src_w = src.width; tls.src_h = src.height; tls.dst_w = target_w; tls.dst_h = target_h; tls.fmt = src_fmt;
+                                         new_flags, nullptr, nullptr, nullptr);
+                tls.src_w = src.width; tls.src_h = src.height; tls.dst_w = target_w; tls.dst_h = target_h; tls.fmt = src_fmt; tls.flags = new_flags;
             }
             if (tls.ctx) {
                 VE_PROFILE_SCOPE_DETAILED("to_rgba_scaled_view.sws_scale");

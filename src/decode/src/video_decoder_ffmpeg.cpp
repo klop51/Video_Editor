@@ -95,31 +95,144 @@ PixelFormat map_pixel_format(int av_format) {
     }
 }
 
-// ChatGPT optimized: 4K60 fast-path frame copy using vectorized av_image_copy
+// Simplified robust frame copy function for stability
 bool copy_frame_data(AVFrame* frame, VideoFrame& vf) {
     const int width  = frame->width;
     const int height = frame->height;
-
     const AVPixelFormat fmt = static_cast<AVPixelFormat>(frame->format);
 
-    // Compute total size; 1-byte alignment is fine (GPU uploader will repack if needed).
-    const int buf_size = av_image_get_buffer_size(fmt, width, height, 1);
-    if (buf_size <= 0) return false;
+    // ve::log::info("Copying frame format: " + std::to_string(fmt) + " (" + std::string(av_get_pix_fmt_name(fmt) ? av_get_pix_fmt_name(fmt) : "unknown") + ")");
 
-    vf.data.resize(buf_size);
+    // Handle D3D11 hardware frames by transferring to CPU first
+    if (fmt == AV_PIX_FMT_D3D11) {
+        AVFrame* sw_frame = av_frame_alloc();
+        if (!sw_frame) {
+            ve::log::error("Failed to allocate software frame for D3D11 transfer");
+            return false;
+        }
+        
+        // Transfer from D3D11 to CPU memory
+        int ret = av_hwframe_transfer_data(sw_frame, frame, 0);
+        if (ret < 0) {
+            ve::log::error("Failed to transfer D3D11 frame to CPU memory, error code: " + std::to_string(ret));
+            av_frame_free(&sw_frame);
+            return false;
+        }
+        
+        ve::log::info("D3D11 frame transfer successful: " + std::to_string(frame->format) + " -> " + std::to_string(sw_frame->format));
+        
+        // Copy frame properties
+        av_frame_copy_props(sw_frame, frame);
+        
+        // Recursively call with the CPU frame
+        bool result = copy_frame_data(sw_frame, vf);
+        av_frame_free(&sw_frame);
+        return result;
+    }
 
-    uint8_t* dst_data[4] = {nullptr, nullptr, nullptr, nullptr};
-    int      dst_lines[4] = {0, 0, 0, 0};
-    if (av_image_fill_arrays(dst_data, dst_lines, vf.data.data(),
-                             fmt, width, height, 1) < 0) {
+    // Handle different pixel formats explicitly for better error handling
+    int buf_size = 0;
+    
+    switch (fmt) {
+        case AV_PIX_FMT_YUV420P:
+            buf_size = width * height * 3 / 2; // Y + U/4 + V/4
+            break;
+        case AV_PIX_FMT_YUV422P:
+            buf_size = width * height * 2; // Y + U/2 + V/2
+            break;
+        case AV_PIX_FMT_YUV444P:
+            buf_size = width * height * 3; // Y + U + V
+            break;
+        case AV_PIX_FMT_NV12:
+            buf_size = width * height * 3 / 2; // Y + interleaved UV/2
+            break;
+        case AV_PIX_FMT_RGBA:
+        case AV_PIX_FMT_BGRA:
+            buf_size = width * height * 4;
+            break;
+        case AV_PIX_FMT_RGB24:
+        case AV_PIX_FMT_BGR24:
+            buf_size = width * height * 3;
+            break;
+        default:
+            // For D3D11 and other hardware formats, this should not happen
+            // as they should be handled by the D3D11 transfer path above
+            if (fmt == AV_PIX_FMT_D3D11) {
+                ve::log::error("D3D11 frame reached manual copy fallback - this should not happen");
+                return false;
+            }
+            // Fallback to av_image_get_buffer_size for other formats
+            buf_size = av_image_get_buffer_size(fmt, width, height, 1);
+            if (buf_size <= 0) {
+                ve::log::error("Unsupported pixel format for fallback copy: " + std::to_string(fmt));
+                return false;
+            }
+            break;
+    }
+
+    if (buf_size <= 0) {
+        ve::log::error("Invalid buffer size calculated: " + std::to_string(buf_size));
         return false;
     }
 
-    // One call copies all planes & respects pitches. Much faster than manual loops.
-    av_image_copy(dst_data, dst_lines,
-                  const_cast<const uint8_t**>(frame->data), frame->linesize,
-                  fmt, width, height);
-    return true;
+    vf.data.resize(buf_size);
+
+    // Use simple memcpy approach for common formats
+    if (fmt == AV_PIX_FMT_YUV420P) {
+        // Manual YUV420P copy - most common format
+        uint8_t* dst = vf.data.data();
+        
+        // Copy Y plane
+        for (int y = 0; y < height; y++) {
+            memcpy(dst + y * width, frame->data[0] + y * frame->linesize[0], width);
+        }
+        dst += width * height;
+        
+        // Copy U plane
+        int uv_width = width / 2;
+        int uv_height = height / 2;
+        for (int y = 0; y < uv_height; y++) {
+            memcpy(dst + y * uv_width, frame->data[1] + y * frame->linesize[1], uv_width);
+        }
+        dst += uv_width * uv_height;
+        
+        // Copy V plane
+        for (int y = 0; y < uv_height; y++) {
+            memcpy(dst + y * uv_width, frame->data[2] + y * frame->linesize[2], uv_width);
+        }
+        return true;
+    } else if (fmt == AV_PIX_FMT_NV12) {
+        // Manual NV12 copy - common for hardware decoding
+        uint8_t* dst = vf.data.data();
+        
+        // Copy Y plane
+        for (int y = 0; y < height; y++) {
+            memcpy(dst + y * width, frame->data[0] + y * frame->linesize[0], width);
+        }
+        dst += width * height;
+        
+        // Copy UV plane (interleaved)
+        int uv_height = height / 2;
+        for (int y = 0; y < uv_height; y++) {
+            memcpy(dst + y * width, frame->data[1] + y * frame->linesize[1], width);
+        }
+        return true;
+    } else {
+        // Fallback to av_image functions for other formats
+        uint8_t* dst_data[4] = {nullptr, nullptr, nullptr, nullptr};
+        int      dst_lines[4] = {0, 0, 0, 0};
+        
+        if (av_image_fill_arrays(dst_data, dst_lines, vf.data.data(),
+                                 fmt, width, height, 1) < 0) {
+            ve::log::error("av_image_fill_arrays failed for format: " + std::to_string(fmt));
+            return false;
+        }
+
+        av_image_copy(dst_data, dst_lines,
+                      const_cast<const uint8_t**>(frame->data), frame->linesize,
+                      fmt, width, height);
+        return true;
+    }
 }
 
 // Helper function for copying planar YUV data
@@ -196,68 +309,38 @@ double get_stream_fps(const AVStream* stream) {
 // Hardware acceleration helpers
 namespace hw_accel {
 
-#if defined(_WIN32) && VE_ENABLE_D3D11VA
-
-// ChatGPT optimized: Prefer D3D11 when the decoder proposes multiple output formats
-static AVPixelFormat hw_get_format(AVCodecContext* /*ctx*/, const AVPixelFormat* fmts) {
-    for (const AVPixelFormat* p = fmts; *p != AV_PIX_FMT_NONE; ++p)
-        if (*p == AV_PIX_FMT_D3D11) return *p;
-    return fmts[0];
+// Map AVHWDeviceType -> preferred hw pixel format
+static AVPixelFormat preferred_hw_pix_fmt(AVHWDeviceType t) {
+#ifdef _WIN32
+    if (t == AV_HWDEVICE_TYPE_D3D11VA) return AV_PIX_FMT_D3D11;
+    if (t == AV_HWDEVICE_TYPE_DXVA2)   return AV_PIX_FMT_DXVA2_VLD;
+#endif
+    if (t == AV_HWDEVICE_TYPE_CUDA)    return AV_PIX_FMT_CUDA;
+    return AV_PIX_FMT_NONE;
 }
 
-// Keep a ref so you can free it later (or move to your class as a member)
-static AVBufferRef* g_hw_device_ctx = nullptr;
-
-// ChatGPT optimized: Create a D3D11VA hw device; safe fallback if unavailable
-static bool init_d3d11va_if_available(AVCodecContext* dec_ctx) {
-    if (g_hw_device_ctx) return true; // already created
-    AVBufferRef* hwdev = nullptr;
-    const int err = av_hwdevice_ctx_create(&hwdev, AV_HWDEVICE_TYPE_D3D11VA, nullptr, nullptr, 0);
-    if (err < 0) {
-        ve::log::warn("D3D11VA unavailable, using software decode");
-        return false;
-    }
-    dec_ctx->hw_device_ctx = hwdev;     // decoder owns a reference
-    g_hw_device_ctx = hwdev;            // keep global (or store as member)
-    dec_ctx->get_format = hw_get_format;
-    ve::log::info("D3D11VA device created");
-    return true;
-}
-
-// ChatGPT optimized: Handle a D3D11 frame: zero-copy (optional) or CPU transfer to your existing path
-static bool handle_d3d11_frame(AVFrame* hwf, VideoFrame& vf) {
-#if VE_ZERO_COPY_D3D11
-    // Zero-copy: pass native texture to your viewer
-    ID3D11Texture2D* tex = reinterpret_cast<ID3D11Texture2D*>(hwf->data[0]);
-    if (!tex) return false;
-    // TODO: route to your presenter/uploader, e.g.:
-    // streaming_uploader.present_d3d11(tex, pts_us);
-    return true;
-#else
-    // CPU fallback: transfer hw surface to a CPU frame; reuse your current copy path
-    AVFrame* sw = av_frame_alloc();
-    if (!sw) return false;
-    bool ok = false;
-    if (av_hwframe_transfer_data(sw, hwf, 0) == 0) {
-        if (copy_frame_data(sw, vf)) {
-            ok = true;
+// get_format callback that picks the hardware format when offered by FFmpeg
+static AVPixelFormat hw_get_format_dynamic(AVCodecContext* ctx, const AVPixelFormat* fmts) {
+    HardwareAccelContext* hctx = reinterpret_cast<HardwareAccelContext*>(ctx->opaque);
+    AVHWDeviceType type = hctx ? hctx->hw_type : AV_HWDEVICE_TYPE_NONE;
+    const AVPixelFormat want = preferred_hw_pix_fmt(type);
+    if (want != AV_PIX_FMT_NONE) {
+        for (const AVPixelFormat* p = fmts; *p != AV_PIX_FMT_NONE; ++p) {
+            if (*p == want) {
+                return want;
+            }
         }
     }
-    av_frame_free(&sw);
-    return ok;
-#endif
+    // Fallback to FFmpeg's first proposed format
+    return fmts[0];
 }
-
-#endif // _WIN32 && VE_ENABLE_D3D11VA
     
     // Detect best available hardware acceleration
     AVHWDeviceType detect_best_hw_device() {
         // Priority order for Windows: D3D11VA -> DXVA2 -> CUDA -> None
         const AVHWDeviceType candidates[] = {
 #ifdef _WIN32
-#ifdef HAVE_D3D11VA
             AV_HWDEVICE_TYPE_D3D11VA,
-#endif
             AV_HWDEVICE_TYPE_DXVA2,
 #endif
             AV_HWDEVICE_TYPE_CUDA,   // NVIDIA (if available)
@@ -341,6 +424,31 @@ public:
         if(params.video && video_stream_index_ >= 0) {
             apply_codec_optimizations(video_stream_index_);
             if(!open_codec(video_stream_index_, video_codec_ctx_)) return false;
+            // If HW format selected during codec open, finalize frames ctx now
+            if (hw_accel_ctx_.hw_type != AV_HWDEVICE_TYPE_NONE && video_codec_ctx_) {
+                AVPixelFormat want = hw_accel::preferred_hw_pix_fmt(hw_accel_ctx_.hw_type);
+                if (video_codec_ctx_->pix_fmt == want && !video_codec_ctx_->hw_frames_ctx) {
+                    // Initialize frames pool and get_buffer2
+                    AVBufferRef* frames_ref = av_hwframe_ctx_alloc(video_codec_ctx_->hw_device_ctx ? video_codec_ctx_->hw_device_ctx : hw_accel_ctx_.hw_device_ctx);
+                    if (frames_ref) {
+                        AVHWFramesContext* fctx = reinterpret_cast<AVHWFramesContext*>(frames_ref->data);
+                        fctx->format    = want;
+                        fctx->sw_format = AV_PIX_FMT_NV12;
+                        fctx->width     = video_codec_ctx_->width > 1 ? video_codec_ctx_->width : 1;
+                        fctx->height    = video_codec_ctx_->height > 1 ? video_codec_ctx_->height : 1;
+                        fctx->initial_pool_size = 16;
+                        if (av_hwframe_ctx_init(frames_ref) == 0) {
+                            video_codec_ctx_->hw_frames_ctx = av_buffer_ref(frames_ref);
+                            video_codec_ctx_->get_buffer2 = hw_accel::hw_get_buffer;
+                        } else {
+                            ve::log::warn("Post-open av_hwframe_ctx_init failed; decoding will fall back to SW frames");
+                        }
+                        av_buffer_unref(&frames_ref);
+                    } else {
+                        ve::log::warn("Post-open av_hwframe_ctx_alloc failed");
+                    }
+                }
+            }
         }
         if(params.audio && audio_stream_index_ >= 0) {
             if(!open_codec(audio_stream_index_, audio_codec_ctx_)) return false;
@@ -505,12 +613,7 @@ public:
 
     ~FFmpegDecoder() override {
         // Stop decode thread first, then cleanup
-#if defined(_WIN32) && VE_ENABLE_D3D11VA
-        if (hw_accel::g_hw_device_ctx) {
-            av_buffer_unref(&hw_accel::g_hw_device_ctx);
-            hw_accel::g_hw_device_ctx = nullptr;
-        }
-#endif
+        // Cleanup is handled by HardwareAccelContext destructor
         if(hw_transfer_frame_) av_frame_free(&hw_transfer_frame_);
         if(frame_) av_frame_free(&frame_);
         if(packet_) av_packet_free(&packet_);
@@ -531,12 +634,17 @@ private:
         if(avcodec_parameters_to_context(ctx, s->codecpar) < 0) return false;
         
         // Try hardware acceleration for video streams
-        // CONSERVATIVE 4-THREAD MODE: Testing incremental threading for performance
-        // Targeting balance between stability and performance
-        ve::log::info("Using conservative 4-thread configuration for testing");
+        // Get optimal thread count from codec optimizer
+        auto recommended_config = codec_optimizer_->recommend_config(
+            s->codecpar->codec_id == AV_CODEC_ID_H264 ? "h264" : 
+            s->codecpar->codec_id == AV_CODEC_ID_HEVC ? "h265" : "unknown",
+            s->codecpar->width, s->codecpar->height, av_q2d(s->avg_frame_rate));
         
-        // Minimal threading - trying 4 threads carefully
-        ctx->thread_count = 4; // Four threads - testing if this improves performance without corruption
+        int optimal_threads = recommended_config.max_decode_threads;
+        ve::log::info("Using " + std::to_string(optimal_threads) + "-thread configuration for 4K optimization");
+        
+        // Use optimized threading from codec optimizer
+        ctx->thread_count = optimal_threads; 
         ctx->thread_type = FF_THREAD_FRAME;
         
         // Absolutely minimal flags for stability
@@ -544,22 +652,15 @@ private:
         ctx->flags2 = 0; // No aggressive flags
         
         // Enable hardware acceleration for performance only if it doesn't cause issues
-#if defined(_WIN32) && VE_ENABLE_D3D11VA
-        // D3D11VA temporarily disabled due to stability issues
-        // ctx->get_format = hw_accel::hw_get_format;          // tell FFmpeg to prefer D3D11
-        // (void)hw_accel::init_d3d11va_if_available(ctx);     // try to create hw device
-        if (setup_hardware_acceleration(ctx)) {
-            ve::log::info("Hardware acceleration enabled with minimal settings");
-        } else {
-            ve::log::warn("Hardware acceleration failed, using pure software decoding");
+        // Enable hardware acceleration only if the codec supports the chosen type
+        bool hw_ok = false;
+        if (hw_accel_ctx_.hw_type != AV_HWDEVICE_TYPE_NONE && hw_accel::codec_supports_hwaccel(dec, hw_accel_ctx_.hw_type)) {
+            hw_ok = setup_hardware_acceleration(ctx);
         }
-#else
-        if (setup_hardware_acceleration(ctx)) {
-            ve::log::info("Hardware acceleration enabled with minimal settings");
-        } else {
-            ve::log::warn("Hardware acceleration failed, using pure software decoding");
+        if (!hw_ok && hw_accel_ctx_.hw_type != AV_HWDEVICE_TYPE_NONE) {
+            ve::log::warn("HW accel not enabled (unsupported or setup failed) → using SW");
+            hw_accel_ctx_.hw_type = AV_HWDEVICE_TYPE_NONE;
         }
-#endif
         
         if(avcodec_open2(ctx, dec, nullptr) < 0) return false;
         
@@ -579,24 +680,14 @@ private:
             }
         }
         
-        // Set hardware device context
+        // Attach to codec context and prepare frames context
         ctx->hw_device_ctx = av_buffer_ref(hw_accel_ctx_.hw_device_ctx);
-        
-        // Find hardware pixel format for this codec
-        for (int i = 0;; i++) {
-            const AVCodecHWConfig* config = avcodec_get_hw_config(ctx->codec, i);
-            if (!config) break;
-            
-            if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX &&
-                config->device_type == hw_accel_ctx_.hw_type) {
-                ctx->pix_fmt = config->pix_fmt;
-                break;
-            }
-        }
-        
-        // Set custom get_buffer2 for hardware frames
-        ctx->get_buffer2 = hw_accel::hw_get_buffer;
-        
+        ctx->opaque = &hw_accel_ctx_; // visible to get_format callback
+        ctx->get_format = hw_accel::hw_get_format_dynamic;
+
+        // Do NOT force-create hw frames context in advance.
+        // Most FFmpeg decoders can allocate hw frames internally when get_format selects a hw format
+        // and hw_device_ctx is provided. Avoid setting get_buffer2 without a ready frames ctx.
         return true;
     }
     
