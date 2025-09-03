@@ -24,15 +24,8 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y nasm ninja-build build-essential pkg-config curl zip unzip tar clang-tidy libltdl-dev libtool autotools-dev
+          sudo apt-get install -y nasm ninja-build build-essential pkg-config curl zip unzip tar clang-tidy libltdl-dev libtool autotools-dev autoconf automake m4 cmake autoconf-archive
       
-      - name: Install autoconf-archive
-        run: sudo apt-get update && sudo apt-get install -y autoconf-archive
-      
-      - name: Install additional build tools
-        run: |
-          sudo apt-get install -y cmake autotools-dev autoconf libtool m4
-
       - name: Cache vcpkg
         uses: actions/cache@v4
         with:
