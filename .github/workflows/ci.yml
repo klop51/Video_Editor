@@ -256,6 +256,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y nasm ninja-build build-essential pkg-config curl zip unzip tar clang-tidy
+      - name: Install autoconf-archive
+        run: sudo apt-get update && sudo apt-get install -y autoconf-archive
+      - name: Install additional build tools
+        run: |
+          sudo apt-get install -y cmake autotools-dev autoconf libtool m4
       - name: Cache vcpkg
         uses: actions/cache@v4
         with:
@@ -276,10 +281,29 @@ jobs:
           cd $HOME/vcpkg && ./bootstrap-vcpkg.sh
           echo "VCPKG_ROOT=$HOME/vcpkg" >> $GITHUB_ENV
           echo "VCPKG_DEFAULT_TRIPLET=x64-linux" >> $GITHUB_ENV
+      - name: Setup CMake compiler environment
+        run: |
+          echo "CC=gcc" >> $GITHUB_ENV
+          echo "CXX=g++" >> $GITHUB_ENV
+          gcc --version
+          g++ --version
+          cmake --version
       - name: Configure
-        run: cmake --preset dev-debug -DVCPKG_TARGET_TRIPLET=x64-linux
+        run: |
+          echo "VCPKG_ROOT: $VCPKG_ROOT"
+          echo "VCPKG_DEFAULT_TRIPLET: $VCPKG_DEFAULT_TRIPLET"
+          cmake --preset dev-debug -DVCPKG_TARGET_TRIPLET=x64-linux -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
       - name: Run clang-tidy
-        run: python3 scripts/clang_tidy_check.py
+        run: |
+          echo "Checking if compile_commands.json exists..."
+          ls -la build/dev-debug/
+          if [ -f "build/dev-debug/compile_commands.json" ]; then
+            echo "Found compile_commands.json, running clang-tidy..."
+            python3 scripts/clang_tidy_check.py
+          else
+            echo "ERROR: compile_commands.json not found!"
+            exit 1
+          fi
 
   quality-gate:
     name: quality-gate
