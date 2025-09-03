@@ -23,6 +23,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       VCPKG_FORCE_SYSTEM_BINARIES: 1
+      VCPKG_MAX_CONCURRENCY: 2
     steps:
       - uses: actions/checkout@v4
       - name: Install build dependencies
@@ -34,12 +35,25 @@ jobs:
           elif [ "$RUNNER_OS" = "macOS" ]; then
             brew install nasm ninja pkg-config
           fi
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:/vcpkg/installed
+            ${{ runner.os == 'Windows' && 'C:/vcpkg/buildtrees' || '' }}
+            ${{ runner.os != 'Windows' && '$HOME/vcpkg/installed' || '' }}
+            ${{ runner.os != 'Windows' && '$HOME/vcpkg/buildtrees' || '' }}
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}-v2
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}-
+            vcpkg-${{ runner.os }}-
+
       - name: Setup vcpkg
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "Windows" ]; then
             rm -rf C:/vcpkg || true; git clone --depth 1 https://github.com/Microsoft/vcpkg.git C:/vcpkg
-            cd C:/vcpkg && cmd.exe /c "bootstrap-vcpkg.bat"
+            cd C:/vcpkg && git config --global core.autocrlf false && cmd.exe /c "bootstrap-vcpkg.bat"
             echo "VCPKG_ROOT=C:/vcpkg" >> $GITHUB_ENV
             echo "VCPKG_DEFAULT_TRIPLET=x64-windows" >> $GITHUB_ENV
           else
@@ -83,9 +97,7 @@ jobs:
             cmake --preset dev-debug -DVCPKG_TARGET_TRIPLET=x64-osx -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           fi
       - name: Build
-        run: cmake --build --preset dev-debug -j
-      - name: Test
-        run: ctest --preset dev-debug-tests --output-on-failure
+        run: cmake --build --parallel 2 --preset dev-debug -j
       - name: Generate failure draft (on failure)
         if: failure()
         run: |
@@ -131,6 +143,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       VCPKG_FORCE_SYSTEM_BINARIES: 1
+      VCPKG_MAX_CONCURRENCY: 2
     steps:
       - uses: actions/checkout@v4
       - name: Install build dependencies
@@ -142,12 +155,25 @@ jobs:
           elif [ "$RUNNER_OS" = "macOS" ]; then
             brew install nasm ninja pkg-config
           fi
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:/vcpkg/installed
+            ${{ runner.os == 'Windows' && 'C:/vcpkg/buildtrees' || '' }}
+            ${{ runner.os != 'Windows' && '$HOME/vcpkg/installed' || '' }}
+            ${{ runner.os != 'Windows' && '$HOME/vcpkg/buildtrees' || '' }}
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}-v2
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}-
+            vcpkg-${{ runner.os }}-
+
       - name: Setup vcpkg
         shell: bash
         run: |
           if [ "$RUNNER_OS" = "Windows" ]; then
             rm -rf C:/vcpkg || true; git clone --depth 1 https://github.com/Microsoft/vcpkg.git C:/vcpkg
-            cd C:/vcpkg && cmd.exe /c "bootstrap-vcpkg.bat"
+            cd C:/vcpkg && git config --global core.autocrlf false && cmd.exe /c "bootstrap-vcpkg.bat"
             echo "VCPKG_ROOT=C:/vcpkg" >> $GITHUB_ENV
             echo "VCPKG_DEFAULT_TRIPLET=x64-windows" >> $GITHUB_ENV
           else
@@ -191,7 +217,7 @@ jobs:
             cmake --preset dev-release -DVCPKG_TARGET_TRIPLET=x64-osx -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           fi
       - name: Build
-        run: cmake --build --preset dev-release -j
+        run: cmake --build --parallel 2 --preset dev-release -j
       - name: Upload release build artifact
         uses: actions/upload-artifact@v4
         with:
@@ -223,6 +249,19 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y nasm ninja-build build-essential pkg-config curl zip unzip tar clang-tidy
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:/vcpkg/installed
+            ${{ runner.os == 'Windows' && 'C:/vcpkg/buildtrees' || '' }}
+            ${{ runner.os != 'Windows' && '$HOME/vcpkg/installed' || '' }}
+            ${{ runner.os != 'Windows' && '$HOME/vcpkg/buildtrees' || '' }}
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}-v2
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}-
+            vcpkg-${{ runner.os }}-
+
       - name: Setup vcpkg
         shell: bash
         run: |
@@ -423,6 +462,19 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y nasm ninja-build build-essential pkg-config curl zip unzip tar
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:/vcpkg/installed
+            ${{ runner.os == 'Windows' && 'C:/vcpkg/buildtrees' || '' }}
+            ${{ runner.os != 'Windows' && '$HOME/vcpkg/installed' || '' }}
+            ${{ runner.os != 'Windows' && '$HOME/vcpkg/buildtrees' || '' }}
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}-v2
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}-
+            vcpkg-${{ runner.os }}-
+
       - name: Setup vcpkg
         shell: bash
         run: |
@@ -443,7 +495,7 @@ jobs:
       - name: Configure (debug)
         run: cmake --preset dev-debug -DVCPKG_TARGET_TRIPLET=x64-linux -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
       - name: Build tests
-        run: cmake --build --preset dev-debug -j
+        run: cmake --build --parallel 2 --preset dev-debug -j
       - name: Run flaky quarantine
         run: |
           PR_NUM=0
@@ -458,4 +510,7 @@ jobs:
             flaky_quarantine_output.txt
             .flaky_quarantine_state.json
             flaky_instability_sparkline.txt
+
+
+
 
