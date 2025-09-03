@@ -64,7 +64,7 @@ jobs:
         run: |
           echo "VCPKG_ROOT: $VCPKG_ROOT"
           echo "VCPKG_DEFAULT_TRIPLET: $VCPKG_DEFAULT_TRIPLET"
-          cmake --preset dev-debug -DVCPKG_TARGET_TRIPLET=x64-linux -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
+          cmake --preset dev-debug -DVCPKG_TARGET_TRIPLET=x64-linux -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DENABLE_QT_TOOLS=OFF
 
       - name: Run clang-tidy
         run: |
