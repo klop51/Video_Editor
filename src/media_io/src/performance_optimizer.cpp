@@ -507,7 +507,7 @@ void PerformanceOptimizer::register_default_codec_performance() {
     h264.supports_zero_copy = true;
     h264.supports_predictive_cache = true;
     h264.target_fps.hd_1080p = 60.0;
-    h264.target_fps.uhd_4k = 30.0;
+    h264.target_fps.uhd_4k = 60.0;  // Updated for 4K 60fps optimization (Issue #2)
     h264.target_fps.uhd_8k = 8.0;
     register_codec_performance(h264);
     
