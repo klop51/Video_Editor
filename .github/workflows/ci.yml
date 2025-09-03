@@ -24,6 +24,15 @@ jobs:
       VCPKG_FORCE_SYSTEM_BINARIES: 1
     steps:
       - uses: actions/checkout@v4
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get update
+            sudo apt-get install -y nasm ninja-build build-essential pkg-config curl zip unzip tar
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            brew install nasm ninja pkg-config
+          fi
       - name: Setup vcpkg
         shell: bash
         run: |
@@ -63,6 +72,8 @@ jobs:
       - name: Configure
         shell: bash
         run: |
+          echo "VCPKG_ROOT: $VCPKG_ROOT"
+          echo "VCPKG_DEFAULT_TRIPLET: $VCPKG_DEFAULT_TRIPLET"
           if [ "$RUNNER_OS" = "Windows" ]; then
             cmake --preset dev-debug -DVCPKG_TARGET_TRIPLET=x64-windows
           elif [ "$RUNNER_OS" = "Linux" ]; then
@@ -120,6 +131,15 @@ jobs:
       VCPKG_FORCE_SYSTEM_BINARIES: 1
     steps:
       - uses: actions/checkout@v4
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get update
+            sudo apt-get install -y nasm ninja-build build-essential pkg-config curl zip unzip tar
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            brew install nasm ninja pkg-config
+          fi
       - name: Setup vcpkg
         shell: bash
         run: |
@@ -159,6 +179,8 @@ jobs:
       - name: Configure
         shell: bash
         run: |
+          echo "VCPKG_ROOT: $VCPKG_ROOT"
+          echo "VCPKG_DEFAULT_TRIPLET: $VCPKG_DEFAULT_TRIPLET"
           if [ "$RUNNER_OS" = "Windows" ]; then
             cmake --preset dev-release -DVCPKG_TARGET_TRIPLET=x64-windows
           elif [ "$RUNNER_OS" = "Linux" ]; then
@@ -188,6 +210,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm ninja-build build-essential pkg-config curl zip unzip tar clang-tidy
       - name: Setup vcpkg
         shell: bash
         run: |
@@ -384,6 +410,10 @@ jobs:
     if: always()
     steps:
       - uses: actions/checkout@v4
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm ninja-build build-essential pkg-config curl zip unzip tar
       - name: Setup vcpkg
         shell: bash
         run: |
