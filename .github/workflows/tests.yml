@@ -24,7 +24,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y nasm ninja-build build-essential pkg-config curl zip unzip tar clang-tidy
+          sudo apt-get install -y nasm ninja-build build-essential pkg-config curl zip unzip tar clang-tidy libltdl-dev libtool autotools-dev
       
       - name: Install autoconf-archive
         run: sudo apt-get update && sudo apt-get install -y autoconf-archive
