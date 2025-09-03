@@ -27,7 +27,7 @@ jobs:
           # Install basic build tools first
           sudo apt-get install -y build-essential pkg-config curl zip unzip tar cmake ninja-build
           # Install autotools chain
-          sudo apt-get install -y autoconf automake libtool libltdl-dev autotools-dev m4 autoconf-archive
+          sudo apt-get install -y autoconf automake libtool libltdl-dev autotools-dev m4 autoconf-archive gperf
           # Install additional tools
           sudo apt-get install -y nasm clang-tidy
 
@@ -76,10 +76,13 @@ jobs:
           cmake --version
 
       - name: Configure (minimal for clang-tidy)
+        env:
+          CC: gcc
+          CXX: g++
         run: |
           echo "VCPKG_ROOT: $VCPKG_ROOT"
           echo "VCPKG_DEFAULT_TRIPLET: $VCPKG_DEFAULT_TRIPLET"
-          cmake --preset dev-debug -DVCPKG_TARGET_TRIPLET=x64-linux -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DENABLE_QT_TOOLS=OFF
+          cmake --preset dev-debug -G Ninja -DVCPKG_TARGET_TRIPLET=x64-linux -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ -DENABLE_QT_TOOLS=OFF
 
       - name: Run clang-tidy
         run: |
@@ -93,6 +96,16 @@ jobs:
             echo "This is expected on Windows builds using Visual Studio generator."
             echo "Clang-tidy checks are performed on Linux CI only."
             echo "✅ Skipping clang-tidy check (not available)"
+          fi
+
+      - name: Show vcpkg logs on failure
+        if: failure()
+        run: |
+          echo "=== VCPKG BUILD LOGS ==="
+          find build -path '*/buildtrees/*/*.log' -print -exec echo "=== {} ===" \; -exec tail -n 100 {} \; 2>/dev/null || true
+          echo "=== VCPKG MANIFEST INSTALL LOG ==="
+          if [ -f "build/dev-debug/vcpkg-manifest-install.log" ]; then
+            tail -n 200 "build/dev-debug/vcpkg-manifest-install.log"
           fi
 
       - name: Simple configure test (no FFmpeg, no presets)
