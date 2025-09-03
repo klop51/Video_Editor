@@ -5,13 +5,32 @@ This is intentionally simple; refine filters as needed.
 """
 import json, subprocess, sys, os
 
-COMPDB_PATH = 'build/dev-debug/compile_commands.json'
+# Check multiple possible build directories
+POSSIBLE_COMPDB_PATHS = [
+    'build/dev-debug/compile_commands.json',
+    'build/qt-debug/compile_commands.json',
+    'build/vs-debug/compile_commands.json',
+    'build/simple-debug/compile_commands.json'
+]
+
+compdb_path = None
+for path in POSSIBLE_COMPDB_PATHS:
+    if os.path.exists(path):
+        compdb_path = path
+        break
+
+if not compdb_path:
+    print(f"Missing compile_commands.json in any of: {POSSIBLE_COMPDB_PATHS}", file=sys.stderr)
+    print("Run cmake --preset dev-debug or cmake --preset qt-debug to generate it.", file=sys.stderr)
+    sys.exit(1)
+
+print(f"Using compile_commands.json from {compdb_path}")
 
 try:
-    with open(COMPDB_PATH, 'r', encoding='utf-8') as f:
+    with open(compdb_path, 'r', encoding='utf-8') as f:
         compdb = json.load(f)
 except FileNotFoundError:
-    print(f"Missing {COMPDB_PATH}; did you run the dev-debug configure preset?", file=sys.stderr)
+    print(f"Missing {compdb_path}; run cmake configure with a preset that enables CMAKE_EXPORT_COMPILE_COMMANDS", file=sys.stderr)
     sys.exit(1)
 
 issues = 0
