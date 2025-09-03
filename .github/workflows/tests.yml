@@ -45,6 +45,13 @@ jobs:
           echo "VCPKG_ROOT=$HOME/vcpkg" >> $GITHUB_ENV
           echo "VCPKG_DEFAULT_TRIPLET=x64-linux" >> $GITHUB_ENV
 
+      - name: Update vcpkg
+        shell: bash
+        run: |
+          cd $HOME/vcpkg
+          ./vcpkg update
+          ./vcpkg upgrade --no-dry-run
+
       - name: Setup CMake compiler environment
         run: |
           echo "CC=gcc" >> $GITHUB_ENV
