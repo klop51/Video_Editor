@@ -38,8 +38,8 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_CXX_STANDARD": "20",
-        "ENABLE_TESTS": "ON",
-        "ENABLE_TOOLS": "ON",
+        "ENABLE_TESTS": "OFF",
+        "ENABLE_TOOLS": "OFF",
         "ENABLE_FFMPEG": "OFF"
       }
     },
