@@ -467,13 +467,17 @@ WideColorGamutSupport::WideColorGamutSupport(std::shared_ptr<Device> device)
     : device_(device) {
     try {
         if (!device_) {
-            throw Core::InvalidArgumentException("Device cannot be null");
+            // EXCEPTION_POLICY_OK: Core performance module must remain exception-free per DR-0003
+            LOG_ERROR("Device cannot be null in WideColorGamutSupport constructor");
+            device_ = nullptr; // Ensure invalid state is detectable
+            return; // Constructor cannot return error code, caller must check isValid()
         }
         
         LOG_INFO("WideColorGamutSupport initialized successfully");
     } catch (const std::exception& e) {
         LOG_ERROR("WideColorGamutSupport initialization failed: {}", e.what());
-        throw;
+        // EXCEPTION_POLICY_OK: Core performance module must remain exception-free per DR-0003
+        device_ = nullptr; // Mark as invalid, caller must check isValid()
     }
 }
 

@@ -176,8 +176,9 @@ std::future<GPUOperationResult> IntegratedGPUManager::upload_texture_optimized(c
                 result.was_optimized = true;
                 
             } else {
-                // Fallback: direct upload (would need implementation)
-                throw std::runtime_error("No upload method available");
+                // EXCEPTION_POLICY_OK: Core performance module must remain exception-free per DR-0003
+                LOG_ERROR("No upload method available for integrated GPU");
+                return Core::Result::NoUploadMethodAvailable;
             }
             
             // Wait for upload completion
@@ -292,7 +293,9 @@ std::future<GPUOperationResult> IntegratedGPUManager::apply_effect_intelligent(i
                 result.was_optimized = true;
                 
             } else {
-                throw std::runtime_error("No rendering method available");
+                // EXCEPTION_POLICY_OK: Core performance module must remain exception-free per DR-0003
+                LOG_ERROR("No rendering method available for integrated GPU");
+                return Core::Result::NoRenderingMethodAvailable;
             }
             
             // Wait for render completion
