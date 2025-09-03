@@ -1,0 +1,108 @@
+name: tests
+"on":
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Fast Tests & Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      VCPKG_FORCE_SYSTEM_BINARIES: 1
+      VCPKG_MAX_CONCURRENCY: 1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm ninja-build build-essential pkg-config curl zip unzip tar clang-tidy
+      
+      - name: Install autoconf-archive
+        run: sudo apt-get update && sudo apt-get install -y autoconf-archive
+      
+      - name: Install additional build tools
+        run: |
+          sudo apt-get install -y cmake autotools-dev autoconf libtool m4
+
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            $HOME/vcpkg/installed
+            $HOME/vcpkg/buildtrees
+          key: vcpkg-ubuntu-${{ hashFiles('vcpkg.json') }}-v3
+          restore-keys: |
+            vcpkg-ubuntu-${{ hashFiles('vcpkg.json') }}-
+            vcpkg-ubuntu-
+
+      - name: Setup vcpkg
+        shell: bash
+        run: |
+          git clone https://github.com/Microsoft/vcpkg.git $HOME/vcpkg
+          cd $HOME/vcpkg && ./bootstrap-vcpkg.sh
+          echo "VCPKG_ROOT=$HOME/vcpkg" >> $GITHUB_ENV
+          echo "VCPKG_DEFAULT_TRIPLET=x64-linux" >> $GITHUB_ENV
+
+      - name: Setup CMake compiler environment
+        run: |
+          echo "CC=gcc" >> $GITHUB_ENV
+          echo "CXX=g++" >> $GITHUB_ENV
+          gcc --version
+          g++ --version
+          cmake --version
+
+      - name: Configure (minimal for clang-tidy)
+        run: |
+          echo "VCPKG_ROOT: $VCPKG_ROOT"
+          echo "VCPKG_DEFAULT_TRIPLET: $VCPKG_DEFAULT_TRIPLET"
+          cmake --preset dev-debug -DVCPKG_TARGET_TRIPLET=x64-linux -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
+
+      - name: Run clang-tidy
+        run: |
+          echo "Checking if compile_commands.json exists..."
+          ls -la build/dev-debug/
+          if [ -f "build/dev-debug/compile_commands.json" ]; then
+            echo "Found compile_commands.json, running clang-tidy..."
+            python3 scripts/clang_tidy_check.py
+          else
+            echo "ERROR: compile_commands.json not found!"
+            exit 1
+          fi
+
+      - name: Simple configure test (no FFmpeg, no presets)
+        run: |
+          mkdir -p build/lint-test
+          cd build/lint-test
+          cmake ../.. -GNinja -DCMAKE_BUILD_TYPE=Debug -DENABLE_FFMPEG=OFF -DENABLE_TESTS=OFF -DENABLE_TOOLS=OFF
+
+      - name: Check for exception policy violations
+        run: |
+          echo "Checking core performance modules for exception policy violations..."
+          if grep -r "throw" src/media_io src/decode src/playback src/audio src/render src/fx src/cache src/gfx --include="*.cpp" --include="*.hpp" | grep -v "// EXCEPTION_POLICY_OK"; then
+            echo "❌ Exception policy violation found in core performance modules!"
+            echo "Core modules (media_io, decode, playback, audio, render, fx, cache, gfx) must remain exception-free per DR-0003"
+            exit 1
+          else
+            echo "✅ Exception policy check passed"
+          fi
+
+  # Optional: Add unit tests if you have them
+  # unit-tests:
+  #   name: Unit Tests
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 15
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Run unit tests
+  #       run: |
+  #         # Add your test runner here
+  #         # e.g., ctest --test-dir build/dev-debug

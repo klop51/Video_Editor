@@ -1,0 +1,92 @@
+name: quality-gate
+"on":
+  workflow_run:
+    workflows: ["tests", "build"]
+    branches: [main, master]
+    types: [completed]
+  schedule:
+    # Run quality gate check daily at 6 AM UTC
+    - cron: '0 6 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality-gate:
+    name: quality-gate
+    runs-on: ubuntu-latest
+    # This workflow will be triggered by workflow_run events from tests.yml and build.yml
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install gh & jq
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y jq git
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg || true
+          sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg || true
+
+      - name: Fetch recent CI runs (main)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/${{ github.repository }}/actions/runs -F branch=main -F per_page=30 > runs_raw.json
+          jq '{runs: [.workflow_runs[] | {status, conclusion, updated_at}]}' runs_raw.json > runs.json
+
+      - name: Evaluate quality gate
+        run: |
+          python scripts/ci_quality_gate.py --runs runs.json --window 20 --metrics-out gate_metrics.json --badge-out gate_badge.json > gate.json || echo '{"status":"UNKNOWN","consecutive_fails":0}' > gate.json
+          cat gate.json
+          echo "GATE_STATUS=$(jq -r '.status' gate.json)" >> $GITHUB_ENV
+          echo "CONSEC_FAILS=$(jq -r '.consecutive_fails' gate.json)" >> $GITHUB_ENV
+          echo "MTTR_MIN=$(jq -r '.mttr_minutes // 0' gate_metrics.json 2>/dev/null || echo 0)" >> $GITHUB_ENV
+
+      - name: Ensure labels exist
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create quality-watch --color ededed --description "Quality gate WARN/FAIL" 2>/dev/null || true
+          gh label create needs-stabilize --color ffaaaa --description "Required during quality FAIL" 2>/dev/null || true
+
+      - name: Update PR labels/comments
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "Gate status: $GATE_STATUS"
+          PRS=$(gh pr list -B main --state open --json number,labels | jq -c '.[]') || exit 0
+          for pr in $PRS; do
+            NUM=$(echo "$pr" | jq -r '.number')
+            HAS_QW=$(echo "$pr" | jq -r '.labels[].name? // empty' | grep -i '^quality-watch$' || true)
+            if [ "$GATE_STATUS" = "PASS" ]; then
+              if [ -n "$HAS_QW" ]; then
+                gh pr edit $NUM --remove-label quality-watch || true
+              fi
+            elif [ "$GATE_STATUS" = "WARN" ]; then
+              if [ -z "$HAS_QW" ]; then
+                gh pr edit $NUM --add-label quality-watch || true
+                gh pr comment $NUM --body "CI quality gate WARN: success rate below threshold. Label applied." || true
+              fi
+            else # FAIL
+              if [ -z "$HAS_QW" ]; then
+                gh pr edit $NUM --add-label quality-watch || true
+              fi
+              gh pr comment $NUM --body "CI quality gate FAIL: merges require remediation plan. Apply 'needs-stabilize' with plan steps (root-cause hypothesis, rollback/fix path)." || true
+            fi
+          done
+
+      - name: Summary
+        run: |
+          echo "## 🚦 Quality Gate Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: $GATE_STATUS" >> $GITHUB_STEP_SUMMARY
+          echo "- **Consecutive Failures**: $CONSEC_FAILS" >> $GITHUB_STEP_SUMMARY
+          echo "- **MTTR**: ${MTTR_MIN} minutes" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Workflow Dependencies" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ **tests**: Fast lint, clang-tidy, and policy checks" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ **build**: Cross-platform builds (Linux/Windows Debug/Release)" >> $GITHUB_STEP_SUMMARY

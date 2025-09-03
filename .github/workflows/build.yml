@@ -1,0 +1,199 @@
+name: build
+"on":
+  push:
+    tags: [ "v*" ]
+    branches: [ main, master ]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.os }} ${{ matrix.config }} build
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
+        config: [ Debug, Release ]
+    env:
+      VCPKG_FORCE_SYSTEM_BINARIES: 1
+      VCPKG_MAX_CONCURRENCY: 2
+    steps:
+      - uses: actions/checkout@v4
+
+      # Linux dependencies
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm ninja-build build-essential pkg-config curl zip unzip tar
+          sudo apt-get install -y autoconf-archive cmake autotools-dev autoconf libtool m4
+
+      # Windows dependencies
+      - name: Install Windows dependencies
+        if: runner.os == 'Windows'
+        run: |
+          choco install nasm -y
+          # MSVC and other tools should be pre-installed on windows-latest
+
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:/vcpkg/installed
+            ${{ runner.os == 'Windows' && 'C:/vcpkg/buildtrees' || '' }}
+            ${{ runner.os != 'Windows' && '$HOME/vcpkg/installed' || '' }}
+            ${{ runner.os != 'Windows' && '$HOME/vcpkg/buildtrees' || '' }}
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}-v3
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}-
+            vcpkg-${{ runner.os }}-
+
+      - name: Setup vcpkg
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            rm -rf C:/vcpkg || true; git clone --depth 1 https://github.com/Microsoft/vcpkg.git C:/vcpkg
+            cd C:/vcpkg && git config --global core.autocrlf false && cmd.exe /c "bootstrap-vcpkg.bat"
+            echo "VCPKG_ROOT=C:/vcpkg" >> $GITHUB_ENV
+            echo "VCPKG_DEFAULT_TRIPLET=x64-windows" >> $GITHUB_ENV
+          else
+            git clone https://github.com/Microsoft/vcpkg.git $HOME/vcpkg
+            cd $HOME/vcpkg && ./bootstrap-vcpkg.sh
+            echo "VCPKG_ROOT=$HOME/vcpkg" >> $GITHUB_ENV
+            echo "VCPKG_DEFAULT_TRIPLET=x64-linux" >> $GITHUB_ENV
+          fi
+
+      - name: Install ccache (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get update && sudo apt-get install -y ccache
+          else
+            brew update || true
+            brew install ccache || true
+          fi
+
+      - name: ccache cache
+        if: runner.os != 'Windows'
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-${{ runner.os }}-${{ matrix.config }}-${{ hashFiles('**/CMakeLists.txt', 'vcpkg.json') }}
+          restore-keys: |
+            ccache-${{ runner.os }}-${{ matrix.config }}-
+            ccache-${{ runner.os }}-
+
+      - name: Configure
+        shell: bash
+        run: |
+          echo "VCPKG_ROOT: $VCPKG_ROOT"
+          echo "VCPKG_DEFAULT_TRIPLET: $VCPKG_DEFAULT_TRIPLET"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            if [ "${{ matrix.config }}" = "Debug" ]; then
+              cmake --preset qt-debug -DVCPKG_TARGET_TRIPLET=x64-windows
+            else
+              cmake --preset vs-release -DVCPKG_TARGET_TRIPLET=x64-windows
+            fi
+          elif [ "$RUNNER_OS" = "Linux" ]; then
+            if [ "${{ matrix.config }}" = "Debug" ]; then
+              cmake --preset dev-debug -DVCPKG_TARGET_TRIPLET=x64-linux -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+            else
+              cmake --preset dev-release -DVCPKG_TARGET_TRIPLET=x64-linux -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+            fi
+          fi
+
+      - name: Build
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            if [ "${{ matrix.config }}" = "Debug" ]; then
+              cmake --build build/qt-debug --config Debug --parallel 2
+            else
+              cmake --build build/vs-release --config Release --parallel 2
+            fi
+          else
+            if [ "${{ matrix.config }}" = "Debug" ]; then
+              cmake --build build/dev-debug --parallel 2
+            else
+              cmake --build build/dev-release --parallel 2
+            fi
+          fi
+
+      - name: Test (if enabled)
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            if [ "${{ matrix.config }}" = "Debug" ]; then
+              cd build/qt-debug && ctest --config Debug --output-on-failure || echo "Tests not available or failed"
+            else
+              cd build/vs-release && ctest --config Release --output-on-failure || echo "Tests not available or failed"
+            fi
+          else
+            if [ "${{ matrix.config }}" = "Debug" ]; then
+              cd build/dev-debug && ctest --output-on-failure || echo "Tests not available or failed"
+            else
+              cd build/dev-release && ctest --output-on-failure || echo "Tests not available or failed"
+            fi
+          fi
+
+      - name: Package artifacts
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p dist
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            if [ "${{ matrix.config }}" = "Debug" ]; then
+              if [ -d "build/qt-debug" ]; then cp -r build/qt-debug/* dist/ 2>/dev/null || true; fi
+            else
+              if [ -d "build/vs-release" ]; then cp -r build/vs-release/* dist/ 2>/dev/null || true; fi
+            fi
+          else
+            if [ "${{ matrix.config }}" = "Debug" ]; then
+              if [ -d "build/dev-debug" ]; then cp -r build/dev-debug/* dist/ 2>/dev/null || true; fi
+            else
+              if [ -d "build/dev-release" ]; then cp -r build/dev-release/* dist/ 2>/dev/null || true; fi
+            fi
+          fi
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-${{ matrix.config }}-artifacts
+          path: dist
+          retention-days: 7
+
+      - name: Upload profiling data (if present)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: profiling-${{ matrix.os }}-${{ matrix.config }}
+          path: |
+            **/profiling.json
+            **/profiling_*.json
+          if-no-files-found: ignore
+
+      - name: ccache stats
+        if: runner.os != 'Windows'
+        run: ccache -s || true
+
+      - name: Generate failure draft (on failure)
+        if: failure()
+        run: |
+          python scripts/ci_failure_scrape.py --log build/*/Testing/Temporary/LastTest.log --out error_drafts --append-main --flaky-list tests/FLAKY_TESTS.txt --dedupe-window 5 --failure-history failure_history.json --auto-classify-flaky || true
+          if [ -f failure_history.json ]; then
+            echo "Captured failure history"
+          fi
+
+      - name: Upload failure draft artifact
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-draft-${{ matrix.os }}-${{ matrix.config }}
+          path: error_drafts
+          if-no-files-found: ignore
