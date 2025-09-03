@@ -1,0 +1,2 @@
+This is a test file to check if moving files prompts for confirmation.
+Test timestamp: 2025-09-03
