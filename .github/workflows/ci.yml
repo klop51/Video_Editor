@@ -25,10 +25,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Setup vcpkg
-        uses: microsoft/setup-vcpkg@v1
-        with:
-          vcpkgJsonGlob: '**/vcpkg.json'
-          cacheDependencyGraph: true
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            git clone https://github.com/Microsoft/vcpkg.git C:/vcpkg
+            cd C:/vcpkg && ./bootstrap-vcpkg.bat
+            echo "VCPKG_ROOT=C:/vcpkg" >> $GITHUB_ENV
+            echo "VCPKG_DEFAULT_TRIPLET=x64-windows" >> $GITHUB_ENV
+          else
+            git clone https://github.com/Microsoft/vcpkg.git $HOME/vcpkg
+            cd $HOME/vcpkg && ./bootstrap-vcpkg.sh
+            echo "VCPKG_ROOT=$HOME/vcpkg" >> $GITHUB_ENV
+            if [ "$RUNNER_OS" = "Linux" ]; then
+              echo "VCPKG_DEFAULT_TRIPLET=x64-linux" >> $GITHUB_ENV
+            else
+              echo "VCPKG_DEFAULT_TRIPLET=x64-osx" >> $GITHUB_ENV
+            fi
+          fi
       - name: Install ccache (Unix)
         if: runner.os != 'Windows'
         run: |
@@ -48,11 +61,15 @@ jobs:
             ccache-${{ runner.os }}-debug-
             ccache-${{ runner.os }}-
       - name: Configure
+        shell: bash
         run: |
-          case "${{ runner.os }}" in
-            Windows) cmake --preset dev-debug ;;
-            *) cmake --preset dev-debug -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache ;;
-          esac
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cmake --preset dev-debug -DVCPKG_TARGET_TRIPLET=x64-windows
+          elif [ "$RUNNER_OS" = "Linux" ]; then
+            cmake --preset dev-debug -DVCPKG_TARGET_TRIPLET=x64-linux -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          else
+            cmake --preset dev-debug -DVCPKG_TARGET_TRIPLET=x64-osx -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          fi
       - name: Build
         run: cmake --build --preset dev-debug -j
       - name: Test
@@ -104,10 +121,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Setup vcpkg
-        uses: microsoft/setup-vcpkg@v1
-        with:
-          vcpkgJsonGlob: '**/vcpkg.json'
-          cacheDependencyGraph: true
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            git clone https://github.com/Microsoft/vcpkg.git C:/vcpkg
+            cd C:/vcpkg && ./bootstrap-vcpkg.bat
+            echo "VCPKG_ROOT=C:/vcpkg" >> $GITHUB_ENV
+            echo "VCPKG_DEFAULT_TRIPLET=x64-windows" >> $GITHUB_ENV
+          else
+            git clone https://github.com/Microsoft/vcpkg.git $HOME/vcpkg
+            cd $HOME/vcpkg && ./bootstrap-vcpkg.sh
+            echo "VCPKG_ROOT=$HOME/vcpkg" >> $GITHUB_ENV
+            if [ "$RUNNER_OS" = "Linux" ]; then
+              echo "VCPKG_DEFAULT_TRIPLET=x64-linux" >> $GITHUB_ENV
+            else
+              echo "VCPKG_DEFAULT_TRIPLET=x64-osx" >> $GITHUB_ENV
+            fi
+          fi
       - name: Install ccache (Unix)
         if: runner.os != 'Windows'
         run: |
@@ -127,11 +157,15 @@ jobs:
             ccache-${{ runner.os }}-release-
             ccache-${{ runner.os }}-
       - name: Configure
+        shell: bash
         run: |
-          case "${{ runner.os }}" in
-            Windows) cmake --preset dev-release ;;
-            *) cmake --preset dev-release -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache ;;
-          esac
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cmake --preset dev-release -DVCPKG_TARGET_TRIPLET=x64-windows
+          elif [ "$RUNNER_OS" = "Linux" ]; then
+            cmake --preset dev-release -DVCPKG_TARGET_TRIPLET=x64-linux -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          else
+            cmake --preset dev-release -DVCPKG_TARGET_TRIPLET=x64-osx -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          fi
       - name: Build
         run: cmake --build --preset dev-release -j
       - name: Upload release build artifact
@@ -155,12 +189,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Setup vcpkg
-        uses: microsoft/setup-vcpkg@v1
-        with:
-          vcpkgJsonGlob: '**/vcpkg.json'
-          cacheDependencyGraph: true
+        shell: bash
+        run: |
+          git clone https://github.com/Microsoft/vcpkg.git $HOME/vcpkg
+          cd $HOME/vcpkg && ./bootstrap-vcpkg.sh
+          echo "VCPKG_ROOT=$HOME/vcpkg" >> $GITHUB_ENV
+          echo "VCPKG_DEFAULT_TRIPLET=x64-linux" >> $GITHUB_ENV
       - name: Configure
-        run: cmake --preset dev-debug
+        run: cmake --preset dev-debug -DVCPKG_TARGET_TRIPLET=x64-linux
       - name: Run clang-tidy
         run: python3 scripts/clang_tidy_check.py
 
@@ -349,10 +385,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Setup vcpkg
-        uses: microsoft/setup-vcpkg@v1
-        with:
-          vcpkgJsonGlob: '**/vcpkg.json'
-          cacheDependencyGraph: true
+        shell: bash
+        run: |
+          git clone https://github.com/Microsoft/vcpkg.git $HOME/vcpkg
+          cd $HOME/vcpkg && ./bootstrap-vcpkg.sh
+          echo "VCPKG_ROOT=$HOME/vcpkg" >> $GITHUB_ENV
+          echo "VCPKG_DEFAULT_TRIPLET=x64-linux" >> $GITHUB_ENV
       - name: Install ccache
         run: sudo apt-get update && sudo apt-get install -y ccache
       - name: ccache cache
@@ -364,7 +402,7 @@ jobs:
               ccache-linux-flaky-
               ccache-linux-
       - name: Configure (debug)
-        run: cmake --preset dev-debug -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+        run: cmake --preset dev-debug -DVCPKG_TARGET_TRIPLET=x64-linux -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
       - name: Build tests
         run: cmake --build --preset dev-debug -j
       - name: Run flaky quarantine
