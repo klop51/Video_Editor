@@ -102,7 +102,11 @@ void ViewerPanel::display_frame(const ve::decode::VideoFrame& frame) {
 #if VE_HEAP_DEBUG && defined(_MSC_VER)
     _CrtCheckMemory();
 #endif
-    if (render_in_progress_) { pending_frame_ = frame; pending_frame_valid_ = true; return; }
+    if (render_in_progress_) {
+        pending_frame_ = frame;
+        pending_frame_valid_ = true;
+        return;
+    }
     render_in_progress_ = true; current_frame_ = frame; has_frame_ = true;
 
     // FPS overlay update (every ~500ms)
@@ -112,18 +116,38 @@ void ViewerPanel::display_frame(const ve::decode::VideoFrame& frame) {
         double inst_fps = elapsed>0 ? (fps_frames_accum_ * 1000.0 / elapsed) : 0.0;
         double avg_ms=0.0, avg_fps=0.0, target_fps=0.0;
         if (playback_controller_) {
-            auto stats = playback_controller_->get_stats(); avg_ms = stats.avg_frame_time_ms; if (avg_ms>0) avg_fps = 1000.0/avg_ms; auto us = playback_controller_->frame_duration_guess_us(); if (us>0) target_fps = 1'000'000.0/static_cast<double>(us);
+            auto stats = playback_controller_->get_stats();
+            avg_ms = stats.avg_frame_time_ms;
+            if (avg_ms > 0) {
+                avg_fps = 1000.0 / avg_ms;
+            }
+            auto us = playback_controller_->frame_duration_guess_us();
+            if (us > 0) {
+                target_fps = 1'000'000.0 / static_cast<double>(us);
+            }
         }
-        double show_fps = avg_fps>0?avg_fps:inst_fps; if (show_fps>0) {
-            double warn_th = target_fps>0 ? target_fps*0.9 : 24.0; double bad_th = target_fps>0 ? target_fps*0.6 : 18.0;
-            QString color = "#00ff66"; if (show_fps < warn_th) color = "#ffd24d"; if (show_fps < bad_th) color = "#ff4d4d";
+        double show_fps = avg_fps > 0 ? avg_fps : inst_fps;
+        if (show_fps > 0) {
+            double warn_th = target_fps > 0 ? target_fps * 0.9 : 24.0;
+            double bad_th = target_fps > 0 ? target_fps * 0.6 : 18.0;
+            QString color = "#00ff66";
+            if (show_fps < warn_th) {
+                color = "#ffd24d";
+            }
+            if (show_fps < bad_th) {
+                color = "#ff4d4d";
+            }
             fps_overlay_->setStyleSheet(QString("QLabel { background-color: rgba(0,0,0,120); color:%1; padding:2px 6px; border-radius:3px; font:10pt 'Segoe UI'; }").arg(color));
             QString gpuTag = gpu_enabled_ ? " GPU" : "";
-            if (avg_ms>0) fps_overlay_->setText(QString("%1 fps  %2 ms%3").arg(show_fps,0,'f',1).arg(avg_ms,0,'f',1).arg(gpuTag));
-            else fps_overlay_->setText(QString("%1 fps%2").arg(show_fps,0,'f',1).arg(gpuTag));
+            if (avg_ms > 0) {
+                fps_overlay_->setText(QString("%1 fps  %2 ms%3").arg(show_fps, 0, 'f', 1).arg(avg_ms, 0, 'f', 1).arg(gpuTag));
+            } else {
+                fps_overlay_->setText(QString("%1 fps%2").arg(show_fps, 0, 'f', 1).arg(gpuTag));
+            }
             fps_overlay_->adjustSize();
         }
-        fps_frames_accum_=0; fps_last_ms_=now_ms;
+        fps_frames_accum_ = 0;
+        fps_last_ms_ = now_ms;
     }
 
     if (gpu_enabled_ && gl_widget_) {
@@ -139,13 +163,25 @@ void ViewerPanel::display_frame(const ve::decode::VideoFrame& frame) {
             auto& rf = *rgba; size_t needed = static_cast<size_t>(rf.width) * static_cast<size_t>(rf.height) * 4;
             if (rf.data.size() >= needed) gl_widget_->set_frame(rf.data.data(), rf.width, rf.height, rf.width*4, rf.pts);
         }
-        if (render_graph_) if (auto* gpu_rg = dynamic_cast<ve::render::GpuRenderGraph*>(render_graph_.get())) { gpu_rg->set_current_frame(current_frame_); ve::render::FrameRequest req{ current_frame_.pts }; (void)gpu_rg->render(req); }
+        if (render_graph_) {
+            if (auto* gpu_rg = dynamic_cast<ve::render::GpuRenderGraph*>(render_graph_.get())) {
+                gpu_rg->set_current_frame(current_frame_);
+                ve::render::FrameRequest req{current_frame_.pts};
+                (void)gpu_rg->render(req);
+            }
+        }
     } else {
         update_frame_display();
     }
 
     render_in_progress_ = false;
-    if (pending_frame_valid_) { auto next = pending_frame_; pending_frame_valid_ = false; QMetaObject::invokeMethod(this,[this,next](){ display_frame(next); }, Qt::QueuedConnection); }
+    if (pending_frame_valid_) {
+        auto next = pending_frame_;
+        pending_frame_valid_ = false;
+        QMetaObject::invokeMethod(this, [this, next]() {
+            display_frame(next);
+        }, Qt::QueuedConnection);
+    }
 }
 
 void ViewerPanel::update_time_display(int64_t time_us) {
@@ -198,15 +234,38 @@ QPixmap ViewerPanel::convert_frame_to_pixmap(const ve::decode::VideoFrame& frame
                 tw = std::max(1,int(frame.width*s+0.5)); th = std::max(1,int(frame.height*s+0.5));
             }
         }
-        for (auto it=pix_cache_.begin(); it!=pix_cache_.end(); ++it) if (it->pts==frame.pts && it->w==tw && it->h==th) return it->pix;
+        for (auto it = pix_cache_.begin(); it != pix_cache_.end(); ++it) {
+            if (it->pts == frame.pts && it->w == tw && it->h == th) {
+                return it->pix;
+            }
+        }
         if (auto view = ve::decode::to_rgba_scaled_view(frame, tw, th)) {
             QImage tmp(view->data, view->width, view->height, view->stride, QImage::Format_RGBA8888);
             QPixmap p = QPixmap::fromImage(tmp); // copies pixel data internally
-            if (preview_scale_to_widget_ && pix_cache_capacity_>0) { if (int(pix_cache_.size())>=pix_cache_capacity_) pix_cache_.pop_front(); pix_cache_.push_back(PixCacheEntry{frame.pts, view->width, view->height, p}); }
+            if (preview_scale_to_widget_ && pix_cache_capacity_ > 0) {
+                if (int(pix_cache_.size()) >= pix_cache_capacity_) {
+                    pix_cache_.pop_front();
+                }
+                pix_cache_.push_back(PixCacheEntry{frame.pts, view->width, view->height, p});
+            }
             return p;
         }
-        auto rgba = ve::decode::to_rgba_scaled(frame, tw, th); if (!rgba) return QPixmap(); size_t expect = size_t(rgba->width)*rgba->height*4; if (rgba->data.size()!=expect) return QPixmap(); // fallback owning path
-        QImage tmp(rgba->data.data(), rgba->width, rgba->height, rgba->width*4, QImage::Format_RGBA8888); QPixmap p = QPixmap::fromImage(tmp); if (preview_scale_to_widget_ && pix_cache_capacity_>0) { if (int(pix_cache_.size())>=pix_cache_capacity_) pix_cache_.pop_front(); pix_cache_.push_back(PixCacheEntry{frame.pts, rgba->width, rgba->height, p}); }
+        auto rgba = ve::decode::to_rgba_scaled(frame, tw, th);
+        if (!rgba) {
+            return QPixmap();
+        }
+        size_t expect = size_t(rgba->width) * rgba->height * 4;
+        if (rgba->data.size() != expect) {
+            return QPixmap(); // fallback owning path
+        }
+        QImage tmp(rgba->data.data(), rgba->width, rgba->height, rgba->width * 4, QImage::Format_RGBA8888);
+        QPixmap p = QPixmap::fromImage(tmp);
+        if (preview_scale_to_widget_ && pix_cache_capacity_ > 0) {
+            if (int(pix_cache_.size()) >= pix_cache_capacity_) {
+                pix_cache_.pop_front();
+            }
+            pix_cache_.push_back(PixCacheEntry{frame.pts, rgba->width, rgba->height, p});
+        }
         return p;
     };
     switch (frame.format) {
