@@ -15,6 +15,7 @@ concurrency:
 jobs:
   build-test-debug:
     name: build-test (Debug)
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -122,6 +123,7 @@ jobs:
 
   build-test-release:
     name: build-test (Release)
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
