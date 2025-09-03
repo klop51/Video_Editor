@@ -1,5 +1,6 @@
 #include "decode/playback_controller.hpp"
 #include "decode/decoder.hpp"
+#include "decode/color_convert.hpp"
 #include "core/log.hpp"
 #include <iostream>
 #include <atomic>
@@ -47,6 +48,9 @@ int main(int argc, char** argv) {
 
         last_frame_pts.store(current_pts);
 
+        // Frame already converted to RGBA by PlaybackController
+        frames_decoded++;
+
         // FPS calculation every 30 frames
         if(frames_displayed % 30 == 0) {
             auto now = std::chrono::steady_clock::now();
@@ -57,8 +61,10 @@ int main(int argc, char** argv) {
                       << "Frame " << frames_displayed.load()
                       << " | PTS: " << (vf.pts / 1000000.0) << "s"
                       << " | Size: " << vf.width << "x" << vf.height
+                      << " | Format: " << static_cast<int>(vf.format)
                       << " | FPS: " << fps
                       << " | Drops: " << frame_drops.load()
+                      << " | RGBA: " << frames_decoded.load()
                       << std::endl;
 
             last_fps_time = now;
@@ -83,6 +89,7 @@ int main(int argc, char** argv) {
     std::cout << "\n----------------------------------------\n";
     std::cout << "PERFORMANCE SUMMARY:\n";
     std::cout << "Total frames displayed: " << frames_displayed.load() << "\n";
+    std::cout << "Total frames converted: " << frames_decoded.load() << "\n";
     std::cout << "Total frame drops: " << frame_drops.load() << "\n";
     std::cout << "Average FPS: " << std::fixed << std::setprecision(2) << avg_fps << "\n";
     std::cout << "Playback duration: " << (total_elapsed / 1000.0) << " seconds\n";

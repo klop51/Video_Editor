@@ -204,7 +204,7 @@ CodecOptimizerConfig CodecOptimizer::recommend_config(const std::string& codec,
     if (codec == "h264") {
         if (caps.supports_d3d11va && is_4k) {
             config.strategy = CodecOptimization::HARDWARE_ACCELERATED;
-            config.max_decode_threads = 2;
+            config.max_decode_threads = 8; // Increased for 4K performance
         } else {
             config.strategy = CodecOptimization::SOFTWARE_ONLY;
             config.max_decode_threads = 4;

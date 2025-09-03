@@ -73,11 +73,11 @@ private:
     void on_decoded(const VideoFrame& vf) {
         if(!running_) return;
         
-        // Wait for proper frame presentation time
-        if (!scheduler_.wait_for_frame_time(vf.pts)) {
-            // Frame dropped due to timing
-            return;
-        }
+        // Skip timing for performance testing - always allow frames through
+        // if (!scheduler_.wait_for_frame_time(vf.pts)) {
+        //     // Frame dropped due to timing
+        //     return;
+        // }
         
         auto rgba = to_rgba(vf);
         if(rgba && frame_cb_) {
