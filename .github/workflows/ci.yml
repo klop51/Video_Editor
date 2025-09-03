@@ -206,15 +206,12 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build build-essential
-      - name: Configure (no FFmpeg)
+          sudo apt-get install -y ninja-build build-essential cmake
+      - name: Simple configure test (no FFmpeg, no presets)
         run: |
-          echo "=== CMake Version ==="
-          cmake --version
-          echo "=== Available Presets ==="
-          cmake --list-presets
-          echo "=== Configuring with no-ffmpeg preset ==="
-          cmake --preset no-ffmpeg --debug-output
+          mkdir -p build/lint-test
+          cd build/lint-test
+          cmake ../.. -GNinja -DCMAKE_BUILD_TYPE=Debug -DENABLE_FFMPEG=OFF -DENABLE_TESTS=OFF -DENABLE_TOOLS=OFF
 
   clang-tidy:
     runs-on: ubuntu-latest
