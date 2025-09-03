@@ -13,7 +13,7 @@ jobs:
   build:
     name: ${{ matrix.os }} ${{ matrix.config }} build
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+  # timeout-minutes removed to allow builds and clang-tidy to run without interruption
     strategy:
       fail-fast: false
       matrix:

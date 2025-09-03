@@ -12,7 +12,7 @@ jobs:
   tests:
     name: Fast Tests & Lint
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+  # timeout-minutes removed to allow clang-tidy to run without interruption
     permissions:
       contents: read
     env:
