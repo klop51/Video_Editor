@@ -536,16 +536,14 @@ public:
                 // Copy frame data based on format
 #if defined(_WIN32) && VE_ENABLE_D3D11VA
                 if (frame_->format == AV_PIX_FMT_D3D11) {
-                    // D3D11VA temporarily disabled due to stability issues
-                    // Handle D3D11VA hardware frame
-                    // if (!hw_accel::handle_d3d11_frame(frame_, vf)) {
-                    //     ve::log::error("Failed to handle D3D11 frame");
-                    //     return std::nullopt;
-                    // }
-                    // Fallback to software copy for stability
-                    if (!copy_frame_data(frame_, vf)) {
-                        ve::log::error("Failed to copy frame data");
-                        return std::nullopt;
+                    // Re-enabled D3D11VA hardware frame handling (Issue #2: 4K 60fps optimization)
+                    // Try hardware path first, fallback to software if needed for stability
+                    if (!hw_accel::handle_d3d11_frame(frame_, vf)) {
+                        ve::log::warn("D3D11 hardware frame handling failed, falling back to software");
+                        if (!copy_frame_data(frame_, vf)) {
+                            ve::log::error("Failed to copy frame data in software fallback");
+                            return std::nullopt;
+                        }
                     }
                 } else {
                     // Normal software frame copy
@@ -652,10 +650,26 @@ private:
         ctx->flags2 = 0; // No aggressive flags
         
         // Enable hardware acceleration for performance only if it doesn't cause issues
+ copilot/fix-2
+#if defined(_WIN32) && VE_ENABLE_D3D11VA
+        // Re-enable D3D11VA for improved GPU utilization (Issue #2: 4K 60fps optimization)
+        // Use conservative approach with fallback to maintain 4-thread decoder stability
+        if (hw_accel::init_d3d11va_if_available(ctx)) {
+            ctx->get_format = hw_accel::hw_get_format;          // tell FFmpeg to prefer D3D11
+            ve::log::info("D3D11VA hardware acceleration enabled for 4K 60fps optimization");
+        } else {
+            ve::log::info("D3D11VA unavailable, using optimized software decoder");
+            if (setup_hardware_acceleration(ctx)) {
+                ve::log::info("Hardware acceleration enabled with minimal settings");
+            } else {
+                ve::log::warn("Hardware acceleration failed, using pure software decoding");
+            }
+
         // Enable hardware acceleration only if the codec supports the chosen type
         bool hw_ok = false;
         if (hw_accel_ctx_.hw_type != AV_HWDEVICE_TYPE_NONE && hw_accel::codec_supports_hwaccel(dec, hw_accel_ctx_.hw_type)) {
             hw_ok = setup_hardware_acceleration(ctx);
+        main
         }
         if (!hw_ok && hw_accel_ctx_.hw_type != AV_HWDEVICE_TYPE_NONE) {
             ve::log::warn("HW accel not enabled (unsupported or setup failed) → using SW");

@@ -77,9 +77,11 @@ endif()
 # D3D11VA hardware acceleration settings
 if(ENABLE_D3D11VA)
   add_compile_definitions(VE_ENABLE_D3D11VA=1)
+  add_compile_definitions(HAVE_D3D11VA=1)  # For FFmpeg header compatibility
   message(STATUS "D3D11VA hardware acceleration ENABLED")
 else()
   add_compile_definitions(VE_ENABLE_D3D11VA=0)
+  add_compile_definitions(HAVE_D3D11VA=0)
 endif()
 
 if(ENABLE_D3D11_ZERO_COPY)
