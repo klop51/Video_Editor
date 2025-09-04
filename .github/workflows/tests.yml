@@ -28,12 +28,16 @@ jobs:
           sudo apt-get install -y build-essential pkg-config curl zip unzip tar cmake ninja-build
           # Install autotools chain
           sudo apt-get install -y autoconf automake libtool libtool-bin libltdl-dev autotools-dev m4 autoconf-archive gperf
+          # Install X11/OpenGL development packages for Qt
+          sudo apt-get install -y libx11-dev libxext-dev libxfixes-dev libxrender-dev libxrandr-dev libxi-dev
+          sudo apt-get install -y libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev
+          sudo apt-get install -y mesa-common-dev libgl1-mesa-dev
           # Install additional tools
           sudo apt-get install -y nasm clang-tidy
 
-      - name: Verify autotools installation
+      - name: Verify toolchain & GL/X11 headers
         run: |
-          echo "Checking autotools installation..."
+          echo "Checking autotools + headers..."
           autoconf --version
           automake --version
           libtool --version
@@ -41,6 +45,9 @@ jobs:
           pkg-config --version
           echo "libltdl check:"
           dpkg -l | grep libltdl
+          echo "X11/OpenGL headers check:"
+          pkg-config --modversion x11 xrender xrandr xi xkbcommon xkbcommon-x11 || true
+          pkg-config --modversion gl || true
 
       - name: Cache vcpkg
         uses: actions/cache@v4
