@@ -32,10 +32,15 @@ jobs:
           sudo apt-get install -y libx11-dev libxext-dev libxfixes-dev libxrender-dev libxrandr-dev libxi-dev
           sudo apt-get install -y libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev
           sudo apt-get install -y mesa-common-dev libgl1-mesa-dev
+          # Install additional XCB development packages required by Qt
+          sudo apt-get install -y libx11-xcb-dev libxcb-xinput-dev libxcb-xkb-dev libxcb-randr0-dev
+          sudo apt-get install -y libxcb-xinerama0-dev libxcb-render0-dev libxcb-render-util0-dev
+          sudo apt-get install -y libxcb-icccm4-dev libxcb-image0-dev libxcb-keysyms1-dev
+          sudo apt-get install -y libxcb-shape0-dev libxcb-sync-dev libxcb-xfixes0-dev
           # Install additional tools
           sudo apt-get install -y nasm clang-tidy
 
-      - name: Verify toolchain & GL/X11 headers
+      - name: Verify toolchain & GL/X11/XCB headers
         run: |
           echo "Checking autotools + headers..."
           autoconf --version
@@ -45,8 +50,9 @@ jobs:
           pkg-config --version
           echo "libltdl check:"
           dpkg -l | grep libltdl
-          echo "X11/OpenGL headers check:"
-          pkg-config --modversion x11 xrender xrandr xi xkbcommon xkbcommon-x11 || true
+          echo "X11/OpenGL/XCB headers check:"
+          pkg-config --modversion x11 xrender xrandr xi || true
+          pkg-config --modversion xcb xcb-randr xcb-xinerama xcb-render xcb-keysyms xcb-icccm xcb-xkb xcb-xinput xkbcommon xkbcommon-x11 || true
           pkg-config --modversion gl || true
 
       - name: Cache vcpkg
