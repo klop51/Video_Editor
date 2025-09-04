@@ -1,0 +1,3 @@
+Paste this at the start of a session:
+```
+Load docs/Guidelines/AI_SESSION_BOOTSTRAP.md and docs/Guidelines/CI_MEMORY.md, summarize in ≤5 bullets (workflows, packages, tasks). Then fetch the latest CI artifacts, summarize the single primary failure in 1 sentence, propose a minimal ```diff patch, provide local/act/CI validation, and open/update a PR. If new failures appear, repeat with smaller diffs.
