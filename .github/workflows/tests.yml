@@ -27,7 +27,7 @@ jobs:
           # Install basic build tools first
           sudo apt-get install -y build-essential pkg-config curl zip unzip tar cmake ninja-build
           # Install autotools chain
-          sudo apt-get install -y autoconf automake libtool libltdl-dev autotools-dev m4 autoconf-archive gperf
+          sudo apt-get install -y autoconf automake libtool libtool-bin libltdl-dev autotools-dev m4 autoconf-archive gperf
           # Install additional tools
           sudo apt-get install -y nasm clang-tidy
 
@@ -37,6 +37,7 @@ jobs:
           autoconf --version
           automake --version
           libtool --version
+          libtoolize --version
           pkg-config --version
           echo "libltdl check:"
           dpkg -l | grep libltdl
