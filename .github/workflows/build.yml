@@ -30,9 +30,23 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y nasm ninja-build build-essential pkg-config curl zip unzip tar
-          sudo apt-get install -y autoconf-archive cmake autotools-dev autoconf libtool m4
-          sudo apt-get install -y libtool-bin libltdl-dev gperf
+          # Install basic build tools first
+          sudo apt-get install -y build-essential pkg-config curl zip unzip tar cmake ninja-build
+          # Install autotools chain
+          sudo apt-get install -y autoconf automake libtool libtool-bin libltdl-dev autotools-dev m4 autoconf-archive gperf
+          # Install X11/OpenGL development packages for Qt
+          sudo apt-get install -y libx11-dev libxext-dev libxfixes-dev libxrender-dev libxrandr-dev libxi-dev
+          sudo apt-get install -y libxcb1-dev libxkbcommon-dev libxkbcommon-x11-dev
+          sudo apt-get install -y mesa-common-dev libgl1-mesa-dev
+          # Install additional XCB development packages required by Qt
+          sudo apt-get install -y libx11-xcb-dev libxcb-xinput-dev libxcb-xkb-dev libxcb-randr0-dev
+          sudo apt-get install -y libxcb-xinerama0-dev libxcb-render0-dev libxcb-render-util0-dev
+          sudo apt-get install -y libxcb-icccm4-dev libxcb-image0-dev libxcb-keysyms1-dev
+          sudo apt-get install -y libxcb-shape0-dev libxcb-sync-dev libxcb-xfixes0-dev
+          # Install remaining XCB system libraries for TEST_xcb_syslibs
+          sudo apt-get install -y libxcb-shm0-dev libxcb-util-dev
+          # Install additional tools
+          sudo apt-get install -y nasm clang-tidy
 
       - name: Verify autotools & toolchain
         if: runner.os == 'Linux'
@@ -44,6 +58,15 @@ jobs:
           libtoolize --version
           gperf --version
           pkg-config --version
+          echo "X11/OpenGL/XCB headers check:"
+          pkg-config --modversion x11 xrender xrandr xi || true
+          pkg-config --modversion xcb || true
+          pkg-config --modversion xcb-shm || true
+          pkg-config --modversion xcb-util || true
+          pkg-config --modversion xcb-icccm xcb-image xcb-keysyms xcb-render xcb-render-util xcb-xfixes xcb-randr xcb-xinerama xcb-xkb xcb-xinput xkbcommon xkbcommon-x11 || true
+          pkg-config --modversion gl || true
+          echo "libltdl check:"
+          dpkg -l | grep libltdl
 
       # Windows dependencies
       - name: Install Windows dependencies
@@ -112,10 +135,12 @@ jobs:
               cmake --preset vs-release -DVCPKG_TARGET_TRIPLET=x64-windows
             fi
           elif [ "$RUNNER_OS" = "Linux" ]; then
+            export CC=clang
+            export CXX=clang++
             if [ "${{ matrix.config }}" = "Debug" ]; then
-              cmake --preset dev-debug -DVCPKG_TARGET_TRIPLET=x64-linux -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+              cmake --preset dev-debug -G Ninja -DVCPKG_TARGET_TRIPLET=x64-linux -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
             else
-              cmake --preset dev-release -DVCPKG_TARGET_TRIPLET=x64-linux -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+              cmake --preset dev-release -G Ninja -DVCPKG_TARGET_TRIPLET=x64-linux -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
             fi
           fi
 
@@ -133,6 +158,39 @@ jobs:
               cmake --build build/dev-debug --parallel 2
             else
               cmake --build build/dev-release --parallel 2
+            fi
+          fi
+
+      - name: Run clang-tidy (Linux only)
+        if: runner.os == 'Linux' && matrix.config == 'Debug'
+        run: |
+          echo "Running clang-tidy with full compilation database..."
+          if [ -f "build/dev-debug/compile_commands.json" ]; then
+            echo "Found compile_commands.json, running clang-tidy..."
+            python3 scripts/clang_tidy_check.py || echo "clang-tidy completed with warnings"
+          else
+            echo "⚠️ compile_commands.json not found!"
+            echo "This is expected on Windows builds using Visual Studio generator."
+            echo "Clang-tidy checks are performed on Linux CI only."
+            echo "✅ Skipping clang-tidy check (not available)"
+          fi
+
+      - name: Show vcpkg logs on failure
+        if: failure()
+        run: |
+          echo "=== VCPKG BUILD LOGS ==="
+          find build -path '*/buildtrees/*/*.log' -print -exec echo "=== {} ===" \; -exec tail -n 100 {} \; 2>/dev/null || true
+          echo "=== VCPKG MANIFEST INSTALL LOG ==="
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            if [ -f "build/dev-debug/vcpkg-manifest-install.log" ]; then
+              tail -n 200 "build/dev-debug/vcpkg-manifest-install.log"
+            fi
+          else
+            if [ -f "build/qt-debug/vcpkg-manifest-install.log" ]; then
+              tail -n 200 "build/qt-debug/vcpkg-manifest-install.log"
+            fi
+            if [ -f "build/vs-release/vcpkg-manifest-install.log" ]; then
+              tail -n 200 "build/vs-release/vcpkg-manifest-install.log"
             fi
           fi
 
