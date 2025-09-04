@@ -32,6 +32,18 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y nasm ninja-build build-essential pkg-config curl zip unzip tar
           sudo apt-get install -y autoconf-archive cmake autotools-dev autoconf libtool m4
+          sudo apt-get install -y libtool-bin libltdl-dev gperf
+
+      - name: Verify autotools & toolchain
+        if: runner.os == 'Linux'
+        run: |
+          set -x
+          autoconf --version
+          automake --version
+          libtool --version
+          libtoolize --version
+          gperf --version
+          pkg-config --version
 
       # Windows dependencies
       - name: Install Windows dependencies
