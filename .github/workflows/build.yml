@@ -44,9 +44,23 @@ jobs:
           sudo apt-get install -y libxcb-icccm4-dev libxcb-image0-dev libxcb-keysyms1-dev
           sudo apt-get install -y libxcb-shape0-dev libxcb-sync-dev libxcb-xfixes0-dev
           # Install remaining XCB system libraries for TEST_xcb_syslibs
-          sudo apt-get install -y libxcb-shm0-dev libxcb-util-dev
+          sudo apt-get install -y libxcb-shm0-dev libxcb-util-dev \
+            libx11-xcb-dev libxcb1-dev libxcb-util-dev libxcb-shm0-dev \
+            libxcb-icccm4-dev libxcb-image0-dev libxcb-keysyms1-dev \
+            libxcb-render0-dev libxcb-render-util0-dev libxcb-randr0-dev \
+            libxcb-xinerama0-dev libxcb-xfixes0-dev libxcb-sync-dev \
+            libxcb-xkb-dev libxcb-xinput-dev libglu1-mesa-dev libxrender-dev libxi-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libegl1-mesa-dev
           # Install additional tools
           sudo apt-get install -y nasm clang-tidy
+
+      - name: Verify XCB/xkbcommon/EGL
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          set -x
+          pkg-config --version
+          pkg-config --modversion x11 xcb xcb-randr xcb-xkb xkbcommon xkbcommon-x11 egl gl || true
+          pkg-config --modversion xcb-shm xcb-util || true
 
       - name: Verify autotools & toolchain
         if: runner.os == 'Linux'
@@ -267,3 +281,62 @@ jobs:
           name: failure-draft-${{ matrix.os }}-${{ matrix.config }}
           path: error_drafts
           if-no-files-found: ignore
+
+  smoke-linux:
+    name: Smoke (Linux artifacts)
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ubuntu-latest*artifacts
+          path: dist
+          merge-multiple: true
+      - name: Inspect files
+        run: |
+          find dist -type f | sort | head -n 200
+      - name: Check Qt libs/plugins + linkage
+        run: |
+          set -e
+          # Basic presence checks
+          compgen -G "dist/**/*Qt6*.so*" >/dev/null || (echo "Missing Qt6 libs" && exit 1)
+          if [ -d dist/plugins/platforms ]; then ls -l dist/plugins/platforms; fi
+          # Pick an executable and check runtime deps
+          exe="$(find dist -type f -perm -111 | head -n 1 || true)"
+          if [ -n "$exe" ]; then
+            echo "ldd on $exe"; ldd "$exe" || true
+          else
+            echo "No ELF executables found (library-only build?)"
+          fi
+
+  smoke-windows:
+    name: Smoke (Windows artifacts)
+    runs-on: windows-latest
+    needs: build
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: windows-latest*artifacts
+          path: dist
+          merge-multiple: true
+      - name: Inspect files
+        shell: pwsh
+        run: |
+          Get-ChildItem -Recurse dist | Select-Object FullName
+      - name: Check Qt DLLs/plugins
+        shell: pwsh
+        run: |
+          $qt = Get-ChildItem -Recurse dist -Filter Qt6Core.dll
+          if (-not $qt) { throw "Missing Qt6Core.dll (Qt not bundled?)" }
+          $plat = Get-ChildItem -Recurse dist -Filter qwindows.dll
+          if (-not $plat) { Write-Host "Note: qwindows.dll not found; verify packaging step includes plugins\platforms" }
+      - name: Optional link test (offscreen)
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Recurse dist -Include *.exe | Select-Object -First 1
+          if ($exe) {
+            Write-Host "Running $($exe.FullName) -platform offscreen --version (if supported)"
+            & $exe.FullName "-platform" "offscreen" "--version" 2>$null || Write-Host "Skip: app doesn't support --version"
+          } else {
+            Write-Host "No .exe found (library-only build?)"
+          }
