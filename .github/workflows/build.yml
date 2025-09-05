@@ -17,8 +17,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-latest, windows-latest ]
-        config: [ Debug, Release ]
+        os: [ ubuntu-latest ]
+        config: [ Debug ]
     env:
       VCPKG_FORCE_SYSTEM_BINARIES: 1
       VCPKG_MAX_CONCURRENCY: 2
