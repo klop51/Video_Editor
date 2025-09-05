@@ -51,8 +51,7 @@ jobs:
             libxcb-xinerama0-dev libxcb-xfixes0-dev libxcb-sync-dev \
             libxcb-xkb-dev libxcb-xinput-dev libglu1-mesa-dev libxrender-dev libxi-dev \
             libxkbcommon-dev libxkbcommon-x11-dev libegl1-mesa-dev \
-            libglvnd-dev libgl1-mesa-dev libgles2-mesa-dev \
-            libxcb-cursor-dev-BROKEN-PACKAGE-TEST
+            libglvnd-dev libgl1-mesa-dev libgles2-mesa-dev
           # Install additional tools
           sudo apt-get install -y nasm clang-tidy
 
