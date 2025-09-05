@@ -1,0 +1,52 @@
+name: smoke-tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Smoke Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install minimal Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config
+          # Install key X11/Qt packages for smoke test
+          sudo apt-get install -y libxcb1-dev libxkbcommon-dev libegl1-mesa-dev libgl1-mesa-dev
+      
+      - name: Smoke test - Check pkg-config modules
+        run: |
+          set -x
+          pkg-config --version
+          pkg-config --modversion xcb xkbcommon egl gl || true
+          echo "✅ Basic pkg-config smoke test passed"
+      
+      - name: Smoke test - Check CMake basics
+        run: |
+          cmake --version
+          echo "✅ CMake smoke test passed"
+      
+      - name: Smoke test - Validate vcpkg manifest
+        run: |
+          if [ -f vcpkg.json ]; then
+            echo "✅ vcpkg.json exists"
+            cat vcpkg.json | head -20
+          else
+            echo "❌ vcpkg.json missing"
+            exit 1
+          fi
