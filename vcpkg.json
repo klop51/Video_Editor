@@ -4,6 +4,7 @@
   "dependencies": [
     "ffmpeg",
     "catch2",
+    "gtest",
     {
       "name": "qtbase",
       "features": ["widgets", "opengl"]
