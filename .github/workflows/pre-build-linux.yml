@@ -1,4 +1,4 @@
-name: build
+name: pre-build-linux
 "on":
   push:
     tags: [ "v*" ]

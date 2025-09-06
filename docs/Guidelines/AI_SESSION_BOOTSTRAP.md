@@ -3,7 +3,8 @@ Use this at the start of every Copilot/Claude session.
 Read before changes:
 - docs/Guidelines/CI_MEMORY.md
 - .github/workflows/tests.yml
-- .github/workflows/build.yml
+- .github/workflows/pre-build-linux.yml
+- .github/workflows/pre-build-windows.yml
 - .vscode/tasks.json
 - vcpkg.json (if present)
 

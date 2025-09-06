@@ -2,7 +2,8 @@
 
 ## Workflows (inventory)
 - `.github/workflows/tests.yml` → fast lint + unit tests only; avoid heavy toolchains when possible.
-- `.github/workflows/build.yml` → full matrix build (vcpkg/Qt/CMake), build artifacts.
+- `.github/workflows/pre-build-linux.yml` → Linux pre-build testing (vcpkg/Qt/CMake), build artifacts.
+- `.github/workflows/pre-build-windows.yml` → Windows pre-build testing (vcpkg/Qt/CMake), build artifacts.
 
 ## Ubuntu packages (install **before** vcpkg/Qt)
 

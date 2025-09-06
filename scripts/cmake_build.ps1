@@ -1,4 +1,4 @@
-# CMake Build Script - Mirrors GitHub Actions build.yml workflow
+# CMake Build Script - Mirrors GitHub Actions pre-build workflows
 # Run this locally to test builds before pushing
 
 param(
