@@ -264,7 +264,7 @@ bool ProResDetector::validate_resolution(uint32_t width, uint32_t height) {
 
 bool ProResDetector::validate_framerate(uint32_t num, uint32_t den) {
     if (den == 0) return false;
-    float fps = static_cast<float>(num) / den;
+    float fps = static_cast<float>(num) / static_cast<float>(den);
     return fps >= 1.0f && fps <= 120.0f;
 }
 
