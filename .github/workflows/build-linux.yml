@@ -1,4 +1,4 @@
-name: build
+name: build-linux
 "on":
   push:
     tags: [ "v*" ]
@@ -176,3 +176,30 @@ jobs:
           name: failure-draft-ubuntu-latest-${{ matrix.config }}
           path: error_drafts
           if-no-files-found: ignore
+
+  smoke-linux:
+    name: Smoke (Linux artifacts)
+    runs-on: ubuntu-latest
+    needs: build-linux
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ubuntu-latest*artifacts
+          path: dist
+          merge-multiple: true
+      - name: Inspect files
+        run: |
+          find dist -type f | sort | head -n 200
+      - name: Check Qt libs/plugins + linkage
+        run: |
+          set -e
+          # Basic presence checks
+          compgen -G "dist/**/*Qt6*.so*" >/dev/null || (echo "Missing Qt6 libs" && exit 1)
+          if [ -d dist/plugins/platforms ]; then ls -l dist/plugins/platforms; fi
+          # Pick an executable and check runtime deps
+          exe="$(find dist -type f -perm -111 | head -n 1 || true)"
+          if [ -n "$exe" ]; then
+            echo "ldd on $exe"; ldd "$exe" || true
+          else
+            echo "No ELF executables found (library-only build?)"
+          fi

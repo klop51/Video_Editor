@@ -25,7 +25,8 @@ ProbeResult probe_file(const std::string& path) noexcept {
     ProbeResult res; res.filepath = path;
     std::error_code ec;
     if(std::filesystem::exists(path, ec)) {
-        res.size_bytes = std::filesystem::file_size(path, ec);
+        auto file_size = std::filesystem::file_size(path, ec);
+        res.size_bytes = static_cast<int64_t>(file_size);
     }
 #if VE_HAVE_FFMPEG
     AVFormatContext* fmt = nullptr;

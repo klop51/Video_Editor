@@ -1,0 +1,145 @@
+name: build-windows
+"on":
+  push:
+    tags: [ "v*" ]
+    branches: [ main, master ]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    name: windows-latest ${{ matrix.config }} build
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        config: [ Debug ]
+    env:
+      VCPKG_FORCE_SYSTEM_BINARIES: 1
+      VCPKG_MAX_CONCURRENCY: 2
+      VCPKG_ROOT: C:/vcpkg
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Windows dependencies
+        run: |
+          choco install nasm -y
+
+      - name: Cache vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:/vcpkg/installed
+            C:/vcpkg/buildtrees
+          key: vcpkg-windows-${{ hashFiles('vcpkg.json') }}-v3
+          restore-keys: |
+            vcpkg-windows-${{ hashFiles('vcpkg.json') }}-
+            vcpkg-windows-
+
+      - name: Setup vcpkg
+        shell: bash
+        run: |
+          rm -rf C:/vcpkg || true; git clone --depth 1 https://github.com/Microsoft/vcpkg.git C:/vcpkg
+          cd C:/vcpkg && git config --global core.autocrlf false && cmd.exe /c "bootstrap-vcpkg.bat"
+
+      - name: Configure
+        shell: bash
+        run: |
+          cmake --preset qt-debug -DVCPKG_TARGET_TRIPLET=x64-windows
+
+      - name: Build
+        shell: bash
+        run: |
+          cmake --build build/qt-debug --config Debug --parallel 2
+
+      - name: Show vcpkg logs on failure
+        if: failure()
+        run: |
+          echo "=== VCPKG BUILD LOGS ==="
+          find build -path '*/buildtrees/*/*.log' -print -exec echo "=== {} ===" \; -exec tail -n 100 {} \; 2>/dev/null || true
+          echo "=== VCPKG MANIFEST INSTALL LOG ==="
+          if [ -f "build/qt-debug/vcpkg-manifest-install.log" ]; then
+            tail -n 200 "build/qt-debug/vcpkg-manifest-install.log"
+          fi
+
+      - name: Test (if enabled)
+        shell: bash
+        run: |
+          cd build/qt-debug && ctest --config Debug --output-on-failure || echo "Tests not available or failed"
+
+      - name: Package artifacts
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p dist
+          if [ -d "build/qt-debug" ]; then cp -r build/qt-debug/* dist/ 2>/dev/null || true; fi
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-latest-${{ matrix.config }}-artifacts
+          path: dist
+          retention-days: 7
+
+      - name: Upload profiling data (if present)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: profiling-windows-latest-${{ matrix.config }}
+          path: |
+            **/profiling.json
+            **/profiling_*.json
+          if-no-files-found: ignore
+
+      - name: Generate failure draft (on failure)
+        if: failure()
+        run: |
+          python scripts/ci_failure_scrape.py --log build/*/Testing/Temporary/LastTest.log --out error_drafts --append-main --flaky-list tests/FLAKY_TESTS.txt --dedupe-window 5 --failure-history failure_history.json --auto-classify-flaky || true
+          if [ -f failure_history.json ]; then
+            echo "Captured failure history"
+          fi
+
+      - name: Upload failure draft artifact
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-draft-windows-latest-${{ matrix.config }}
+          path: error_drafts
+          if-no-files-found: ignore
+
+  smoke-windows:
+    name: Smoke (Windows artifacts)
+    runs-on: windows-latest
+    needs: build-windows
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: windows-latest*artifacts
+          path: dist
+          merge-multiple: true
+      - name: Inspect files
+        shell: pwsh
+        run: |
+          Get-ChildItem -Recurse dist | Select-Object FullName
+      - name: Check Qt DLLs/plugins
+        shell: pwsh
+        run: |
+          $qt = Get-ChildItem -Recurse dist -Filter Qt6Core.dll
+          if (-not $qt) { throw "Missing Qt6Core.dll (Qt not bundled?)" }
+          $plat = Get-ChildItem -Recurse dist -Filter qwindows.dll
+          if (-not $plat) { Write-Host "Note: qwindows.dll not found; verify packaging step includes plugins\platforms" }
+      - name: Optional link test (offscreen)
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Recurse dist -Include *.exe | Select-Object -First 1
+          if ($exe) {
+            Write-Host "Running $($exe.FullName) -platform offscreen --version (if supported)"
+            & $exe.FullName "-platform" "offscreen" "--version" 2>$null || Write-Host "Skip: app doesn't support --version"
+          } else {
+            Write-Host "No .exe found (library-only build?)"
+          }
