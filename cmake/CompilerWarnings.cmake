@@ -13,7 +13,14 @@ function(setup_project_warnings)
         # Disable selected noisy or external warnings
         add_compile_options(/wd4251 /wd4275 /wd4996)
     else()
-        add_compile_options(-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Wshadow -Wdouble-promotion -Wformat=2 -Wundef -Wlogical-op)
+        # Common warnings for GCC and Clang
+        add_compile_options(-Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion -Wshadow -Wdouble-promotion -Wformat=2 -Wundef)
+        
+        # GCC-specific warnings
+        if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+            add_compile_options(-Wlogical-op)
+        endif()
+        
         if(ENABLE_WARNINGS_AS_ERRORS)
             add_compile_options(-Werror)
         endif()
