@@ -1,6 +1,5 @@
 ﻿#include "core/profiling.hpp"
 #include <fstream>
-
 // NOTE: <algorithm> intentionally omitted to avoid interaction with stray macros in some toolchains
 
 namespace ve::prof {
@@ -55,7 +54,7 @@ std::unordered_map<std::string, Accumulator::Stats> Accumulator::aggregate() {
 		double sum = 0.0;
 		for (double v : vec) sum += v;
 		st.total_ms = sum;
-		st.avg_ms = sum / st.count;
+		st.avg_ms = sum / static_cast<double>(st.count);
 		size_t idx50 = (st.count > 1) ? static_cast<size_t>(0.5 * double(st.count - 1)) : 0;
 		size_t idx95 = (st.count > 1) ? static_cast<size_t>(0.95 * double(st.count - 1)) : 0;
 		if (idx50 >= vec.size()) idx50 = vec.size() - 1;
