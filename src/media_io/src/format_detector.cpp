@@ -42,8 +42,8 @@ std::optional<DetectedFormat> FormatDetector::detect_file_format(const std::stri
     }
     
     std::vector<uint8_t> header(1024); // Read first 1KB for format detection
-    file.read(reinterpret_cast<char*>(header.data()), header.size());
-    size_t bytes_read = file.gcount();
+    file.read(reinterpret_cast<char*>(header.data()), static_cast<std::streamsize>(header.size()));
+    size_t bytes_read = static_cast<size_t>(file.gcount());
     header.resize(bytes_read);
     
     return detect_format_from_header(header, extension);

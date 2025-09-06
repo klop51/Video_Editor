@@ -138,7 +138,7 @@ ProResDetector::PerformanceRequirements ProResDetector::estimate_performance_req
     );
     
     // Estimate decode complexity
-    float complexity = estimate_decode_complexity(prores_info.profile);
+    [[maybe_unused]] float complexity = estimate_decode_complexity(prores_info.profile);
     
     // Set CPU requirements based on profile
     switch (prores_info.profile) {
@@ -214,12 +214,12 @@ uint32_t ProResDetector::get_target_bitrate_mbps(
     }
     
     // Scale by resolution
-    float resolution_factor = (width * height) / (1920.0f * 1080.0f);
+    float resolution_factor = (static_cast<float>(width) * static_cast<float>(height)) / (1920.0f * 1080.0f);
     
     // Scale by framerate
-    float framerate_factor = framerate / 24.0f;
+    float framerate_factor = static_cast<float>(framerate) / 24.0f;
     
-    return static_cast<uint32_t>(base_bitrate * resolution_factor * framerate_factor);
+    return static_cast<uint32_t>(static_cast<float>(base_bitrate) * resolution_factor * framerate_factor);
 }
 
 bool ProResDetector::supports_alpha_channel(ProResProfile profile) {
@@ -271,10 +271,10 @@ bool ProResDetector::validate_framerate(uint32_t num, uint32_t den) {
 bool ProResDetector::validate_bitrate(uint32_t bitrate_mbps, ProResProfile profile) {
     uint32_t expected = get_target_bitrate_mbps(profile, 1920, 1080, 24);
     // Allow 50% variance from expected bitrate
-    return bitrate_mbps >= expected * 0.5f && bitrate_mbps <= expected * 1.5f;
+    return static_cast<float>(bitrate_mbps) >= static_cast<float>(expected) * 0.5f && static_cast<float>(bitrate_mbps) <= static_cast<float>(expected) * 1.5f;
 }
 
-ProResColorSpace ProResDetector::detect_color_space(const std::vector<uint8_t>& metadata) {
+ProResColorSpace ProResDetector::detect_color_space([[maybe_unused]] const std::vector<uint8_t>& metadata) {
     // In real implementation, would parse actual metadata
     // For now, default to Rec.709
     return ProResColorSpace::REC709;
@@ -295,7 +295,7 @@ uint64_t ProResDetector::calculate_frame_memory_mb(
     uint64_t bytes = total_bits / 8;
     uint64_t mb = bytes / (1024 * 1024);
     
-    return std::max(mb, 1ULL); // Minimum 1MB
+    return std::max(mb, static_cast<uint64_t>(1)); // Minimum 1MB
 }
 
 float ProResDetector::estimate_decode_complexity(ProResProfile profile) {
