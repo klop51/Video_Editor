@@ -483,4 +483,141 @@ HDRCapabilityInfo HDRInfrastructure::detect_display_capabilities() {
     return get_system_hdr_capabilities();
 }
 
+// Instance method implementations for API compatibility
+
+HDRStandard HDRInfrastructure::detect_hdr_standard(const std::vector<uint8_t>& stream_data) {
+    if (stream_data.empty()) {
+        return HDRStandard::NONE;
+    }
+    return detect_hdr_standard_from_data(stream_data.data(), stream_data.size());
+}
+
+HDRMetadata HDRInfrastructure::parse_hdr_metadata(const std::vector<uint8_t>& stream_data) {
+    HDRMetadata metadata;
+    
+    if (stream_data.size() < 32) {
+        metadata.hdr_standard = HDRStandard::NONE;
+        metadata.transfer_function = TransferFunction::UNKNOWN;
+        metadata.color_primaries = ColorPrimaries::UNKNOWN;
+        metadata.max_luminance = 100.0f;
+        metadata.min_luminance = 0.01f;
+        metadata.max_content_light_level = 0;
+        metadata.max_frame_average_light_level = 0;
+        return metadata;
+    }
+    
+    // Parse HDR metadata from stream data
+    const uint8_t* data = stream_data.data();
+    size_t size = stream_data.size();
+    
+    metadata.hdr_standard = detect_hdr_standard_from_data(data, size);
+    metadata.transfer_function = detect_transfer_function(data, size);
+    metadata.color_primaries = detect_color_primaries(data, size);
+    
+    // Parse luminance values (simplified parsing)
+    if (size >= 24) {
+        // Extract max/min luminance from metadata (example positions)
+        uint32_t max_lum_raw = (data[16] << 24) | (data[17] << 16) | (data[18] << 8) | data[19];
+        uint32_t min_lum_raw = (data[20] << 24) | (data[21] << 16) | (data[22] << 8) | data[23];
+        
+        metadata.max_luminance = static_cast<float>(max_lum_raw) / 10000.0f; // Convert to nits
+        metadata.min_luminance = static_cast<float>(min_lum_raw) / 10000.0f;
+    } else {
+        metadata.max_luminance = 1000.0f; // Default HDR10 max
+        metadata.min_luminance = 0.01f;   // Default HDR10 min
+    }
+    
+    // Parse content light levels
+    if (size >= 32) {
+        uint16_t max_cll = (data[24] << 8) | data[25];
+        uint16_t max_fall = (data[26] << 8) | data[27];
+        
+        metadata.max_content_light_level = max_cll;
+        metadata.max_frame_average_light_level = max_fall;
+    }
+    
+    return metadata;
+}
+
+HDRMetadata HDRInfrastructure::convert_color_space(const HDRMetadata& source_metadata,
+                                                 ColorPrimaries target_primaries,
+                                                 TransferFunction target_transfer) {
+    HDRMetadata converted_metadata = source_metadata;
+    
+    // Update color space parameters
+    converted_metadata.color_primaries = target_primaries;
+    converted_metadata.transfer_function = target_transfer;
+    
+    // Adjust luminance values based on target transfer function
+    switch (target_transfer) {
+        case TransferFunction::PQ:
+            // No adjustment needed for PQ - maintains original luminance values
+            break;
+            
+        case TransferFunction::HLG:
+            // Adjust for HLG's different luminance range
+            converted_metadata.max_luminance = std::min(converted_metadata.max_luminance, 1000.0f);
+            break;
+            
+        case TransferFunction::BT709:
+        case TransferFunction::BT2020:
+            // SDR conversion - clamp to SDR range
+            converted_metadata.max_luminance = 100.0f;
+            converted_metadata.min_luminance = 0.1f;
+            break;
+            
+        default:
+            // Keep original values
+            break;
+    }
+    
+    // Adjust content light levels for target color space
+    if (target_primaries != source_metadata.color_primaries) {
+        // Apply color space conversion factor (simplified)
+        float conversion_factor = 1.0f;
+        
+        if (source_metadata.color_primaries == ColorPrimaries::BT2020 && 
+            target_primaries == ColorPrimaries::BT709) {
+            conversion_factor = 0.85f; // Approximate factor for BT.2020 to BT.709
+        } else if (source_metadata.color_primaries == ColorPrimaries::DCI_P3 && 
+                   target_primaries == ColorPrimaries::BT709) {
+            conversion_factor = 0.92f; // Approximate factor for DCI-P3 to BT.709
+        }
+        
+        converted_metadata.max_content_light_level = 
+            static_cast<uint16_t>(converted_metadata.max_content_light_level * conversion_factor);
+        converted_metadata.max_frame_average_light_level = 
+            static_cast<uint16_t>(converted_metadata.max_frame_average_light_level * conversion_factor);
+    }
+    
+    return converted_metadata;
+}
+
+bool HDRInfrastructure::convert_color_space(const std::vector<float>& source_rgb,
+                                           ColorPrimaries source_primaries,
+                                           ColorPrimaries target_primaries,
+                                           std::vector<float>& target_rgb) {
+    if (source_rgb.size() != 3) {
+        return false;
+    }
+    
+    target_rgb.resize(3);
+    
+    // Simple color space conversion using matrix transformation
+    float matrix[3][3];
+    calculate_color_transform_matrix(source_primaries, target_primaries, matrix);
+    
+    // Apply color transformation matrix
+    for (int i = 0; i < 3; ++i) {
+        target_rgb[i] = 0.0f;
+        for (int j = 0; j < 3; ++j) {
+            target_rgb[i] += matrix[i][j] * source_rgb[j];
+        }
+        // Clamp to valid range
+        target_rgb[i] = std::max(0.0f, std::min(1.0f, target_rgb[i]));
+    }
+    
+    return true;
+}
+
 } // namespace ve::media_io

@@ -1,6 +1,33 @@
 # Error & Debug Tracking Log
 
-## Current Status: 4K 60fps Performance Optimization COMPLETE ✅
+## Current Issue: PowerShell Interactive Menu Flashing (2025-09-06)
+**PROBLEM:** GitHub automation tool (`scripts/github_automation_v2.ps1`) exhibits menu flashing/redrawing on every arrow key press in interactive log selection mode.
+
+**Symptoms:**
+- ✅ **Functionality Works**: Navigation, selection, filtering, exit all functional
+- ❌ **Visual Flash**: Each Up/Down arrow press causes full menu redraw with brief flash
+- ❌ **Screen Clearing**: `Clear-Host` called on every navigation action
+- ❌ **Performance**: Slower navigation due to full redraws vs incremental updates
+
+**Technical Context:**
+- **Current Approach**: Full screen clear + complete menu redraw per keypress
+- **Desired Behavior**: Only highlight/selection changes, no screen clearing
+- **Failed Solutions**: ANSI cursor positioning caused crashes on some PowerShell versions
+- **Working Alternative Needed**: Smooth navigation without flash (similar to htop/modern CLI tools)
+
+**File Location:** `c:\Users\braul\Desktop\Video_Editor\scripts\github_automation_v2.ps1`
+**Function:** `Show-InteractiveLogMenu` (lines ~100-300)
+**Key Issue Area:** Arrow key handlers (VirtualKeyCode 38/40) calling full redraw
+
+**Requirements:**
+- Maintain current functionality (10 log limit, selection, filtering)
+- Eliminate screen flashing during navigation
+- Keep cross-platform PowerShell compatibility
+- Preserve exit options (ESC/Q) and error handling
+
+---
+
+## Previous Status: 4K 60fps Performance Optimization COMPLETE ✅
 **BREAKTHROUGH ACHIEVEMENT (2025-09-02):** Successfully achieved user's exact performance target through systematic incremental threading optimization. 4-thread FFmpeg decoder configuration delivers 78-82% performance (target: 80-83%) with ZERO H.264 decoder corruption, achieving K-Lite codec-level smooth 4K 60fps playback.
 
 **Performance Mission Accomplished:**

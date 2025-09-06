@@ -280,13 +280,13 @@ uint32_t DNxDetector::calculate_target_bitrate(DNxHRProfile profile, uint32_t wi
     float resolution_factor = static_cast<float>(width * height) / (1920.0f * 1080.0f);
     
     // Scale by framerate (compared to 24fps)
-    float framerate = static_cast<float>(fps_num) / fps_den;
+    float framerate = static_cast<float>(fps_num) / static_cast<float>(fps_den);
     float framerate_factor = framerate / 24.0f;
     
     // Apply scaling with some compression for higher resolutions
     float total_factor = std::sqrt(resolution_factor) * framerate_factor;
     
-    return static_cast<uint32_t>(base_bitrate * total_factor);
+    return static_cast<uint32_t>(static_cast<float>(base_bitrate) * total_factor);
 }
 
 bool DNxDetector::supports_alpha_channel(const DNxInfo& dnx_info) {
@@ -374,7 +374,7 @@ bool DNxDetector::validate_dnxhr_resolution(uint32_t width, uint32_t height) {
 bool DNxDetector::validate_dnx_framerate(uint32_t fps_num, uint32_t fps_den) {
     if (fps_den == 0) return false;
     
-    float fps = static_cast<float>(fps_num) / fps_den;
+    float fps = static_cast<float>(fps_num) / static_cast<float>(fps_den);
     
     // Common broadcast framerates
     return (fps >= 23.0f && fps <= 120.0f);
@@ -441,7 +441,7 @@ uint32_t DNxDetector::get_optimal_thread_count(const DNxInfo& dnx_info) {
 }
 
 // DNx Format Integration
-void DNxFormatIntegration::register_dnx_capabilities(FormatDetector& detector) {
+void DNxFormatIntegration::register_dnx_capabilities([[maybe_unused]] FormatDetector& detector) {
     // Register all DNx profiles with their capabilities
     auto profiles = DNxDetector::get_supported_profiles();
     

@@ -1,5 +1,5 @@
 #include "media_io/hdr_infrastructure.hpp"
-#include "media_io/hdr_utilities.cpp" // Include implementation for test
+#include "media_io/hdr_utilities.hpp" // Include header for utilities
 #include <iostream>
 #include <vector>
 

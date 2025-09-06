@@ -188,6 +188,12 @@ struct HDRCapabilityInfo {
     bool supports_dolby_vision = false;
     bool supports_hlg = false;
     
+    // Alternative field names for test compatibility
+    bool hdr10_supported = false;
+    bool hlg_supported = false;
+    bool dolby_vision_supported = false;
+    bool hardware_tone_mapping_available = false;
+    
     // Display characteristics
     float max_luminance = 100.0f;              // nits
     float min_luminance = 0.1f;                // nits
@@ -344,6 +350,44 @@ public:
     static HDRProcessingRecommendations get_processing_recommendations(
         const HDRMetadata& input_metadata,
         const HDRCapabilityInfo& target_capabilities);
+
+    /**
+     * Detect HDR standard from stream data
+     * @param stream_data Raw stream data
+     * @return Detected HDR standard
+     */
+    HDRStandard detect_hdr_standard(const std::vector<uint8_t>& stream_data);
+
+    /**
+     * Parse HDR metadata from stream data
+     * @param stream_data Raw stream data
+     * @return Parsed HDR metadata
+     */
+    HDRMetadata parse_hdr_metadata(const std::vector<uint8_t>& stream_data);
+
+    /**
+     * Convert color space between HDR standards
+     * @param source_metadata Source HDR metadata
+     * @param target_primaries Target color primaries
+     * @param target_transfer Target transfer function
+     * @return Converted HDR metadata
+     */
+    HDRMetadata convert_color_space(const HDRMetadata& source_metadata,
+                                          ColorPrimaries target_primaries,
+                                          TransferFunction target_transfer);
+                                          
+    /**
+     * Convert RGB color values between color spaces
+     * @param source_rgb Source RGB values
+     * @param source_primaries Source color primaries
+     * @param target_primaries Target color primaries
+     * @param target_rgb Output RGB values
+     * @return Success status
+     */
+    bool convert_color_space(const std::vector<float>& source_rgb,
+                           ColorPrimaries source_primaries,
+                           ColorPrimaries target_primaries,
+                           std::vector<float>& target_rgb);
 
 private:
     // HDR detection helpers

@@ -32,7 +32,7 @@ function Write-ColorOutput {
 function Test-GitHubCLI {
     try {
         $null = Get-Command gh -ErrorAction Stop
-        $authCheck = gh auth status 2>&1
+        gh auth status 2>&1 | Out-Null
         if ($LASTEXITCODE -eq 0) {
             return $true
         } else {
@@ -88,7 +88,7 @@ function Get-FailureLogs {
     Write-ColorOutput "Fetching failed workflow runs..." "Info"
     
     try {
-        $runs = gh run list --repo "$Owner/$Repo" --limit 10 --json databaseId,status,conclusion,workflowName,createdAt,url | ConvertFrom-Json
+        $runs = gh run list --repo "$Owner/$Repo" --limit 20 --json databaseId,status,conclusion,workflowName,createdAt,url | ConvertFrom-Json
         
         if ($runs.Count -eq 0) {
             Write-ColorOutput "[INFO] No workflow runs found" "Warning"
@@ -110,72 +110,7 @@ function Show-InteractiveLogMenu {
     $selectedIndices = @()
     $filterText = ""
     $filteredRuns = $Runs
-    $logStartLine = 8  # Line where log entries start
-    $needsFullRedraw = $true
     
-    function Draw-LogEntry {
-        param($Index, $Run, $IsCurrent, $IsSelected, $LineNumber)
-        
-        # Safety check for console bounds
-        try {
-            $consoleHeight = $Host.UI.RawUI.WindowSize.Height
-            $consoleWidth = $Host.UI.RawUI.WindowSize.Width
-            
-            # Skip if we're too close to bottom or line number is invalid
-            if ($LineNumber -ge ($consoleHeight - 3) -or $LineNumber -lt 0) {
-                return  
-            }
-            
-            # Move cursor to the specific line
-            [Console]::SetCursorPosition(0, $LineNumber)
-            
-            # Clear the line first
-            Write-Host (" " * ($consoleWidth - 1)) -NoNewline
-            [Console]::SetCursorPosition(0, $LineNumber)
-            
-            # Selection indicator
-            if ($IsCurrent) {
-                Write-Host "> " -NoNewline -ForegroundColor Yellow
-            } else {
-                Write-Host "  " -NoNewline
-            }
-            
-            # Checkbox
-            if ($IsSelected) {
-                Write-Host "[X] " -NoNewline -ForegroundColor Green
-            } else {
-                Write-Host "[ ] " -NoNewline
-            }
-            
-            # Status and workflow info
-            $status = if ($Run.status -eq "completed") { $Run.conclusion } else { $Run.status }
-            $created = [DateTime]::Parse($Run.createdAt).ToString("MM/dd HH:mm")
-            
-            $statusColor = switch ($Run.conclusion) {
-                "success" { "Green" }
-                "failure" { "Red" }
-                "cancelled" { "Yellow" }
-                default { "White" }
-            }
-            
-            # Truncate line if too long for console
-            $line = "[$status] $($Run.workflowName) ($created)"
-            $maxLineLength = $consoleWidth - 6  # Account for prefix characters
-            if ($line.Length -gt $maxLineLength) {
-                $line = $line.Substring(0, $maxLineLength - 3) + "..."
-            }
-            
-            Write-Host $line -ForegroundColor $statusColor
-        } catch {
-            # Fall back to simple output if cursor positioning fails
-            $prefix = if ($IsCurrent) { "> " } else { "  " }
-            $checkbox = if ($IsSelected) { "[X] " } else { "[ ] " }
-            $status = if ($Run.status -eq "completed") { $Run.conclusion } else { $Run.status }
-            $created = [DateTime]::Parse($Run.createdAt).ToString("MM/dd HH:mm")
-            Write-Host "$prefix$checkbox[$status] $($Run.workflowName) ($created)"
-        }
-    }
-
     function Draw-FullMenu {
         Clear-Host
         Write-ColorOutput "GitHub CI Log Selection" "Header"
@@ -188,143 +123,87 @@ function Show-InteractiveLogMenu {
         
         # Apply filter
         if ($filterText) {
-            Write-ColorOutput "Filter: $filterText" "Highlight" 
+            Write-ColorOutput "Filter: $filterText" "Highlight"
             $script:filteredRuns = $Runs | Where-Object { 
                 $_.workflowName -like "*$filterText*" -or 
                 $_.conclusion -like "*$filterText*" -or 
                 $_.status -like "*$filterText*" 
             }
-            $script:logStartLine = 10  # One extra line for filter display
         } else {
             $script:filteredRuns = $Runs
-            $script:logStartLine = 8
         }
         
-        # Display runs
-        if ($filteredRuns.Count -eq 0) {
-            Write-ColorOutput "No runs match filter '$filterText'" "Warning"
-        } else {
-            Write-ColorOutput "Please select runs using Up/Down arrows, Space to select, Enter to download:" "Info"
-            Write-ColorOutput ""
-            
-            for ($i = 0; $i -lt $filteredRuns.Count; $i++) {
-                $run = $filteredRuns[$i]
-                $originalIndex = [Array]::IndexOf($Runs, $run)
-                $isSelected = $selectedIndices -contains $originalIndex
-                $isCurrent = ($i -eq $currentIndex)
-                
-                Draw-LogEntry -Index $i -Run $run -IsCurrent $isCurrent -IsSelected $isSelected -LineNumber ($logStartLine + $i)
-            }
-        }
+        # Draw log list
+        Draw-LogList
         
         # Status line
-        try {
-            $consoleHeight = $Host.UI.RawUI.WindowSize.Height
-            $statusLineNumber = [Math]::Min($logStartLine + $filteredRuns.Count + 1, $consoleHeight - 3)
-            
-            if ($statusLineNumber -gt 0 -and $statusLineNumber -lt $consoleHeight - 1) {
-                [Console]::SetCursorPosition(0, $statusLineNumber)
-                Write-Host ""
-                if ($selectedIndices.Count -gt 0) {
-                    Write-ColorOutput "Selected: $($selectedIndices.Count) runs" "Highlight"
-                }
-            }
-        } catch {
-            # Fallback if cursor positioning fails
-            Write-Host ""
-            if ($selectedIndices.Count -gt 0) {
-                Write-ColorOutput "Selected: $($selectedIndices.Count) runs" "Highlight"
-            }
-        }
-        
-        $script:needsFullRedraw = $false
-    }
-    
-    function Update-Selection {
-        param($OldIndex, $NewIndex)
-        
-        # Only redraw the two affected lines
-        if ($OldIndex -ge 0 -and $OldIndex -lt $filteredRuns.Count) {
-            $run = $filteredRuns[$OldIndex]
-            $originalIndex = [Array]::IndexOf($Runs, $run)
-            $isSelected = $selectedIndices -contains $originalIndex
-            Draw-LogEntry -Index $OldIndex -Run $run -IsCurrent $false -IsSelected $isSelected -LineNumber ($logStartLine + $OldIndex)
-        }
-        
-        if ($NewIndex -ge 0 -and $NewIndex -lt $filteredRuns.Count) {
-            $run = $filteredRuns[$NewIndex]
-            $originalIndex = [Array]::IndexOf($Runs, $run)
-            $isSelected = $selectedIndices -contains $originalIndex
-            Draw-LogEntry -Index $NewIndex -Run $run -IsCurrent $true -IsSelected $isSelected -LineNumber ($logStartLine + $NewIndex)
-        }
-        
-        # Update status line
-        try {
-            $consoleHeight = $Host.UI.RawUI.WindowSize.Height  
-            $statusLineNumber = [Math]::Min($logStartLine + $filteredRuns.Count + 2, $consoleHeight - 2)
-            
-            if ($statusLineNumber -gt 0 -and $statusLineNumber -lt $consoleHeight - 1) {
-                [Console]::SetCursorPosition(0, $statusLineNumber)
-                Write-Host (" " * 50) # Clear status line
-                [Console]::SetCursorPosition(0, $statusLineNumber)
-                if ($selectedIndices.Count -gt 0) {
-                    Write-ColorOutput "Selected: $($selectedIndices.Count) runs" "Highlight"
-                }
-            }
-        } catch {
-            # Ignore cursor positioning errors
+        Write-ColorOutput ""
+        if ($selectedIndices.Count -gt 0) {
+            Write-ColorOutput "Selected: $($selectedIndices.Count) runs" "Highlight"
         }
     }
     
-    function Update-SelectionState {
-        param($Index)
+    function Draw-LogList {
+        if ($filteredRuns.Count -eq 0) {
+            Write-ColorOutput "No runs match filter '$filterText'" "Warning"
+            return
+        }
         
-        if ($Index -ge 0 -and $Index -lt $filteredRuns.Count) {
-            $run = $filteredRuns[$Index]
+        for ($i = 0; $i -lt $filteredRuns.Count; $i++) {
+            $run = $filteredRuns[$i]
             $originalIndex = [Array]::IndexOf($Runs, $run)
             $isSelected = $selectedIndices -contains $originalIndex
-            Draw-LogEntry -Index $Index -Run $run -IsCurrent $true -IsSelected $isSelected -LineNumber ($logStartLine + $Index)
             
-            # Update status line
-            try {
-                $consoleHeight = $Host.UI.RawUI.WindowSize.Height
-                $statusLineNumber = [Math]::Min($logStartLine + $filteredRuns.Count + 2, $consoleHeight - 2)
-                
-                if ($statusLineNumber -gt 0 -and $statusLineNumber -lt $consoleHeight - 1) {
-                    [Console]::SetCursorPosition(0, $statusLineNumber)
-                    Write-Host (" " * 50) # Clear status line
-                    [Console]::SetCursorPosition(0, $statusLineNumber)
-                    if ($selectedIndices.Count -gt 0) {
-                        Write-ColorOutput "Selected: $($selectedIndices.Count) runs" "Highlight"
-                    }
-                }
-            } catch {
-                # Ignore cursor positioning errors
+            $prefix = if ($i -eq $currentIndex) {
+                if ($isSelected) { "> [X] " } else { ">     " }
+            } else {
+                if ($isSelected) { "  [X] " } else { "      " }
             }
+            
+            $status = if ($run.status -eq "completed") { $run.conclusion } else { $run.status }
+            $created = [DateTime]::Parse($run.createdAt).ToString("MM/dd HH:mm")
+            
+            $statusColor = switch ($run.conclusion) {
+                "success" { "Success" }
+                "failure" { "Error" }
+                "cancelled" { "Warning" }
+                default { "Info" }
+            }
+            
+            if ($i -eq $currentIndex) {
+                Write-Host $prefix -NoNewline -ForegroundColor Yellow
+            } else {
+                Write-Host $prefix -NoNewline
+            }
+            Write-ColorOutput "[$status] $($run.workflowName) ($created)" $statusColor
         }
     }
     
-    # Initial draw
+    # Draw initial menu
     Draw-FullMenu
     
     while ($true) {
-        # Get user input
         $key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+        $oldIndex = $currentIndex
+        $redrawNeeded = $false
         
-        # Handle navigation and selection
         switch ($key.VirtualKeyCode) {
             38 { # Up arrow
                 if ($filteredRuns.Count -gt 0) {
-                    $oldIndex = $currentIndex
                     $currentIndex = ($currentIndex - 1 + $filteredRuns.Count) % $filteredRuns.Count
-                    Update-Selection -OldIndex $oldIndex -NewIndex $currentIndex
+                    # Only redraw if we actually moved
+                    if ($currentIndex -ne $oldIndex) {
+                        Draw-FullMenu
+                    }
                 }
             }
             40 { # Down arrow
                 if ($filteredRuns.Count -gt 0) {
-                    $oldIndex = $currentIndex
                     $currentIndex = ($currentIndex + 1) % $filteredRuns.Count
-                    Update-Selection -OldIndex $oldIndex -NewIndex $currentIndex
+                    # Only redraw if we actually moved
+                    if ($currentIndex -ne $oldIndex) {
+                        Draw-FullMenu
+                    }
                 }
             }
             32 { # Spacebar
@@ -335,12 +214,12 @@ function Show-InteractiveLogMenu {
                     } else {
                         $selectedIndices += $originalIndex
                     }
-                    Update-SelectionState -Index $currentIndex
+                    Draw-FullMenu
                 }
             }
             13 { # Enter
                 if ($selectedIndices.Count -gt 0) {
-                    Clear-Host
+                    Write-ColorOutput ""
                     Write-ColorOutput "Downloading selected logs..." "Info"
                     foreach ($index in $selectedIndices) {
                         $run = $Runs[$index]
@@ -356,23 +235,9 @@ function Show-InteractiveLogMenu {
                     $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown") | Out-Null
                     return
                 } else {
-                    # Show error message briefly at bottom
-                    try {
-                        $consoleHeight = $Host.UI.RawUI.WindowSize.Height
-                        $errorLine = [Math]::Min($logStartLine + $filteredRuns.Count + 3, $consoleHeight - 1)
-                        
-                        if ($errorLine -gt 0 -and $errorLine -lt $consoleHeight) {
-                            [Console]::SetCursorPosition(0, $errorLine)
-                            Write-ColorOutput "No runs selected" "Warning"
-                            Start-Sleep -Milliseconds 1000
-                            [Console]::SetCursorPosition(0, $errorLine)
-                            Write-Host (" " * 50) # Clear error message
-                        }
-                    } catch {
-                        # Fallback without cursor positioning
-                        Write-ColorOutput "No runs selected" "Warning"
-                        Start-Sleep -Milliseconds 1000
-                    }
+                    Write-ColorOutput "No runs selected" "Warning"
+                    Start-Sleep -Milliseconds 500
+                    Draw-FullMenu
                 }
             }
             8 { # Backspace

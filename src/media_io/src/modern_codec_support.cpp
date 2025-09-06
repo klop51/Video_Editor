@@ -112,8 +112,8 @@ ModernCodecInfo ModernCodecDetector::detect_modern_codec(const uint8_t* containe
     // Extract basic stream information
     if (data_size >= 16) {
         // Simplified extraction - real implementation would parse headers properly
-        info.width = (container_data[8] << 8) | container_data[9];
-        info.height = (container_data[10] << 8) | container_data[11]; 
+        info.width = static_cast<uint32_t>((container_data[8] << 8) | container_data[9]);
+        info.height = static_cast<uint32_t>((container_data[10] << 8) | container_data[11]); 
         info.bit_depth = (container_data[12] & 0x0F) + 8; // 8-12 bit range
         info.supports_alpha = (container_data[13] & 0x01) != 0;
         info.is_hdr = info.bit_depth > 8;
@@ -288,7 +288,7 @@ ModernCodecPerformanceRequirements ModernCodecDetector::estimate_performance_req
     req.requires_modern_gpu = requires_modern_hardware(codec_info);
     
     // Bandwidth requirements (estimated from resolution and codec efficiency)
-    req.bandwidth_kbps = static_cast<uint64_t>(pixel_count * 0.1 / codec_info.compression_efficiency);
+    req.bandwidth_kbps = static_cast<uint64_t>(static_cast<double>(pixel_count) * 0.1 / codec_info.compression_efficiency);
     req.adaptive_streaming_capable = (codec_info.codec_family == CodecFamily::AV1 || 
                                      codec_info.codec_family == CodecFamily::VP9);
     
@@ -304,7 +304,7 @@ bool ModernCodecDetector::validate_streaming_compatibility(const ModernCodecInfo
     
     // Estimate required bandwidth based on resolution and efficiency
     uint64_t estimated_bandwidth = static_cast<uint64_t>(
-        codec_info.width * codec_info.height * 0.1 / codec_info.compression_efficiency
+        static_cast<double>(codec_info.width) * static_cast<double>(codec_info.height) * 0.1 / codec_info.compression_efficiency
     );
     
     return estimated_bandwidth <= target_bandwidth_kbps;
@@ -427,9 +427,9 @@ uint64_t ModernCodecDetector::estimate_decode_complexity(const ModernCodecInfo& 
     }
     
     // Bit depth multiplier
-    float depth_multiplier = (codec_info.bit_depth / 8.0f);
+    float depth_multiplier = (static_cast<float>(codec_info.bit_depth) / 8.0f);
     
-    return static_cast<uint64_t>(base_complexity * codec_multiplier * depth_multiplier);
+    return static_cast<uint64_t>(static_cast<double>(base_complexity) * static_cast<double>(codec_multiplier) * static_cast<double>(depth_multiplier));
 }
 
 float ModernCodecDetector::calculate_bandwidth_efficiency(const ModernCodecInfo& codec_info) {

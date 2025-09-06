@@ -13,8 +13,8 @@
 #include <string>
 #include <unordered_map>
 
-// Include all GPU system components
-#include "graphics_device.hpp"
+// Include all GPU system components  
+#include "gfx/graphics_device.hpp"
 #include "vulkan_backend.hpp"
 #include "d3d11_backend.hpp"
 #include "compute_pipeline.hpp"
