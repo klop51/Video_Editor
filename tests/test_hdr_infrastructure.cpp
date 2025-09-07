@@ -139,7 +139,7 @@ TEST_F(HDRInfrastructureTest, ProcessHDRFrame_ToneMapping) {
     
     // Simulate HDR frame data (simplified)
     std::vector<uint16_t> hdr_frame_data(1920 * 1080 * 3); // RGB 10-bit
-    std::fill(hdr_frame_data.begin(), hdr_frame_data.end(), 800); // Bright HDR value
+    std::fill(hdr_frame_data.begin(), hdr_frame_data.end(), static_cast<uint16_t>(800)); // Bright HDR value
     
     std::vector<uint8_t> output_frame;
     bool success = hdr_infrastructure->process_hdr_frame(
