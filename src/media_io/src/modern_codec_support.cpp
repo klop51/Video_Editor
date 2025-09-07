@@ -50,6 +50,7 @@ namespace {
         return codec_data[1]; // Simplified profile extraction
     }
     
+    [[maybe_unused]]
     uint8_t extract_level_from_data(const std::vector<uint8_t>& codec_data) {
         if (codec_data.size() < 4) return 0;
         return codec_data[3]; // Simplified level extraction
