@@ -1,5 +1,6 @@
 # Tests root
 find_package(Catch2 3 REQUIRED)
+find_package(GTest CONFIG REQUIRED)
 
 option(VE_ENABLE_QT_UI_TESTS "Enable Qt UI smoke tests" OFF)
 
@@ -19,7 +20,7 @@ set(UNIT_TEST_SOURCES
     test_command_coalescing.cpp
     test_profiling_stats.cpp
     test_project_roundtrip.cpp
-    test_hdr_infrastructure.cpp  # Phase 2 Week 5: HDR Infrastructure tests
+    # Note: test_hdr_infrastructure.cpp moved to separate GTest executable
 )
 
 if(VE_ENABLE_QT_UI_TESTS)
@@ -41,8 +42,17 @@ if(VE_ENABLE_QT_UI_TESTS)
     target_compile_definitions(unit_tests PRIVATE VE_ENABLE_QT_UI_TESTS)
 endif()
 
+# HDR Infrastructure Test Suite (uses GTest)
+add_executable(test_hdr_infrastructure test_hdr_infrastructure.cpp)
+target_link_libraries(test_hdr_infrastructure PRIVATE VideoEditor::media_io GTest::gtest GTest::gtest_main)
+target_include_directories(test_hdr_infrastructure PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/media_io/include
+    ${CMAKE_SOURCE_DIR}/src/core/include
+)
+
 include(CTest)
 add_test(NAME unit_tests COMMAND unit_tests)
+add_test(NAME test_hdr_infrastructure COMMAND test_hdr_infrastructure)
 
 # Minimal gfx header compile test (no Catch2) to ensure public headers stay clean
 add_executable(test_gfx_headers test_gfx_headers.cpp)
@@ -53,7 +63,7 @@ add_test(NAME test_gfx_headers COMMAND test_gfx_headers)
 add_executable(gpu_test_suite 
     ${CMAKE_SOURCE_DIR}/src/gfx/gpu_test_suite.cpp
 )
-target_link_libraries(gpu_test_suite PRIVATE ve_gfx)
+target_link_libraries(gpu_test_suite PRIVATE ve_gfx GTest::gtest GTest::gtest_main)
 target_include_directories(gpu_test_suite PRIVATE
     ${CMAKE_SOURCE_DIR}/src/gfx
     ${CMAKE_SOURCE_DIR}/src/gfx/include
