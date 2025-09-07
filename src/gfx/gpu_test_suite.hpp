@@ -15,12 +15,8 @@
 
 // Include all GPU system components  
 #include "gfx/graphics_device.hpp"
-#include "vulkan_backend.hpp"
-#include "d3d11_backend.hpp"
-#include "compute_pipeline.hpp"
-#include "advanced_shader_effects.hpp"
-#include "gpu_memory_optimizer.hpp"
-#include "cross_platform_compatibility.hpp"
+#include "gfx/vk_instance.hpp"
+#include "gfx/vk_device.hpp"
 
 namespace video_editor::gfx::test {
 

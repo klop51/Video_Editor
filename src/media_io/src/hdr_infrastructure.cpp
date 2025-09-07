@@ -499,10 +499,10 @@ HDRMetadata HDRInfrastructure::parse_hdr_metadata(const std::vector<uint8_t>& st
         metadata.hdr_standard = HDRStandard::NONE;
         metadata.transfer_function = TransferFunction::UNKNOWN;
         metadata.color_primaries = ColorPrimaries::UNKNOWN;
-        metadata.max_luminance = 100.0f;
-        metadata.min_luminance = 0.01f;
-        metadata.max_content_light_level = 0;
-        metadata.max_frame_average_light_level = 0;
+        metadata.mastering_display.max_display_mastering_luminance = 100.0f;
+        metadata.mastering_display.min_display_mastering_luminance = 0.01f;
+        metadata.content_light_level.max_content_light_level = 0;
+        metadata.content_light_level.max_frame_average_light_level = 0;
         return metadata;
     }
     
@@ -520,11 +520,11 @@ HDRMetadata HDRInfrastructure::parse_hdr_metadata(const std::vector<uint8_t>& st
         uint32_t max_lum_raw = (data[16] << 24) | (data[17] << 16) | (data[18] << 8) | data[19];
         uint32_t min_lum_raw = (data[20] << 24) | (data[21] << 16) | (data[22] << 8) | data[23];
         
-        metadata.max_luminance = static_cast<float>(max_lum_raw) / 10000.0f; // Convert to nits
-        metadata.min_luminance = static_cast<float>(min_lum_raw) / 10000.0f;
+        metadata.mastering_display.max_display_mastering_luminance = static_cast<float>(max_lum_raw) / 10000.0f; // Convert to nits
+        metadata.mastering_display.min_display_mastering_luminance = static_cast<float>(min_lum_raw) / 10000.0f;
     } else {
-        metadata.max_luminance = 1000.0f; // Default HDR10 max
-        metadata.min_luminance = 0.01f;   // Default HDR10 min
+        metadata.mastering_display.max_display_mastering_luminance = 1000.0f; // Default HDR10 max
+        metadata.mastering_display.min_display_mastering_luminance = 0.01f;   // Default HDR10 min
     }
     
     // Parse content light levels
@@ -532,8 +532,8 @@ HDRMetadata HDRInfrastructure::parse_hdr_metadata(const std::vector<uint8_t>& st
         uint16_t max_cll = (data[24] << 8) | data[25];
         uint16_t max_fall = (data[26] << 8) | data[27];
         
-        metadata.max_content_light_level = max_cll;
-        metadata.max_frame_average_light_level = max_fall;
+        metadata.content_light_level.max_content_light_level = max_cll;
+        metadata.content_light_level.max_frame_average_light_level = max_fall;
     }
     
     return metadata;
@@ -556,14 +556,14 @@ HDRMetadata HDRInfrastructure::convert_color_space(const HDRMetadata& source_met
             
         case TransferFunction::HLG:
             // Adjust for HLG's different luminance range
-            converted_metadata.max_luminance = std::min(converted_metadata.max_luminance, 1000.0f);
+            converted_metadata.mastering_display.max_display_mastering_luminance = std::min(converted_metadata.mastering_display.max_display_mastering_luminance, 1000.0f);
             break;
             
         case TransferFunction::BT709:
         case TransferFunction::BT2020:
             // SDR conversion - clamp to SDR range
-            converted_metadata.max_luminance = 100.0f;
-            converted_metadata.min_luminance = 0.1f;
+            converted_metadata.mastering_display.max_display_mastering_luminance = 100.0f;
+            converted_metadata.mastering_display.min_display_mastering_luminance = 0.1f;
             break;
             
         default:
@@ -584,10 +584,10 @@ HDRMetadata HDRInfrastructure::convert_color_space(const HDRMetadata& source_met
             conversion_factor = 0.92f; // Approximate factor for DCI-P3 to BT.709
         }
         
-        converted_metadata.max_content_light_level = 
-            static_cast<uint16_t>(converted_metadata.max_content_light_level * conversion_factor);
-        converted_metadata.max_frame_average_light_level = 
-            static_cast<uint16_t>(converted_metadata.max_frame_average_light_level * conversion_factor);
+        converted_metadata.content_light_level.max_content_light_level = 
+            static_cast<uint16_t>(converted_metadata.content_light_level.max_content_light_level * conversion_factor);
+        converted_metadata.content_light_level.max_frame_average_light_level = 
+            static_cast<uint16_t>(converted_metadata.content_light_level.max_frame_average_light_level * conversion_factor);
     }
     
     return converted_metadata;

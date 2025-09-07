@@ -288,7 +288,7 @@ ModernCodecPerformanceRequirements ModernCodecDetector::estimate_performance_req
     req.requires_modern_gpu = requires_modern_hardware(codec_info);
     
     // Bandwidth requirements (estimated from resolution and codec efficiency)
-    req.bandwidth_kbps = static_cast<uint64_t>(static_cast<double>(pixel_count) * 0.1 / codec_info.compression_efficiency);
+    req.bandwidth_kbps = static_cast<uint64_t>(static_cast<double>(pixel_count) * static_cast<double>(0.1) / codec_info.compression_efficiency);
     req.adaptive_streaming_capable = (codec_info.codec_family == CodecFamily::AV1 || 
                                      codec_info.codec_family == CodecFamily::VP9);
     
@@ -304,7 +304,7 @@ bool ModernCodecDetector::validate_streaming_compatibility(const ModernCodecInfo
     
     // Estimate required bandwidth based on resolution and efficiency
     uint64_t estimated_bandwidth = static_cast<uint64_t>(
-        static_cast<double>(codec_info.width) * static_cast<double>(codec_info.height) * 0.1 / codec_info.compression_efficiency
+        static_cast<double>(codec_info.width) * static_cast<double>(codec_info.height) * static_cast<double>(0.1) / codec_info.compression_efficiency
     );
     
     return estimated_bandwidth <= target_bandwidth_kbps;
