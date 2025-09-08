@@ -124,7 +124,7 @@ Resolution HighResolutionSupport::getResolutionInfo(uint32_t width, uint32_t hei
 
 MemoryStrategy HighResolutionSupport::getOptimalMemoryStrategy(const Resolution& resolution) const {
     uint64_t pixels = resolution.total_pixels;
-    size_t memory_req_gb = calculateMemoryRequirement(resolution, "YUV420P") / (1024 * 1024 * 1024);
+    [[maybe_unused]] size_t memory_req_gb = calculateMemoryRequirement(resolution, "YUV420P") / (1024 * 1024 * 1024);
     
     if (pixels >= UHD_8K_PIXELS) {
         // 8K requires streaming for most systems
@@ -473,7 +473,7 @@ size_t HighResolutionSupport::calculateRGBMemorySize(uint32_t width, uint32_t he
     return static_cast<size_t>(width) * height * 3 * bytes_per_component;
 }
 
-PerformanceTier HighResolutionSupport::classifyPerformanceTier(uint64_t total_pixels, size_t memory_requirement_gb) const {
+PerformanceTier HighResolutionSupport::classifyPerformanceTier(uint64_t total_pixels, size_t memory_requirement_gb [[maybe_unused]]) const {
     if (total_pixels >= UHD_8K_PIXELS) {
         // 8K classification
         if (system_capabilities_.total_ram_gb >= 64 && system_capabilities_.hardware_decode_available) {
@@ -628,7 +628,7 @@ std::vector<EightKStreamingManager::TileInfo> EightKStreamingManager::calculateT
     return tiles;
 }
 
-bool EightKStreamingManager::processTile(const TileInfo& tile, const void* input_data, void* output_data) {
+bool EightKStreamingManager::processTile(const TileInfo& tile [[maybe_unused]], const void* input_data [[maybe_unused]], void* output_data [[maybe_unused]]) {
     if (!is_initialized_) {
         return false;
     }

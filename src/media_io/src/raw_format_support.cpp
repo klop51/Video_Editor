@@ -69,7 +69,7 @@ RAWFormat RAWFormatSupport::detectRAWFormat(const std::string& file_path) const 
         if (file.is_open()) {
             uint8_t header[64];
             file.read(reinterpret_cast<char*>(header), sizeof(header));
-            size_t bytes_read = file.gcount();
+            size_t bytes_read = static_cast<size_t>(file.gcount());
             file.close();
             
             RAWFormat header_format = detectRAWFormat(header, bytes_read);
@@ -88,7 +88,7 @@ RAWFormat RAWFormatSupport::detectRAWFormat(const std::string& file_path) const 
 
     uint8_t header[64];
     file.read(reinterpret_cast<char*>(header), sizeof(header));
-    size_t bytes_read = file.gcount();
+    size_t bytes_read = static_cast<size_t>(file.gcount());
     file.close();
 
     return detectRAWFormat(header, bytes_read);
@@ -176,7 +176,7 @@ bool RAWFormatSupport::analyzeRAWFrame(const std::string& file_path, RAWFrameInf
         return false;
     }
 
-    frame_info.frame_size_bytes = file.tellg();
+    frame_info.frame_size_bytes = static_cast<size_t>(file.tellg());
     file.seekg(0, std::ios::beg);
 
     // Read initial header for analysis
@@ -206,7 +206,7 @@ bool RAWFormatSupport::analyzeRAWFrame(const std::string& file_path, RAWFrameInf
     }
 }
 
-bool RAWFormatSupport::analyzeREDFrame(const uint8_t* header, RAWFrameInfo& frame_info) const {
+bool RAWFormatSupport::analyzeREDFrame(const uint8_t* header [[maybe_unused]], RAWFrameInfo& frame_info) const {
     // RED R3D frame analysis - simplified implementation
     // In production, would use RED SDK for proper parsing
     
@@ -225,7 +225,7 @@ bool RAWFormatSupport::analyzeREDFrame(const uint8_t* header, RAWFrameInfo& fram
     return true;
 }
 
-bool RAWFormatSupport::analyzeARRIFrame(const uint8_t* header, RAWFrameInfo& frame_info) const {
+bool RAWFormatSupport::analyzeARRIFrame(const uint8_t* header [[maybe_unused]], RAWFrameInfo& frame_info) const {
     // ARRI RAW frame analysis - simplified implementation
     
     frame_info.bit_depth = 12; // ARRI typically uses 12-bit
@@ -241,7 +241,7 @@ bool RAWFormatSupport::analyzeARRIFrame(const uint8_t* header, RAWFrameInfo& fra
     return true;
 }
 
-bool RAWFormatSupport::analyzeBRAWFrame(const uint8_t* header, RAWFrameInfo& frame_info) const {
+bool RAWFormatSupport::analyzeBRAWFrame(const uint8_t* header [[maybe_unused]], RAWFrameInfo& frame_info) const {
     // Blackmagic RAW frame analysis
     
     frame_info.bit_depth = 12; // BRAW uses 12-bit
@@ -257,7 +257,7 @@ bool RAWFormatSupport::analyzeBRAWFrame(const uint8_t* header, RAWFrameInfo& fra
     return true;
 }
 
-bool RAWFormatSupport::analyzeCinemaDNGFrame(const std::string& file_path, RAWFrameInfo& frame_info) const {
+bool RAWFormatSupport::analyzeCinemaDNGFrame(const std::string& file_path [[maybe_unused]], RAWFrameInfo& frame_info) const {
     // Cinema DNG analysis - TIFF-based format
     
     frame_info.bit_depth = 14; // Cinema DNG typically 14-bit
@@ -273,7 +273,7 @@ bool RAWFormatSupport::analyzeCinemaDNGFrame(const std::string& file_path, RAWFr
     return true;
 }
 
-bool RAWFormatSupport::analyzeProResRAWFrame(const uint8_t* header, RAWFrameInfo& frame_info) const {
+bool RAWFormatSupport::analyzeProResRAWFrame(const uint8_t* header [[maybe_unused]], RAWFrameInfo& frame_info) const {
     // ProRes RAW frame analysis
     
     frame_info.bit_depth = 12; // ProRes RAW uses 12-bit
@@ -381,7 +381,7 @@ BayerPattern RAWFormatSupport::detectBayerPattern(const uint8_t* raw_data, uint3
     // Sample the first 2x2 block and analyze color distribution
     // This is a simplified heuristic - real detection requires more sophisticated analysis
     
-    uint32_t r_count = 0, g_count = 0, b_count = 0;
+    [[maybe_unused]] uint32_t r_count = 0, g_count = 0, b_count = 0;
     
     // Analyze a small sample area
     for (uint32_t y = 0; y < std::min(8u, height); y += 2) {
@@ -391,7 +391,7 @@ BayerPattern RAWFormatSupport::detectBayerPattern(const uint8_t* raw_data, uint3
             // proper color channel analysis
             
             size_t idx = y * width + x;
-            uint16_t val = *reinterpret_cast<const uint16_t*>(&raw_data[idx * 2]);
+            [[maybe_unused]] uint16_t val = *reinterpret_cast<const uint16_t*>(&raw_data[idx * 2]);
             
             if ((x + y) % 3 == 0) r_count++;
             else if ((x + y) % 3 == 1) g_count++;
@@ -488,7 +488,7 @@ void RAWFormatSupport::debayerBilinear(const uint8_t* raw_data, uint8_t* rgb_out
             
             // Get surrounding raw values
             auto getRawValue = [&](int32_t dx, int32_t dy) -> uint16_t {
-                size_t idx = ((y + dy) * width + (x + dx)) * 2;
+                size_t idx = ((static_cast<uint32_t>(y) + static_cast<uint32_t>(dy)) * width + (static_cast<uint32_t>(x) + static_cast<uint32_t>(dx))) * 2;
                 return *reinterpret_cast<const uint16_t*>(&raw_data[idx]);
             };
             
@@ -596,7 +596,7 @@ bool RAWFormatSupport::generatePreview(const std::string& file_path, uint8_t* pr
     
     size_t raw_data_size = preview_width * preview_height * 2; // 16-bit per pixel
     std::vector<uint8_t> raw_data(raw_data_size);
-    file.read(reinterpret_cast<char*>(raw_data.data()), raw_data_size);
+    file.read(reinterpret_cast<char*>(raw_data.data()), static_cast<std::streamsize>(raw_data_size));
     file.close();
 
     // Set up preview frame info
