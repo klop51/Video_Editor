@@ -45,7 +45,7 @@ bool HighBitDepthSupport::isFormatSupported(HighBitDepthFormat format) const {
     return std::find(supported.begin(), supported.end(), format) != supported.end();
 }
 
-HighBitDepthFormat HighBitDepthSupport::detectFormat(const uint8_t* data, size_t size) const {
+HighBitDepthFormat HighBitDepthSupport::detectFormat([[maybe_unused]] const uint8_t* data, size_t size) const {
     // Simple format detection based on data patterns
     // In real implementation, this would analyze FFmpeg codec info
     
@@ -224,7 +224,7 @@ size_t HighBitDepthSupport::calculateMemoryRequirement(
     }
     
     size_t bytes_per_sample = (info.bits_per_component + 7) / 8;
-    size_t samples_per_pixel = info.components_per_pixel;
+    [[maybe_unused]] size_t samples_per_pixel = info.components_per_pixel;
     
     // Account for chroma subsampling
     double chroma_factor = 1.0;
@@ -238,7 +238,7 @@ size_t HighBitDepthSupport::calculateMemoryRequirement(
         chroma_factor = 2.0;  // Y + 0.5*U + 0.5*V
     }
     
-    return static_cast<size_t>(width * height * bytes_per_sample * chroma_factor);
+    return static_cast<size_t>(static_cast<double>(width) * static_cast<double>(height) * static_cast<double>(bytes_per_sample) * chroma_factor);
 }
 
 void HighBitDepthSupport::applyDithering(
@@ -468,17 +468,17 @@ void HighBitDepthSupport::floydSteinbergDither(
             size_t idx = y * width + x;
             
             // Apply accumulated error
-            int32_t old_pixel = source[idx] + error_buffer[idx];
+            int32_t old_pixel = static_cast<int32_t>(source[idx]) + error_buffer[idx];
             old_pixel = std::clamp(old_pixel, 0, static_cast<int32_t>(source_max));
             
             // Quantize to destination bit depth
             uint8_t new_pixel = static_cast<uint8_t>(
-                (old_pixel * dest_max + source_max/2) / source_max
+                (static_cast<uint32_t>(old_pixel) * dest_max + source_max/2) / source_max
             );
             destination[idx] = new_pixel;
             
             // Calculate quantization error
-            int32_t quant_error = old_pixel - (new_pixel * source_max / dest_max);
+            int32_t quant_error = old_pixel - static_cast<int32_t>((static_cast<uint32_t>(new_pixel) * source_max / dest_max));
             
             // Distribute error to neighboring pixels
             if (x + 1 < width) {
@@ -510,7 +510,7 @@ double HighBitDepthSupport::calculatePSNR(
         double diff = static_cast<double>(reference[i]) - static_cast<double>(processed[i]);
         mse += diff * diff;
     }
-    mse /= reference.size();
+    mse /= static_cast<double>(reference.size());
     
     if (mse == 0.0) {
         return 100.0;  // Perfect match
@@ -523,8 +523,8 @@ double HighBitDepthSupport::calculatePSNR(
 double HighBitDepthSupport::calculateSSIM(
     const std::vector<uint16_t>& reference,
     const std::vector<uint16_t>& processed,
-    uint32_t width,
-    uint32_t height) const {
+    [[maybe_unused]] uint32_t width,
+    [[maybe_unused]] uint32_t height) const {
     
     // Simplified SSIM calculation (normally would use sliding window)
     if (reference.size() != processed.size() || reference.empty()) {
@@ -532,8 +532,8 @@ double HighBitDepthSupport::calculateSSIM(
     }
     
     // Calculate means
-    double mean_ref = std::accumulate(reference.begin(), reference.end(), 0.0) / reference.size();
-    double mean_proc = std::accumulate(processed.begin(), processed.end(), 0.0) / processed.size();
+    double mean_ref = std::accumulate(reference.begin(), reference.end(), 0.0) / static_cast<double>(reference.size());
+    double mean_proc = std::accumulate(processed.begin(), processed.end(), 0.0) / static_cast<double>(processed.size());
     
     // Calculate variances and covariance
     double var_ref = 0.0, var_proc = 0.0, covar = 0.0;
@@ -547,9 +547,9 @@ double HighBitDepthSupport::calculateSSIM(
         covar += diff_ref * diff_proc;
     }
     
-    var_ref /= reference.size();
-    var_proc /= reference.size();
-    covar /= reference.size();
+    var_ref /= static_cast<double>(reference.size());
+    var_proc /= static_cast<double>(reference.size());
+    covar /= static_cast<double>(reference.size());
     
     // SSIM constants (scaled for 16-bit)
     double c1 = 416.25;     // (0.01 * 65535 / 10)^2 
@@ -612,7 +612,7 @@ uint32_t HighBitDepthSupport::countOutOfRangePixels(const HighBitDepthFrame& fra
 bool HighBitDepthSupport::convertWithDithering(
     const HighBitDepthFrame& source,
     HighBitDepthFrame& destination,
-    DitheringMethod dithering) const {
+    [[maybe_unused]] DitheringMethod dithering) const {
     
     // Simple conversion with dithering - full implementation would handle all format combinations
     if (source.planes.empty() || destination.planes.empty()) {
@@ -651,12 +651,12 @@ bool HighBitDepthSupport::convertWithUpscaling(
             // 8-bit to 16-bit
             uint16_t* dst_data = reinterpret_cast<uint16_t*>(dst_plane.data());
             for (size_t i = 0; i < src_plane.size() && i * 2 < dst_plane.size(); ++i) {
-                dst_data[i] = static_cast<uint16_t>(src_plane[i]) << bit_shift;
+                dst_data[i] = static_cast<uint16_t>(static_cast<uint16_t>(src_plane[i]) << bit_shift);
             }
         } else {
             // Same bit depth or other combinations
             size_t copy_size = std::min(src_plane.size(), dst_plane.size());
-            std::copy(src_plane.begin(), src_plane.begin() + copy_size, dst_plane.begin());
+            std::copy(src_plane.begin(), src_plane.begin() + static_cast<std::vector<uint8_t>::difference_type>(copy_size), dst_plane.begin());
         }
     }
     
@@ -674,7 +674,7 @@ bool HighBitDepthSupport::convertSameBitDepth(
     
     for (size_t i = 0; i < std::min(source.planes.size(), destination.planes.size()); ++i) {
         size_t copy_size = std::min(source.planes[i].size(), destination.planes[i].size());
-        std::copy(source.planes[i].begin(), source.planes[i].begin() + copy_size, destination.planes[i].begin());
+        std::copy(source.planes[i].begin(), source.planes[i].begin() + static_cast<std::vector<uint8_t>::difference_type>(copy_size), destination.planes[i].begin());
     }
     
     return true;
@@ -695,7 +695,7 @@ void HighBitDepthSupport::extractLumaData(
         // Convert 8-bit to 16-bit for comparison
         luma_data.resize(luma_plane.size());
         for (size_t i = 0; i < luma_plane.size(); ++i) {
-            luma_data[i] = static_cast<uint16_t>(luma_plane[i]) << 8;
+            luma_data[i] = static_cast<uint16_t>(static_cast<uint16_t>(luma_plane[i]) << 8);
         }
     } else {
         // Already 16-bit

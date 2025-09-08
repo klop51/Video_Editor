@@ -1,4 +1,7 @@
-// #include "gpu_test_suite.hpp"
+// GPU System Comprehensive Test Suite Implementation
+// Production-ready testing implementation for all GPU system components
+
+#include "gpu_test_suite.hpp"
 #include "advanced_shader_effects.hpp"
 #include "graphics_device_bridge.hpp"
 #include "compute_shader_system.hpp"
@@ -9,11 +12,7 @@
 #include <cmath>
 #include <random>
 #include <iomanip>
-#include <future> Comprehensive Test Suite Implementation
-// Production-ready testing implementation for all GPU system components
-
-#include "gpu_test_suite.hpp"
-#include "advanced_shader_effects.hpp"
+#include <future>
 #include <iostream>
 #include <fstream>
 #include <algorithm>

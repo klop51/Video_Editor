@@ -198,9 +198,9 @@ LogFormat LogFormatSupport::detect_from_histogram(const uint8_t* data, uint32_t 
     // Calculate distribution characteristics
     float low_count = 0, mid_count = 0, high_count = 0;
     for (uint32_t i = 0; i < histogram_bins; ++i) {
-        if (i < 85) low_count += histogram[i];
-        else if (i < 170) mid_count += histogram[i];
-        else high_count += histogram[i];
+        if (i < 85) low_count += static_cast<float>(histogram[i]);
+        else if (i < 170) mid_count += static_cast<float>(histogram[i]);
+        else high_count += static_cast<float>(histogram[i]);
     }
     
     float total = static_cast<float>(size);
@@ -247,7 +247,7 @@ bool LogFormatSupport::log_to_linear(const float* input_data, float* output_data
         
         // Convert each channel
         for (int channel = 0; channel < 3; ++channel) {
-            float log_value = input_data[idx + channel];
+            float log_value = input_data[idx + static_cast<uint32_t>(channel)];
             
             // Apply exposure adjustment in log space
             log_value *= exposure_multiplier;
@@ -283,7 +283,7 @@ bool LogFormatSupport::log_to_linear(const float* input_data, float* output_data
             linear_value += config.lift;
             linear_value = std::pow(linear_value, config.gamma_adjustment);
             
-            output_data[idx + channel] = std::max(0.0f, linear_value);
+            output_data[idx + static_cast<uint32_t>(channel)] = std::max(0.0f, linear_value);
         }
     }
     
@@ -307,7 +307,7 @@ float LogFormatSupport::slog3_to_linear(float log_value) {
 float LogFormatSupport::linear_to_slog3(float linear_value) {
     const float a = 420.0f / 1023.0f;
     const float b = 261.5f / 1023.0f;
-    const float c = 0.432699f;
+    [[maybe_unused]] const float c = 0.432699f;
     const float d = 0.037584f;
     
     if (linear_value >= 0.0f) {
@@ -390,7 +390,7 @@ float LogFormatSupport::linear_to_bmlog(float linear_value) {
 // Panasonic V-Log conversion functions
 float LogFormatSupport::vlog_to_linear(float log_value) {
     const float cut1 = 0.181f;
-    const float cut2 = 0.0f;
+    [[maybe_unused]] const float cut2 = 0.0f;
     const float a = 5.6f;
     const float b = 0.125f;
     const float c = 0.241514f;
@@ -405,7 +405,7 @@ float LogFormatSupport::vlog_to_linear(float log_value) {
 
 float LogFormatSupport::linear_to_vlog(float linear_value) {
     const float cut1 = 0.01f;
-    const float cut2 = 0.0f;
+    [[maybe_unused]] const float cut2 = 0.0f;
     const float a = 5.6f;
     const float b = 0.125f;
     const float c = 0.241514f;
@@ -497,7 +497,7 @@ bool LogFormatSupport::requires_3d_lut(LogFormat format) {
     }
 }
 
-float LogFormatSupport::calculate_exposure_multiplier(float stops, LogFormat format) {
+float LogFormatSupport::calculate_exposure_multiplier(float stops, [[maybe_unused]] LogFormat format) {
     // In log space, exposure adjustment is typically linear
     // Each stop represents a doubling/halving of exposure
     return std::pow(2.0f, stops);

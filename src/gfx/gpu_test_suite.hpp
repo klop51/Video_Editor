@@ -4,6 +4,7 @@
 
 #pragma once
 
+#define NOMINMAX  // Prevent Windows.h from defining min/max macros
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 #include <memory>
@@ -15,6 +16,7 @@
 
 // Include all GPU system components  
 #include "gfx/graphics_device.hpp"
+#include "gfx/graphics_device_bridge.hpp"
 #include "gfx/vk_instance.hpp"
 #include "gfx/vk_device.hpp"
 
@@ -151,6 +153,9 @@ private:
     bool validate_performance_target(const std::string& operation, double target_ms);
     void setup_test_environment();
     void cleanup_test_environment();
+    
+    // Helper methods
+    TextureHandle create_test_pattern_texture(GraphicsDevice* device, uint32_t width, uint32_t height);
     
     // Memory monitoring
     size_t get_current_memory_usage();

@@ -115,9 +115,9 @@ public:
     ~ComputeBuffer() = default;
 
     // Buffer management
-    Core::Result<void> create(GraphicsDevice* device, const ComputeBufferDesc& desc);
-    Core::Result<void> upload_data(const void* data, size_t size);
-    Core::Result<void> download_data(void* data, size_t size);
+    ve::core::Result<void> create(GraphicsDevice* device, const ComputeBufferDesc& desc);
+    ve::core::Result<void> upload_data(const void* data, size_t size);
+    ve::core::Result<void> download_data(void* data, size_t size);
     void release();
 
     // Resource views
@@ -151,9 +151,9 @@ public:
     ~ComputeTexture() = default;
 
     // Texture management
-    Core::Result<void> create_2d(GraphicsDevice* device, uint32_t width, uint32_t height, 
+    ve::core::Result<void> create_2d(GraphicsDevice* device, uint32_t width, uint32_t height, 
                                  DXGI_FORMAT format, bool allow_uav = true);
-    Core::Result<void> create_3d(GraphicsDevice* device, uint32_t width, uint32_t height, 
+    ve::core::Result<void> create_3d(GraphicsDevice* device, uint32_t width, uint32_t height, 
                                  uint32_t depth, DXGI_FORMAT format, bool allow_uav = true);
     void release();
 
@@ -192,8 +192,8 @@ public:
     ~ComputeShader() = default;
 
     // Shader compilation and management
-    Core::Result<void> create_from_source(GraphicsDevice* device, const ComputeShaderDesc& desc);
-    Core::Result<void> create_from_file(GraphicsDevice* device, const std::string& file_path,
+    ve::core::Result<void> create_from_source(GraphicsDevice* device, const ComputeShaderDesc& desc);
+    ve::core::Result<void> create_from_file(GraphicsDevice* device, const std::string& file_path,
                                        const std::string& entry_point = "cs_main");
     void release();
 
@@ -205,11 +205,11 @@ public:
     void bind_buffer_uav(uint32_t slot, ComputeBuffer* buffer);
 
     // Execution
-    Core::Result<ComputePerformanceMetrics> dispatch(const ComputeDispatchParams& params);
-    Core::Result<ComputePerformanceMetrics> dispatch_1d(uint32_t num_elements, uint32_t threads_per_group = 64);
-    Core::Result<ComputePerformanceMetrics> dispatch_2d(uint32_t width, uint32_t height, 
+    ve::core::Result<ComputePerformanceMetrics> dispatch(const ComputeDispatchParams& params);
+    ve::core::Result<ComputePerformanceMetrics> dispatch_1d(uint32_t num_elements, uint32_t threads_per_group = 64);
+    ve::core::Result<ComputePerformanceMetrics> dispatch_2d(uint32_t width, uint32_t height, 
                                                         uint32_t threads_x = 8, uint32_t threads_y = 8);
-    Core::Result<ComputePerformanceMetrics> dispatch_3d(uint32_t width, uint32_t height, uint32_t depth,
+    ve::core::Result<ComputePerformanceMetrics> dispatch_3d(uint32_t width, uint32_t height, uint32_t depth,
                                                         uint32_t threads_x = 4, uint32_t threads_y = 4, uint32_t threads_z = 4);
 
     // Properties
@@ -218,7 +218,7 @@ public:
     bool is_valid() const { return shader_ != nullptr; }
 
 private:
-    Core::Result<void> compile_shader(const std::string& source, const ComputeShaderDesc& desc);
+    ve::core::Result<void> compile_shader(const std::string& source, const ComputeShaderDesc& desc);
     void clear_bindings();
     ComputePerformanceMetrics measure_performance(const ComputeDispatchParams& params);
 
@@ -250,7 +250,7 @@ public:
     ~ComputeContext() = default;
 
     // Context management
-    Core::Result<void> initialize(GraphicsDevice* device);
+    ve::core::Result<void> initialize(GraphicsDevice* device);
     void shutdown();
 
     // Resource creation
@@ -261,7 +261,7 @@ public:
     // Batch operations
     void begin_batch();
     void end_batch();
-    Core::Result<void> execute_batch();
+    ve::core::Result<void> execute_batch();
 
     // Memory management
     void flush_gpu_cache();
@@ -300,7 +300,7 @@ public:
     ~ComputeShaderSystem() = default;
 
     // System initialization
-    Core::Result<void> initialize(GraphicsDevice* device);
+    ve::core::Result<void> initialize(GraphicsDevice* device);
     void shutdown();
 
     // Context management
@@ -308,7 +308,7 @@ public:
     std::unique_ptr<ComputeContext> create_context();
 
     // Shader library management
-    Core::Result<ComputeShader*> load_shader(const std::string& name, const std::string& file_path);
+    ve::core::Result<ComputeShader*> load_shader(const std::string& name, const std::string& file_path);
     ComputeShader* get_shader(const std::string& name);
     void precompile_common_shaders();
 
