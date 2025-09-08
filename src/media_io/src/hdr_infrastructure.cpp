@@ -68,7 +68,7 @@ namespace {
     }
 }
 
-bool HDRInfrastructure::initialize(bool enable_hardware_acceleration) {
+bool HDRInfrastructure::initialize([[maybe_unused]] bool enable_hardware_acceleration) {
     // Initialize HDR processing subsystem
     // In real implementation, this would:
     // - Initialize GPU resources for HDR processing
@@ -81,7 +81,7 @@ bool HDRInfrastructure::initialize(bool enable_hardware_acceleration) {
 
 HDRMetadata HDRInfrastructure::detect_hdr_metadata(const uint8_t* stream_data, 
                                                    size_t data_size,
-                                                   int codec_hint) {
+                                                   [[maybe_unused]] int codec_hint) {
     HDRMetadata metadata;
     
     if (!stream_data || data_size < 8) {
@@ -371,7 +371,7 @@ ColorPrimaries HDRInfrastructure::detect_color_primaries(const uint8_t* data, si
     }
 }
 
-bool HDRInfrastructure::parse_hdr10_metadata(const uint8_t* data, size_t size, HDRMetadata& metadata) {
+bool HDRInfrastructure::parse_hdr10_metadata([[maybe_unused]] const uint8_t* data, size_t size, HDRMetadata& metadata) {
     if (size < 32) return false; // Minimum size for HDR10 metadata
     
     // Parse mastering display information (simplified)
@@ -517,8 +517,8 @@ HDRMetadata HDRInfrastructure::parse_hdr_metadata(const std::vector<uint8_t>& st
     // Parse luminance values (simplified parsing)
     if (size >= 24) {
         // Extract max/min luminance from metadata (example positions)
-        uint32_t max_lum_raw = (data[16] << 24) | (data[17] << 16) | (data[18] << 8) | data[19];
-        uint32_t min_lum_raw = (data[20] << 24) | (data[21] << 16) | (data[22] << 8) | data[23];
+        uint32_t max_lum_raw = (static_cast<uint32_t>(data[16]) << 24) | (static_cast<uint32_t>(data[17]) << 16) | (static_cast<uint32_t>(data[18]) << 8) | static_cast<uint32_t>(data[19]);
+        uint32_t min_lum_raw = (static_cast<uint32_t>(data[20]) << 24) | (static_cast<uint32_t>(data[21]) << 16) | (static_cast<uint32_t>(data[22]) << 8) | static_cast<uint32_t>(data[23]);
         
         metadata.mastering_display.max_display_mastering_luminance = static_cast<float>(max_lum_raw) / 10000.0f; // Convert to nits
         metadata.mastering_display.min_display_mastering_luminance = static_cast<float>(min_lum_raw) / 10000.0f;
@@ -529,8 +529,8 @@ HDRMetadata HDRInfrastructure::parse_hdr_metadata(const std::vector<uint8_t>& st
     
     // Parse content light levels
     if (size >= 32) {
-        uint16_t max_cll = (data[24] << 8) | data[25];
-        uint16_t max_fall = (data[26] << 8) | data[27];
+        uint16_t max_cll = static_cast<uint16_t>((static_cast<uint32_t>(data[24]) << 8) | static_cast<uint32_t>(data[25]));
+        uint16_t max_fall = static_cast<uint16_t>((static_cast<uint32_t>(data[26]) << 8) | static_cast<uint32_t>(data[27]));
         
         metadata.content_light_level.max_content_light_level = max_cll;
         metadata.content_light_level.max_frame_average_light_level = max_fall;
@@ -609,12 +609,12 @@ bool HDRInfrastructure::convert_color_space(const std::vector<float>& source_rgb
     
     // Apply color transformation matrix
     for (int i = 0; i < 3; ++i) {
-        target_rgb[i] = 0.0f;
+        target_rgb[static_cast<size_t>(i)] = 0.0f;
         for (int j = 0; j < 3; ++j) {
-            target_rgb[i] += matrix[i][j] * source_rgb[j];
+            target_rgb[static_cast<size_t>(i)] += matrix[i][j] * source_rgb[static_cast<size_t>(j)];
         }
         // Clamp to valid range
-        target_rgb[i] = std::max(0.0f, std::min(1.0f, target_rgb[i]));
+        target_rgb[static_cast<size_t>(i)] = std::max(0.0f, std::min(1.0f, target_rgb[static_cast<size_t>(i)]));
     }
     
     return true;
