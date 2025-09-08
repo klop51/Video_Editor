@@ -12,10 +12,12 @@
 #include <chrono>
 #include <atomic>
 #include <mutex>
+#include <shared_mutex>
 #include <thread>
 #include <algorithm>
 #include <functional>
 #include "graphics_device.hpp"
+#include "graphics_device_bridge.hpp"
 #include "include/gfx/texture_manager.hpp"
 
 namespace video_editor::gfx {

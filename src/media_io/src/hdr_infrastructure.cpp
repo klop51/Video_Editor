@@ -634,7 +634,7 @@ bool HDRInfrastructure::process_hdr_frame(const uint8_t* input_data,
         output_data.resize(input_size);
         
         // Basic tone mapping based on configuration
-        if (config.tone_mapping_enabled) {
+        if (config.enable_tone_mapping) {
             // Simple tone mapping implementation
             for (size_t i = 0; i < input_size; i += 3) { // Assuming RGB24
                 if (i + 2 < input_size) {
@@ -649,7 +649,7 @@ bool HDRInfrastructure::process_hdr_frame(const uint8_t* input_data,
                     b = b / (b + 1.0f);
                     
                     // Apply target peak brightness
-                    float scale = config.target_peak_brightness / metadata.peak_brightness;
+                    float scale = config.tone_mapping.target_peak_luminance / metadata.mastering_display.max_display_mastering_luminance;
                     if (scale > 1.0f) scale = 1.0f; // Don't brighten
                     
                     output_data[i] = static_cast<uint8_t>(r * scale * 255.0f);
