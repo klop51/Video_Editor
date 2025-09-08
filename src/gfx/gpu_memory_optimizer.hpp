@@ -16,7 +16,7 @@
 #include <algorithm>
 #include <functional>
 #include "graphics_device.hpp"
-#include "texture_manager.hpp"
+#include "include/gfx/texture_manager.hpp"
 
 namespace video_editor::gfx {
 

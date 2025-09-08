@@ -43,7 +43,7 @@ struct BezierCurve {
     Vec2 p0 = {0.0f, 0.0f};   // Start point
     Vec2 p1 = {0.33f, 0.33f}; // First control point
     Vec2 p2 = {0.66f, 0.66f}; // Second control point
-    Vec3 p3 = {1.0f, 1.0f};   // End point
+    Vec2 p3 = {1.0f, 1.0f};   // End point
     
     // Curve properties
     bool enabled = false;

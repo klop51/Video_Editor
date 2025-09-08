@@ -41,15 +41,15 @@ namespace {
     };
     
     // Transfer function constants
-    constexpr float PQ_M1 = 0.1593017578125f;
-    constexpr float PQ_M2 = 78.84375f;
-    constexpr float PQ_C1 = 0.8359375f;
-    constexpr float PQ_C2 = 18.8515625f;
-    constexpr float PQ_C3 = 18.6875f;
+    [[maybe_unused]] constexpr float PQ_M1 = 0.1593017578125f;
+    [[maybe_unused]] constexpr float PQ_M2 = 78.84375f;
+    [[maybe_unused]] constexpr float PQ_C1 = 0.8359375f;
+    [[maybe_unused]] constexpr float PQ_C2 = 18.8515625f;
+    [[maybe_unused]] constexpr float PQ_C3 = 18.6875f;
     
-    constexpr float HLG_A = 0.17883277f;
-    constexpr float HLG_B = 0.28466892f;
-    constexpr float HLG_C = 0.55991073f;
+    [[maybe_unused]] constexpr float HLG_A = 0.17883277f;
+    [[maybe_unused]] constexpr float HLG_B = 0.28466892f;
+    [[maybe_unused]] constexpr float HLG_C = 0.55991073f;
     
     // System capability detection helpers
     bool detect_hdr_display_support() {
@@ -618,6 +618,54 @@ bool HDRInfrastructure::convert_color_space(const std::vector<float>& source_rgb
     }
     
     return true;
+}
+
+bool HDRInfrastructure::process_hdr_frame(const uint8_t* input_data,
+                                        size_t input_size,
+                                        const HDRMetadata& metadata,
+                                        const HDRProcessingConfig& config,
+                                        std::vector<uint8_t>& output_data) {
+    if (!input_data || input_size == 0) {
+        return false;
+    }
+    
+    try {
+        // Resize output buffer to match input size for now
+        output_data.resize(input_size);
+        
+        // Basic tone mapping based on configuration
+        if (config.tone_mapping_enabled) {
+            // Simple tone mapping implementation
+            for (size_t i = 0; i < input_size; i += 3) { // Assuming RGB24
+                if (i + 2 < input_size) {
+                    // Apply simple tone mapping curve
+                    float r = input_data[i] / 255.0f;
+                    float g = input_data[i + 1] / 255.0f;
+                    float b = input_data[i + 2] / 255.0f;
+                    
+                    // Simple Reinhard tone mapping
+                    r = r / (r + 1.0f);
+                    g = g / (g + 1.0f);
+                    b = b / (b + 1.0f);
+                    
+                    // Apply target peak brightness
+                    float scale = config.target_peak_brightness / metadata.peak_brightness;
+                    if (scale > 1.0f) scale = 1.0f; // Don't brighten
+                    
+                    output_data[i] = static_cast<uint8_t>(r * scale * 255.0f);
+                    output_data[i + 1] = static_cast<uint8_t>(g * scale * 255.0f);
+                    output_data[i + 2] = static_cast<uint8_t>(b * scale * 255.0f);
+                }
+            }
+        } else {
+            // Just copy data if tone mapping is disabled
+            std::memcpy(output_data.data(), input_data, input_size);
+        }
+        
+        return true;
+    } catch (const std::exception&) {
+        return false;
+    }
 }
 
 } // namespace ve::media_io
