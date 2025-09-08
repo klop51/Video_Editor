@@ -801,7 +801,7 @@ uint16_t scaleBitDepth(uint16_t value, uint8_t from_bits, uint8_t to_bits) {
         return value >> (from_bits - to_bits);
     } else {
         // Increasing bit depth
-        return value << (to_bits - from_bits);
+        return static_cast<uint16_t>(value << (to_bits - from_bits));
     }
 }
 

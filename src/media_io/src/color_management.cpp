@@ -164,10 +164,10 @@ ColorConversionResult ColorManagement::convertColorSpace(
         total_delta_e += calculateDeltaE(source_color, converted);
     }
     
-    result.color_accuracy_delta_e = total_delta_e / source_colors.size();
-    result.gamut_coverage = 1.0 - (static_cast<double>(result.out_of_gamut_pixels) / source_colors.size());
+    result.color_accuracy_delta_e = total_delta_e / static_cast<double>(source_colors.size());
+    result.gamut_coverage = 1.0 - (static_cast<double>(result.out_of_gamut_pixels) / static_cast<double>(source_colors.size()));
     
-    if (result.out_of_gamut_pixels > source_colors.size() * 0.1) {
+    if (result.out_of_gamut_pixels > static_cast<uint32_t>(static_cast<double>(source_colors.size()) * 0.1)) {
         result.warning_message = "High percentage of out-of-gamut pixels detected";
     }
     
@@ -197,7 +197,7 @@ RGBColor ColorManagement::convertSingleColor(
     return source;  // Fallback
 }
 
-GamutBoundary ColorManagement::calculateGamutBoundary(ColorSpace space) const {
+GamutBoundary ColorManagement::calculateGamutBoundary(ColorSpace space [[maybe_unused]]) const {
     GamutBoundary boundary;
     
     // Calculate approximate gamut boundary by sampling RGB cube edges
@@ -415,7 +415,7 @@ double ColorManagement::calculateDeltaE(const RGBColor& color1, const RGBColor& 
     return std::sqrt(0.3 * dr * dr + 0.59 * dg * dg + 0.11 * db * db) * 100.0;
 }
 
-double ColorManagement::calculateGamutUtilization(const std::vector<RGBColor>& colors, ColorSpace space) const {
+double ColorManagement::calculateGamutUtilization(const std::vector<RGBColor>& colors, ColorSpace space [[maybe_unused]]) const {
     if (colors.empty()) {
         return 0.0;
     }
@@ -456,7 +456,7 @@ bool ColorManagement::validateColorAccuracy(
         total_delta_e += delta_e;
     }
     
-    double average_delta_e = total_delta_e / reference.size();
+    double average_delta_e = total_delta_e / static_cast<double>(reference.size());
     return average_delta_e <= acceptable_delta_e;
 }
 
@@ -553,7 +553,7 @@ ColorMatrix ColorManagement::multiplyMatrices(const ColorMatrix& a, const ColorM
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 3; ++j) {
             for (int k = 0; k < 3; ++k) {
-                result[i][j] += a[i][k] * b[k][j];
+                result[static_cast<std::size_t>(i)][static_cast<std::size_t>(j)] += a[static_cast<std::size_t>(i)][static_cast<std::size_t>(k)] * b[static_cast<std::size_t>(k)][static_cast<std::size_t>(j)];
             }
         }
     }
@@ -620,7 +620,7 @@ RGBColor ColorManagement::xyzToRGB(const XYZColor& xyz, ColorSpace space) const 
     return rgb;
 }
 
-RGBColor ColorManagement::clipToGamut(const RGBColor& color, ColorSpace space) const {
+RGBColor ColorManagement::clipToGamut(const RGBColor& color, ColorSpace space [[maybe_unused]]) const {
     // Simple hard clipping to [0, 1] range
     return {
         clamp(color.R, 0.0, 1.0),
@@ -629,7 +629,7 @@ RGBColor ColorManagement::clipToGamut(const RGBColor& color, ColorSpace space) c
     };
 }
 
-RGBColor ColorManagement::perceptualGamutMap(const RGBColor& color, ColorSpace space, double factor) const {
+RGBColor ColorManagement::perceptualGamutMap(const RGBColor& color, ColorSpace space [[maybe_unused]], double factor) const {
     // Simplified perceptual gamut mapping
     // Real implementation would use more sophisticated algorithms
     
@@ -742,7 +742,7 @@ bool ColorManagement::isValidRGB(const RGBColor& color) const {
             color.B >= 0.0 && color.B <= 1.0);
 }
 
-double ColorManagement::luminance(const RGBColor& color, ColorSpace space) const {
+double ColorManagement::luminance(const RGBColor& color, ColorSpace space [[maybe_unused]]) const {
     // BT.709 luminance coefficients (approximate for all spaces)
     return 0.2126 * color.R + 0.7152 * color.G + 0.0722 * color.B;
 }
@@ -800,7 +800,7 @@ RGBColor srgbToBt709(const RGBColor& srgb_color) {
 }
 
 WorkflowRecommendation getWorkflowRecommendation(
-    ColorSpace source_space,
+    ColorSpace source_space [[maybe_unused]],
     const std::string& target_delivery,
     bool hdr_workflow) {
     
@@ -864,7 +864,7 @@ ColorAccuracyReport validateWorkflow(
     if (report.average_delta_e > 3.0) {
         report.recommendations.push_back("Consider using perceptual gamut mapping for better color preservation");
     }
-    if (report.failing_pixels > source_colors.size() * 0.05) {
+    if (report.failing_pixels > static_cast<uint32_t>(static_cast<double>(source_colors.size()) * 0.05)) {
         report.recommendations.push_back("High number of out-of-gamut pixels - consider wider working color space");
     }
     if (report.color_fidelity_score < 0.8) {
