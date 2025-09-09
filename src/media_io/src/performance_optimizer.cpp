@@ -338,7 +338,7 @@ void PredictiveFrameCache::evict_least_likely() {
     
     for (auto it = cache_.begin(); it != cache_.end(); ++it) {
         auto age = std::chrono::duration_cast<std::chrono::seconds>(now - it->second.last_access).count();
-        double score = it->second.access_probability / (1.0 + age * 0.1);
+        double score = it->second.access_probability / (1.0 + static_cast<double>(age) * 0.1);
         
         if (score < lowest_score) {
             lowest_score = score;
@@ -629,7 +629,7 @@ void PerformanceOptimizer::set_max_decode_threads(size_t thread_count) {
     }
 }
 
-void PerformanceOptimizer::decode_worker_thread(int thread_id) {
+void PerformanceOptimizer::decode_worker_thread([[maybe_unused]] int thread_id) {
     // Set thread priority if needed
     if (strategy_ == OptimizationStrategy::REAL_TIME) {
 #ifdef _WIN32
@@ -650,7 +650,7 @@ void PerformanceOptimizer::decode_worker_thread(int thread_id) {
                 auto frame = std::make_shared<MediaFrame>();
                 frame->width = 1920;
                 frame->height = 1080;
-                frame->data.resize(frame->width * frame->height * 3);
+                frame->data.resize(static_cast<size_t>(frame->width) * static_cast<size_t>(frame->height) * 3);
                 frame->timestamp = std::chrono::steady_clock::now();
                 
                 // Simulate decode time based on codec
@@ -697,7 +697,7 @@ void PerformanceOptimizer::log_performance_event(const std::string& event, std::
             temp.pop();
         }
         current_metrics_.avg_decode_time = total / static_cast<int>(recent_decode_times_.size());
-        current_metrics_.frames_per_second = 1000000.0 / current_metrics_.avg_decode_time.count();
+        current_metrics_.frames_per_second = 1000000.0 / static_cast<double>(current_metrics_.avg_decode_time.count());
         
     } else if (event == "decode_error") {
         current_metrics_.decode_errors++;
@@ -780,8 +780,8 @@ performance_utils::SystemMemoryInfo get_system_memory_info() {
         info.available_physical_memory = si.freeram * si.mem_unit;
     }
     
-    info.page_size = sysconf(_SC_PAGESIZE);
-    info.cache_line_size = sysconf(_SC_LEVEL1_DCACHE_LINESIZE);
+    info.page_size = static_cast<size_t>(sysconf(_SC_PAGESIZE));
+    info.cache_line_size = static_cast<size_t>(sysconf(_SC_LEVEL1_DCACHE_LINESIZE));
     if (info.cache_line_size == 0) info.cache_line_size = 64;
 #endif
     

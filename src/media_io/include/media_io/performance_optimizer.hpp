@@ -157,19 +157,19 @@ private:
         std::atomic<DecodeWorkItem*> data{nullptr};
         std::atomic<size_t> sequence{0};
         
-        // Make Node non-copyable but movable
+        // Make Node non-copyable and non-movable due to atomic member
         Node() = default;
         Node(const Node&) = delete;
         Node& operator=(const Node&) = delete;
-        Node(Node&&) = default;
-        Node& operator=(Node&&) = default;
+        Node(Node&&) = delete;
+        Node& operator=(Node&&) = delete;
     };
     
     std::unique_ptr<Node[]> buffer_;
     std::atomic<size_t> enqueue_pos_{0};
     std::atomic<size_t> dequeue_pos_{0};
     size_t buffer_mask_;
-    size_t capacity_;
+    [[maybe_unused]] size_t capacity_;
 };
 
 /**

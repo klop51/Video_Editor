@@ -106,7 +106,7 @@ ContainerFormat ContainerFormatSupport::detectFormat(const std::string& file_pat
             std::ifstream file(file_path, std::ios::binary);
             if (file.is_open()) {
                 std::vector<uint8_t> header(1024);
-                file.read(reinterpret_cast<char*>(header.data()), header.size());
+                file.read(reinterpret_cast<char*>(header.data()), static_cast<std::streamsize>(header.size()));
                 size_t bytes_read = static_cast<size_t>(file.gcount());
                 file.close();
                 
@@ -126,7 +126,7 @@ ContainerFormat ContainerFormatSupport::detectFormat(const std::string& file_pat
     }
     
     std::vector<uint8_t> header(4096); // Read larger header for professional formats
-    file.read(reinterpret_cast<char*>(header.data()), header.size());
+    file.read(reinterpret_cast<char*>(header.data()), static_cast<std::streamsize>(header.size()));
     size_t bytes_read = static_cast<size_t>(file.gcount());
     file.close();
     
@@ -341,7 +341,7 @@ bool ContainerFormatSupport::extractMetadata(const std::string& file_path, Conta
     }
 }
 
-bool ContainerFormatSupport::parseMXFMetadata(const std::string& file_path, ContainerMetadata& metadata) {
+bool ContainerFormatSupport::parseMXFMetadata([[maybe_unused]] const std::string& file_path, ContainerMetadata& metadata) {
     // MXF metadata parsing implementation
     metadata.title = "Professional MXF Content";
     metadata.creator = "Broadcast System";
@@ -362,7 +362,7 @@ bool ContainerFormatSupport::parseMXFMetadata(const std::string& file_path, Cont
     return true;
 }
 
-bool ContainerFormatSupport::parseGXFMetadata(const std::string& file_path, ContainerMetadata& metadata) {
+bool ContainerFormatSupport::parseGXFMetadata([[maybe_unused]] const std::string& file_path, ContainerMetadata& metadata) {
     // GXF metadata parsing implementation
     metadata.title = "GXF News Content";
     metadata.creator = "News System";
@@ -376,7 +376,7 @@ bool ContainerFormatSupport::parseGXFMetadata(const std::string& file_path, Cont
     return true;
 }
 
-bool ContainerFormatSupport::parseQuickTimeMetadata(const std::string& file_path, ContainerMetadata& metadata) {
+bool ContainerFormatSupport::parseQuickTimeMetadata([[maybe_unused]] const std::string& file_path, ContainerMetadata& metadata) {
     // QuickTime metadata parsing implementation
     metadata.title = "Professional QuickTime Content";
     metadata.creator = "Video Production";
@@ -390,7 +390,7 @@ bool ContainerFormatSupport::parseQuickTimeMetadata(const std::string& file_path
     return true;
 }
 
-bool ContainerFormatSupport::parseMatroskaMetadata(const std::string& file_path, ContainerMetadata& metadata) {
+bool ContainerFormatSupport::parseMatroskaMetadata([[maybe_unused]] const std::string& file_path, ContainerMetadata& metadata) {
     // Matroska metadata parsing implementation
     metadata.title = "Professional Matroska Content";
     metadata.creator = "Professional Editor";
@@ -405,7 +405,7 @@ bool ContainerFormatSupport::parseMatroskaMetadata(const std::string& file_path,
 }
 
 bool ContainerFormatSupport::extractTrackInfo(const std::string& file_path, std::vector<TrackInfo>& tracks) {
-    ContainerFormat format = detectFormat(file_path);
+    [[maybe_unused]] ContainerFormat format = detectFormat(file_path);
     
     // Sample implementation - would integrate with FFmpeg for real parsing
     TrackInfo video_track;
@@ -461,12 +461,12 @@ std::string ContainerFormatSupport::extractTimecode(const std::string& file_path
     }
 }
 
-std::string ContainerFormatSupport::extractSMPTETimecode(const std::string& file_path) {
+std::string ContainerFormatSupport::extractSMPTETimecode([[maybe_unused]] const std::string& file_path) {
     // Implementation would parse actual SMPTE timecode from file
     return "01:00:00:00"; // Placeholder
 }
 
-std::string ContainerFormatSupport::extractEBUTimecode(const std::string& file_path) {
+std::string ContainerFormatSupport::extractEBUTimecode([[maybe_unused]] const std::string& file_path) {
     // Implementation would parse EBU timecode format
     return "01:00:00:00"; // Placeholder
 }
@@ -548,13 +548,13 @@ bool ContainerFormatSupport::isBroadcastCompliant(const std::string& file_path) 
     }
 }
 
-bool ContainerFormatSupport::validateSMPTECompliance(const std::string& file_path) {
+bool ContainerFormatSupport::validateSMPTECompliance([[maybe_unused]] const std::string& file_path) {
     // SMPTE compliance validation
     // Check frame rates, resolutions, audio levels, etc.
     return true; // Placeholder
 }
 
-bool ContainerFormatSupport::validateEBUCompliance(const std::string& file_path) {
+bool ContainerFormatSupport::validateEBUCompliance([[maybe_unused]] const std::string& file_path) {
     // EBU compliance validation
     // Check R128 audio levels, metadata requirements
     return true; // Placeholder
@@ -575,7 +575,7 @@ bool ContainerFormatSupport::validateEBUR128Audio(const std::string& file_path) 
     return false;
 }
 
-bool ContainerFormatSupport::measureEBUR128Loudness(const std::string& file_path, float& lufs, float& true_peak) {
+bool ContainerFormatSupport::measureEBUR128Loudness([[maybe_unused]] const std::string& file_path, float& lufs, float& true_peak) {
     // Implementation would use actual audio analysis
     lufs = -23.0f;      // Target loudness
     true_peak = -3.0f;  // Peak level
@@ -801,7 +801,7 @@ bool validateContainerIntegrity(const std::string& file_path) {
     return file_size > 0;
 }
 
-std::vector<std::string> checkBroadcastCompliance(const std::string& file_path) {
+std::vector<std::string> checkBroadcastCompliance([[maybe_unused]] const std::string& file_path) {
     std::vector<std::string> issues;
     
     // Sample compliance checks
