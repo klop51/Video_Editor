@@ -61,11 +61,11 @@ std::optional<AudioFrame> AudioResampler::resample(const AudioFrame& input) {
     if(in_fmt == AV_SAMPLE_FMT_NONE || out_fmt == AV_SAMPLE_FMT_NONE) return std::nullopt;
 
     if(input.format == SampleFormat::FLTP) {
-        in_samples = static_cast<int>(input.data.size() / (sizeof(float) * in_channels));
+        in_samples = static_cast<int>(input.data.size() / (sizeof(float) * static_cast<size_t>(in_channels)));
     } else if(input.format == SampleFormat::S16) {
-        in_samples = static_cast<int>(input.data.size() / (2 * in_channels));
+        in_samples = static_cast<int>(input.data.size() / (2 * static_cast<size_t>(in_channels)));
     } else if(input.format == SampleFormat::FLT) {
-        in_samples = static_cast<int>(input.data.size() / (sizeof(float) * in_channels));
+        in_samples = static_cast<int>(input.data.size() / (sizeof(float) * static_cast<size_t>(in_channels)));
     } else {
         return std::nullopt;
     }
@@ -95,7 +95,7 @@ std::optional<AudioFrame> AudioResampler::resample(const AudioFrame& input) {
     out.channels = out_channels;
     out.format = params_.out_format;
     size_t sample_size = (out.format == SampleFormat::S16) ? 2 : sizeof(float);
-    size_t total_bytes = static_cast<size_t>(converted) * out.channels * sample_size;
+    size_t total_bytes = static_cast<size_t>(converted) * static_cast<size_t>(out.channels) * sample_size;
     out.data.resize(total_bytes);
     if(out.format == SampleFormat::FLTP) {
         float* dst = reinterpret_cast<float*>(out.data.data());

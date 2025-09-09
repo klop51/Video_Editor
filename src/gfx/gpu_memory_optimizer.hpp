@@ -67,8 +67,6 @@ struct CacheEntry {
         auto now = std::chrono::steady_clock::now();
         auto time_since_access = std::chrono::duration_cast<std::chrono::milliseconds>(
             now - last_access_time).count();
-        auto age = std::chrono::duration_cast<std::chrono::seconds>(
-            now - creation_time).count();
         
         float time_factor = 1.0f / (1.0f + time_since_access * 0.001f); // Decay over time
         float usage_factor = std::min(access_count / 10.0f, 2.0f);       // Frequent use bonus
