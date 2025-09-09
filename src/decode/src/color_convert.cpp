@@ -315,7 +315,7 @@ static bool fill_src_planes(const VideoFrame& src, AVPixelFormat avpf,
             const int y_size = w * h;
             const int c_w = (w+1)/2, c_h = (h+1)/2;
             const int c_size = c_w * c_h;
-            const size_t needed = static_cast<size_t>(y_size) + 2ull * c_size;
+            const size_t needed = static_cast<size_t>(y_size) + 2ull * static_cast<size_t>(c_size);
             if (src.data.size() < needed) {
                 ve::log::error("fill_src_planes: undersized YUV420P buffer (have=" + std::to_string(src.data.size()) + ", need=" + std::to_string(needed) + ")");
                 return false;
@@ -332,7 +332,7 @@ static bool fill_src_planes(const VideoFrame& src, AVPixelFormat avpf,
             const int y_size = w*h;
             const int c_w = (w+1)/2, c_h = h;
             const int u_size = c_w * c_h;
-            const size_t needed = static_cast<size_t>(y_size) + 2ull * u_size;
+            const size_t needed = static_cast<size_t>(y_size) + 2ull * static_cast<size_t>(u_size);
             if (src.data.size() < needed) {
                 ve::log::error("fill_src_planes: undersized YUV422P buffer (have=" + std::to_string(src.data.size()) + ", need=" + std::to_string(needed) + ")");
                 return false;
@@ -361,7 +361,7 @@ static bool fill_src_planes(const VideoFrame& src, AVPixelFormat avpf,
         case AV_PIX_FMT_NV21: {
             const int y_size = w*h;
             const int uv_size = ((w+1)/2) * ((h+1)/2) * 2; // interleaved UV (one sample per 2x2 => 2 bytes)
-            const size_t needed = static_cast<size_t>(y_size) + uv_size;
+            const size_t needed = static_cast<size_t>(y_size) + static_cast<size_t>(uv_size);
             if (src.data.size() < needed) {
                 ve::log::error("fill_src_planes: undersized NV12/NV21 buffer (have=" + std::to_string(src.data.size()) + ", need=" + std::to_string(needed) + ")");
                 return false;
@@ -471,15 +471,15 @@ std::optional<VideoFrame> to_rgba_scaled(const VideoFrame& src, int target_w, in
 
     auto expected_src_size = [&](const VideoFrame& f)->size_t {
         int w=f.width, h=f.height; if (w<=0||h<=0) return 0; switch(f.format) {
-            case PixelFormat::YUV420P: return static_cast<size_t>(w)*h + 2*static_cast<size_t>((w+1)/2)*((h+1)/2);
-            case PixelFormat::YUV422P: return static_cast<size_t>(w)*h + 2*static_cast<size_t>((w+1)/2)*h;
-            case PixelFormat::YUV444P: return 3ull*static_cast<size_t>(w)*h;
-            case PixelFormat::NV12: return static_cast<size_t>(w)*h + static_cast<size_t>((w+1)/2)*((h+1)/2)*2; // Y plane + interleaved UV plane
-            case PixelFormat::RGB24: return 3ull*static_cast<size_t>(w)*h;
-            case PixelFormat::BGR24: return 3ull*static_cast<size_t>(w)*h;
-            case PixelFormat::RGBA32: return 4ull*static_cast<size_t>(w)*h;
-            case PixelFormat::BGRA32: return 4ull*static_cast<size_t>(w)*h;
-            case PixelFormat::GRAY8: return static_cast<size_t>(w)*h;
+            case PixelFormat::YUV420P: return static_cast<size_t>(w)*static_cast<size_t>(h) + 2*static_cast<size_t>((w+1)/2)*static_cast<size_t>((h+1)/2);
+            case PixelFormat::YUV422P: return static_cast<size_t>(w)*static_cast<size_t>(h) + 2*static_cast<size_t>((w+1)/2)*static_cast<size_t>(h);
+            case PixelFormat::YUV444P: return 3ull*static_cast<size_t>(w)*static_cast<size_t>(h);
+            case PixelFormat::NV12: return static_cast<size_t>(w)*static_cast<size_t>(h) + static_cast<size_t>((w+1)/2)*static_cast<size_t>((h+1)/2)*2; // Y plane + interleaved UV plane
+            case PixelFormat::RGB24: return 3ull*static_cast<size_t>(w)*static_cast<size_t>(h);
+            case PixelFormat::BGR24: return 3ull*static_cast<size_t>(w)*static_cast<size_t>(h);
+            case PixelFormat::RGBA32: return 4ull*static_cast<size_t>(w)*static_cast<size_t>(h);
+            case PixelFormat::BGRA32: return 4ull*static_cast<size_t>(w)*static_cast<size_t>(h);
+            case PixelFormat::GRAY8: return static_cast<size_t>(w)*static_cast<size_t>(h);
             default: return 0; }
     };
     size_t expect = expected_src_size(src);
@@ -519,7 +519,7 @@ std::optional<VideoFrame> to_rgba_scaled(const VideoFrame& src, int target_w, in
     out.format = PixelFormat::RGBA32;
     out.color_space = src.color_space;
     out.color_range = src.color_range;
-    out.data.resize(static_cast<size_t>(out.width) * out.height * 4);
+    out.data.resize(static_cast<size_t>(out.width) * static_cast<size_t>(out.height) * 4);
 
     // Log color space info once per conversion
     static bool logged = false;
@@ -624,8 +624,8 @@ std::optional<RgbaView> to_rgba_scaled_view(const VideoFrame& src, int target_w,
             const uint8_t* s = src.data.data();
             for (int y=0;y<src.height;++y){
                 for(int x=0;x<src.width;++x){
-                    size_t si=(size_t(y)*src.width+x)*3;
-                    size_t di=(size_t(y)*src.width+x)*4;
+                    size_t si=(static_cast<size_t>(y)*static_cast<size_t>(src.width)+static_cast<size_t>(x))*3;
+                    size_t di=(static_cast<size_t>(y)*static_cast<size_t>(src.width)+static_cast<size_t>(x))*4;
                     dst[di+0]=s[si+0]; dst[di+1]=s[si+1]; dst[di+2]=s[si+2]; dst[di+3]=255;
                 }
             }
@@ -635,8 +635,8 @@ std::optional<RgbaView> to_rgba_scaled_view(const VideoFrame& src, int target_w,
             const uint8_t* s = src.data.data();
             for (int y=0;y<src.height;++y){
                 for(int x=0;x<src.width;++x){
-                    size_t si=(size_t(y)*src.width+x)*3;
-                    size_t di=(size_t(y)*src.width+x)*4;
+                    size_t si=(static_cast<size_t>(y)*static_cast<size_t>(src.width)+static_cast<size_t>(x))*3;
+                    size_t di=(static_cast<size_t>(y)*static_cast<size_t>(src.width)+static_cast<size_t>(x))*4;
                     dst[di+0]=s[si+2]; dst[di+1]=s[si+1]; dst[di+2]=s[si+0]; dst[di+3]=255;
                 }
             }
