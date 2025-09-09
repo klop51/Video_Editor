@@ -111,6 +111,11 @@ public:
     
     std::optional<UploadResult> upload_hardware_frame(const HardwareFrameInfo& hw_info, 
                                                      int width, int height) override {
+        // Suppress unused parameter warnings
+        (void)hw_info;
+        (void)width;
+        (void)height;
+        
         // Stub implementation - no real hardware acceleration
         return std::nullopt;
     }

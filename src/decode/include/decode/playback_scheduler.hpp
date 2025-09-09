@@ -35,7 +35,7 @@ public:
     int64_t current_media_pts() const {
         if(!running_) return start_media_pts_us_;
         auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - start_wall_).count();
-        return start_media_pts_us_ + static_cast<int64_t>(elapsed * rate_);
+        return start_media_pts_us_ + static_cast<int64_t>(static_cast<double>(elapsed) * rate_);
     }
     
     // Wait for next frame presentation time
@@ -43,7 +43,7 @@ public:
         if (!running_ || !use_frame_timing_) return true;
         
         auto now = Clock::now();
-        auto target_wall_us = static_cast<int64_t>((target_pts_us - start_media_pts_us_) / rate_);
+        auto target_wall_us = static_cast<int64_t>(static_cast<double>(target_pts_us - start_media_pts_us_) / rate_);
         auto target_wall_time = start_wall_ + std::chrono::microseconds(target_wall_us);
         
         if (now < target_wall_time) {
