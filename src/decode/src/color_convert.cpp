@@ -617,7 +617,6 @@ std::optional<RgbaView> to_rgba_scaled_view(const VideoFrame& src, int target_w,
     // Manual converters with optional nearest-neighbor scaling if requested.
     bool need_scale = (target_w != src.width || target_h != src.height);
     int convert_w = src.width, convert_h = src.height; // size we actually convert from source
-    const size_t src_row_bytes = static_cast<size_t>(convert_w)*4;
     switch(src.format) {
         case PixelFormat::RGB24: {
             VE_PROFILE_SCOPE_DETAILED("to_rgba_scaled_view.rgb24");
@@ -646,8 +645,8 @@ std::optional<RgbaView> to_rgba_scaled_view(const VideoFrame& src, int target_w,
             const uint8_t* s = src.data.data();
             for (int y=0;y<src.height;++y){
                 for(int x=0;x<src.width;++x){
-                    size_t si=(size_t(y)*src.width+x)*4;
-                    size_t di=(size_t(y)*src.width+x)*4;
+                    size_t si=(static_cast<size_t>(y)*static_cast<size_t>(src.width)+static_cast<size_t>(x))*4;
+                    size_t di=(static_cast<size_t>(y)*static_cast<size_t>(src.width)+static_cast<size_t>(x))*4;
                     dst[di+0]=s[si+2]; dst[di+1]=s[si+1]; dst[di+2]=s[si+0]; dst[di+3]=s[si+3];
                 }
             }
@@ -655,13 +654,13 @@ std::optional<RgbaView> to_rgba_scaled_view(const VideoFrame& src, int target_w,
         case PixelFormat::YUV420P: {
             VE_PROFILE_SCOPE_DETAILED("to_rgba_scaled_view.yuv420p");
             const int W=src.width,H=src.height; 
-            const size_t ysz = static_cast<size_t>(W)*H; const size_t uvsz = ysz/4; const size_t need = ysz + 2*uvsz; 
+            const size_t ysz = static_cast<size_t>(W)*static_cast<size_t>(H); const size_t uvsz = ysz/4; const size_t need = ysz + 2*uvsz; 
             if (src.data.size() < need) { ve::log::error("to_rgba_scaled_view.yuv420p undersized buffer (have=" + std::to_string(src.data.size()) + ", need=" + std::to_string(need) + ")"); return std::nullopt; }
             const uint8_t* Y=src.data.data(); const uint8_t* U=Y+ysz; const uint8_t* V=U+uvsz;
             for(int y=0;y<H;++y){
                 for(int x=0;x<W;++x){
                     int Yi=Y[y*W+x]; int Ui=U[(y/2)*(W/2)+(x/2)]; int Vi=V[(y/2)*(W/2)+(x/2)];
-                    uint8_t* outp=&dst[(size_t(y)*W+x)*4];
+                    uint8_t* outp=&dst[(static_cast<size_t>(y)*static_cast<size_t>(W)+static_cast<size_t>(x))*4];
                     yuv_to_rgb(Yi,Ui,Vi,src.color_space,src.color_range,outp);
                 }
             }
@@ -669,15 +668,15 @@ std::optional<RgbaView> to_rgba_scaled_view(const VideoFrame& src, int target_w,
         case PixelFormat::RGBA32: {
             VE_PROFILE_SCOPE_DETAILED("to_rgba_scaled_view.rgba32_copy");
             const uint8_t* s = src.data.data();
-            std::memcpy(dst, s, size_t(src.width)*src.height*4);
+            std::memcpy(dst, s, static_cast<size_t>(src.width)*static_cast<size_t>(src.height)*4);
             break; }
         case PixelFormat::GRAY8: {
             VE_PROFILE_SCOPE_DETAILED("to_rgba_scaled_view.gray8");
             const uint8_t* s = src.data.data();
             for(int y=0;y<src.height;++y){
                 for(int x=0;x<src.width;++x){
-                    uint8_t g=s[size_t(y)*src.width+x];
-                    size_t di=(size_t(y)*src.width+x)*4;
+                    uint8_t g=s[static_cast<size_t>(y)*static_cast<size_t>(src.width)+static_cast<size_t>(x)];
+                    size_t di=(static_cast<size_t>(y)*static_cast<size_t>(src.width)+static_cast<size_t>(x))*4;
                     dst[di]=dst[di+1]=dst[di+2]=g; dst[di+3]=255;
                 }
             }
@@ -687,15 +686,15 @@ std::optional<RgbaView> to_rgba_scaled_view(const VideoFrame& src, int target_w,
     if (need_scale) {
     VE_PROFILE_SCOPE_DETAILED("to_rgba_scaled_view.nn_scale");
         // nearest-neighbor into a second ring buffer slot (advance index first to avoid overwrite if caller still using dst)
-        tls.index = (tls.index + 1) & 1; auto& scaled_buf = tls.buffers[tls.index]; size_t scaled_needed = size_t(target_w)*target_h*4; if (scaled_buf.size()<scaled_needed) scaled_buf.resize(scaled_needed);
+        tls.index = (tls.index + 1) & 1; auto& scaled_buf = tls.buffers[tls.index]; size_t scaled_needed = static_cast<size_t>(target_w)*static_cast<size_t>(target_h)*4; if (scaled_buf.size()<scaled_needed) scaled_buf.resize(scaled_needed);
         uint8_t* scaled = scaled_buf.data();
         for (int y=0; y<target_h; ++y) {
             int sy = (y * convert_h) / target_h;
-            const uint8_t* src_row = dst + size_t(sy) * convert_w * 4;
+            const uint8_t* src_row = dst + static_cast<size_t>(sy) * static_cast<size_t>(convert_w) * 4;
             for (int x=0; x<target_w; ++x) {
                 int sx = (x * convert_w) / target_w;
                 const uint8_t* sp = src_row + size_t(sx) * 4;
-                uint8_t* dp = scaled + (size_t(y)*target_w + x)*4;
+                uint8_t* dp = scaled + (static_cast<size_t>(y)*static_cast<size_t>(target_w) + static_cast<size_t>(x))*4;
                 dp[0]=sp[0]; dp[1]=sp[1]; dp[2]=sp[2]; dp[3]=sp[3];
             }
         }
