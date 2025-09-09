@@ -95,7 +95,7 @@ namespace {
     std::optional<VideoFrame> convert_rgb24_to_rgba(const VideoFrame& src, VideoFrame& out) {
         const uint8_t* src_data = src.data.data();
         uint8_t* out_data = out.data.data();
-        const size_t pixel_count = static_cast<size_t>(out.width) * out.height;
+        const size_t pixel_count = static_cast<size_t>(out.width) * static_cast<size_t>(out.height);
         
         for(size_t i = 0; i < pixel_count; ++i) {
             out_data[i*4 + 0] = src_data[i*3 + 0]; // R
@@ -110,7 +110,7 @@ namespace {
     std::optional<VideoFrame> convert_bgr24_to_rgba(const VideoFrame& src, VideoFrame& out) {
         const uint8_t* src_data = src.data.data();
         uint8_t* out_data = out.data.data();
-        const size_t pixel_count = static_cast<size_t>(out.width) * out.height;
+        const size_t pixel_count = static_cast<size_t>(out.width) * static_cast<size_t>(out.height);
         
         for(size_t i = 0; i < pixel_count; ++i) {
             out_data[i*4 + 0] = src_data[i*3 + 2]; // R
@@ -125,7 +125,7 @@ namespace {
     std::optional<VideoFrame> convert_bgra32_to_rgba(const VideoFrame& src, VideoFrame& out) {
         const uint8_t* src_data = src.data.data();
         uint8_t* out_data = out.data.data();
-        const size_t pixel_count = static_cast<size_t>(out.width) * out.height;
+        const size_t pixel_count = static_cast<size_t>(out.width) * static_cast<size_t>(out.height);
         
         for(size_t i = 0; i < pixel_count; ++i) {
             out_data[i*4 + 0] = src_data[i*4 + 2]; // R
@@ -140,8 +140,8 @@ namespace {
     std::optional<VideoFrame> convert_yuv420p_to_rgba(const VideoFrame& src, VideoFrame& out) {
         const int W = src.width;
         const int H = src.height;
-        const size_t y_size = static_cast<size_t>(W) * H;
-        const size_t uv_size = (static_cast<size_t>(W) * H) / 4;
+        const size_t y_size = static_cast<size_t>(W) * static_cast<size_t>(H);
+        const size_t uv_size = (static_cast<size_t>(W) * static_cast<size_t>(H)) / 4;
         const size_t needed = y_size + 2 * uv_size;
         if (src.data.size() < needed) {
             ve::log::error("convert_yuv420p_to_rgba: undersized buffer guard hit (have=" + std::to_string(src.data.size()) + ", need=" + std::to_string(needed) + ")");
@@ -196,8 +196,8 @@ namespace {
         
         const int W = src.width;
         const int H = src.height;
-        const size_t y_size = static_cast<size_t>(W) * H;
-        const size_t uv_size = (static_cast<size_t>(W) * H) / 2; // NV12: UV plane is half size but interleaved
+        const size_t y_size = static_cast<size_t>(W) * static_cast<size_t>(H);
+        const size_t uv_size = (static_cast<size_t>(W) * static_cast<size_t>(H)) / 2; // NV12: UV plane is half size but interleaved
         const size_t needed = y_size + uv_size;
         
         if (src.data.size() < needed) {
@@ -251,7 +251,7 @@ namespace {
     std::optional<VideoFrame> convert_gray8_to_rgba(const VideoFrame& src, VideoFrame& out) {
         const uint8_t* src_data = src.data.data();
         uint8_t* out_data = out.data.data();
-        const size_t pixel_count = static_cast<size_t>(out.width) * out.height;
+        const size_t pixel_count = static_cast<size_t>(out.width) * static_cast<size_t>(out.height);
         
         for(size_t i = 0; i < pixel_count; ++i) {
             const uint8_t gray = src_data[i];

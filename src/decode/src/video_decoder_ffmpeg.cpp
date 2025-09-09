@@ -175,7 +175,7 @@ bool copy_frame_data(AVFrame* frame, VideoFrame& vf) {
         return false;
     }
 
-    vf.data.resize(buf_size);
+    vf.data.resize(static_cast<size_t>(buf_size));
 
     // Use simple memcpy approach for common formats
     if (fmt == AV_PIX_FMT_YUV420P) {
@@ -184,7 +184,7 @@ bool copy_frame_data(AVFrame* frame, VideoFrame& vf) {
         
         // Copy Y plane
         for (int y = 0; y < height; y++) {
-            memcpy(dst + y * width, frame->data[0] + y * frame->linesize[0], width);
+            memcpy(dst + y * width, frame->data[0] + y * frame->linesize[0], static_cast<size_t>(width));
         }
         dst += width * height;
         
@@ -192,13 +192,13 @@ bool copy_frame_data(AVFrame* frame, VideoFrame& vf) {
         int uv_width = width / 2;
         int uv_height = height / 2;
         for (int y = 0; y < uv_height; y++) {
-            memcpy(dst + y * uv_width, frame->data[1] + y * frame->linesize[1], uv_width);
+            memcpy(dst + y * uv_width, frame->data[1] + y * frame->linesize[1], static_cast<size_t>(uv_width));
         }
         dst += uv_width * uv_height;
         
         // Copy V plane
         for (int y = 0; y < uv_height; y++) {
-            memcpy(dst + y * uv_width, frame->data[2] + y * frame->linesize[2], uv_width);
+            memcpy(dst + y * uv_width, frame->data[2] + y * frame->linesize[2], static_cast<size_t>(uv_width));
         }
         return true;
     } else if (fmt == AV_PIX_FMT_NV12) {
@@ -207,14 +207,14 @@ bool copy_frame_data(AVFrame* frame, VideoFrame& vf) {
         
         // Copy Y plane
         for (int y = 0; y < height; y++) {
-            memcpy(dst + y * width, frame->data[0] + y * frame->linesize[0], width);
+            memcpy(dst + y * width, frame->data[0] + y * frame->linesize[0], static_cast<size_t>(width));
         }
         dst += width * height;
         
         // Copy UV plane (interleaved)
         int uv_height = height / 2;
         for (int y = 0; y < uv_height; y++) {
-            memcpy(dst + y * width, frame->data[1] + y * frame->linesize[1], width);
+            memcpy(dst + y * width, frame->data[1] + y * frame->linesize[1], static_cast<size_t>(width));
         }
         return true;
     } else {
@@ -245,7 +245,7 @@ void copy_planar_yuv(AVFrame* frame, uint8_t* dst, int width, int height,
     for(int y = 0; y < height; ++y) {
         std::memcpy(dst + y * width * bytes_per_component, 
                    frame->data[0] + y * frame->linesize[0], 
-                   width * bytes_per_component);
+                   static_cast<size_t>(width * bytes_per_component));
     }
     
     // Copy U plane
@@ -253,7 +253,7 @@ void copy_planar_yuv(AVFrame* frame, uint8_t* dst, int width, int height,
     for(int y = 0; y < uv_height; ++y) {
         std::memcpy(u_dst + y * uv_width * bytes_per_component, 
                    frame->data[1] + y * frame->linesize[1], 
-                   uv_width * bytes_per_component);
+                   static_cast<size_t>(uv_width * bytes_per_component));
     }
     
     // Copy V plane
@@ -261,7 +261,7 @@ void copy_planar_yuv(AVFrame* frame, uint8_t* dst, int width, int height,
     for(int y = 0; y < uv_height; ++y) {
         std::memcpy(v_dst + y * uv_width * bytes_per_component, 
                    frame->data[2] + y * frame->linesize[2], 
-                   uv_width * bytes_per_component);
+                   static_cast<size_t>(uv_width * bytes_per_component));
     }
 }
 
@@ -378,7 +378,7 @@ static AVPixelFormat hw_get_format_dynamic(AVCodecContext* ctx, const AVPixelFor
     }
     
     // Hardware frame transfer callback
-    static int hw_get_buffer(AVCodecContext* ctx, AVFrame* frame, int flags) {
+    static int hw_get_buffer(AVCodecContext* ctx, AVFrame* frame, [[maybe_unused]] int flags) {
         return av_hwframe_get_buffer(ctx->hw_frames_ctx, frame, 0);
     }
     
@@ -586,7 +586,7 @@ public:
                     af.format = SampleFormat::FLTP;
                     int samples = frame_->nb_samples;
                     // Interleave planar floats into single buffer
-                    af.data.resize(sizeof(float) * samples * af.channels);
+                    af.data.resize(sizeof(float) * static_cast<size_t>(samples) * static_cast<size_t>(af.channels));
                     float* out = reinterpret_cast<float*>(af.data.data());
                     for(int s=0; s<samples; ++s) {
                         for(int c=0; c<af.channels; ++c) {
@@ -597,8 +597,8 @@ public:
                 } else if(frame_->format == AV_SAMPLE_FMT_S16) {
                     af.format = SampleFormat::S16;
                     int bytes = frame_->nb_samples * af.channels * 2;
-                    af.data.resize(bytes);
-                    std::memcpy(af.data.data(), frame_->data[0], bytes);
+                    af.data.resize(static_cast<size_t>(bytes));
+                    std::memcpy(af.data.data(), frame_->data[0], static_cast<size_t>(bytes));
                 } else {
                     af.format = SampleFormat::Unknown;
                 }
