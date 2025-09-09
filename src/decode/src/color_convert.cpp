@@ -1,3 +1,14 @@
+// FFmpeg includes first to avoid C++/C header conflicts
+#if VE_HAVE_FFMPEG
+#ifndef __STDC_CONSTANT_MACROS
+#define __STDC_CONSTANT_MACROS
+#endif
+extern "C" {
+#include <libswscale/swscale.h>
+#include <libavutil/pixfmt.h>
+}
+#endif
+
 #include "decode/color_convert.hpp"
 #include "decode/frame.hpp"
 #include "decode/rgba_view.hpp"
@@ -271,10 +282,6 @@ namespace {
 
 // FFmpeg swscale fast path (guarded)
 #if VE_HAVE_FFMPEG
-extern "C" {
-#include <libswscale/swscale.h>
-#include <libavutil/pixfmt.h>
-}
 
 static AVPixelFormat to_avpf(PixelFormat pf) {
     switch(pf) {

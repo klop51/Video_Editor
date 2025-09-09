@@ -236,7 +236,7 @@ bool copy_frame_data(AVFrame* frame, VideoFrame& vf) {
 }
 
 // Helper function for copying planar YUV data
-void copy_planar_yuv(AVFrame* frame, uint8_t* dst, int width, int height, 
+[[maybe_unused]] void copy_planar_yuv(AVFrame* frame, uint8_t* dst, int width, int height, 
                      int uv_width, int uv_height, int bytes_per_component) {
     int y_size = width * height * bytes_per_component;
     int uv_size = uv_width * uv_height * bytes_per_component;
@@ -279,7 +279,7 @@ struct HardwareAccelContext {
 };
 
 // Helper function to get stream frame rate
-double get_stream_fps(const AVStream* stream) {
+[[maybe_unused]] double get_stream_fps(const AVStream* stream) {
     if (!stream) return 30.0; // Default fallback
     
     // Try to get FPS from various sources
