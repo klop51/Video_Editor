@@ -2225,6 +2225,14 @@ struct D3D11GraphicsDevice {
     uint32_t create_shader_program(const char*, const char*) { return 0; }
     void destroy_shader_program(uint32_t) {}
     void use_shader_program(uint32_t) {}
+    void set_uniform1f(uint32_t, const char*, float) {}
+    void set_uniform1i(uint32_t, const char*, int) {}
+    
+    // Rendering stub methods
+    void clear(float, float, float, float) {}
+    void draw_texture(uint32_t, float, float, float, float, float, float, float, float) {}
+    void set_viewport(int, int, int, int) {}
+    bool get_last_present_rgba(void*, int, int) { return false; }
     
     // Effect parameter types (stubs)
     struct ColorCorrectionParams {
@@ -2260,7 +2268,7 @@ public:
     bool is_valid() const { return created_; }
 
     unsigned int create_texture(int width, int height, int format) {
-        return g_device.create_texture(width, height, format);
+        return g_device.create_texture(static_cast<uint32_t>(width), static_cast<uint32_t>(height), static_cast<uint32_t>(format));
     }
 
     void destroy_texture(unsigned int texture_id) {
@@ -2268,12 +2276,12 @@ public:
     }
 
     void upload_texture(unsigned int texture_id, const void* data, int width, int height, int format) {
-        g_device.upload_texture(texture_id, data, width, height, format);
+        g_device.upload_texture(texture_id, data, static_cast<uint32_t>(width), static_cast<uint32_t>(height), static_cast<uint32_t>(format));
     }
 
     // Buffer management methods
     unsigned int create_buffer(int size, int usage_flags, const void* initial_data = nullptr) {
-        return g_device.create_buffer(size, usage_flags, initial_data);
+        return g_device.create_buffer(static_cast<size_t>(size), static_cast<uint32_t>(usage_flags), initial_data);
     }
 
     void destroy_buffer(unsigned int buffer_id) {
@@ -2281,7 +2289,7 @@ public:
     }
 
     void upload_buffer(unsigned int buffer_id, const void* data, int size, int offset = 0) {
-        g_device.upload_buffer(buffer_id, data, size, offset);
+        g_device.upload_buffer(buffer_id, data, static_cast<size_t>(size), static_cast<size_t>(offset));
     }
 
     // Week 6: Advanced Effects API

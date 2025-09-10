@@ -210,7 +210,7 @@ private:
 class FilmGrainProcessor {
 public:
     FilmGrainProcessor(GraphicsDevice* device) : device_(device) {}
-    TextureHandle apply(const TextureHandle& input, const gfx::FilmGrainParams& params);
+    TextureHandle apply(const TextureHandle& input, const ::gfx::FilmGrainParams& params);
 
 private:
     GraphicsDevice* device_;
@@ -219,7 +219,7 @@ private:
 class VignetteProcessor {
 public:
     VignetteProcessor(GraphicsDevice* device) : device_(device) {}
-    TextureHandle apply(const TextureHandle& input, const gfx::VignetteParams& params);
+    TextureHandle apply(const TextureHandle& input, const ::gfx::VignetteParams& params);
 
 private:
     GraphicsDevice* device_;
