@@ -10,6 +10,8 @@
 // Include all GPU system components
 #include "gfx/graphics_device.hpp"
 #include "gfx/graphics_device_bridge.hpp"
+#include "gfx/gpu_memory_optimizer.hpp"
+#include "gfx/gpu_test_suite.hpp"
 #include "gfx/gpu_error_handler.hpp"
 #include "gfx/gpu_performance_dashboard.hpp"
 #include "gfx/gpu_memory_optimizer.hpp"
@@ -84,16 +86,22 @@ int main() {
     std::cout << "\n4. Setting up Memory Optimization..." << std::endl;
     
     GPUMemoryOptimizer::OptimizerConfig memory_config;
+    // Configure cache settings
     memory_config.cache_config.max_cache_size = 2ULL * 1024 * 1024 * 1024; // 2GB
-    memory_config.streaming_config.read_ahead_frames = 60; // 2 seconds at 30fps
-    memory_config.enable_intelligent_prefetch = true;
+    memory_config.cache_config.enable_lru_eviction = true;
+    // Configure streaming settings
+    memory_config.streaming_config.max_concurrent_streams = 4;
+    memory_config.streaming_config.buffer_size = 64 * 1024 * 1024; // 64MB
+    // Configure memory thresholds
+    memory_config.memory_thresholds.warning_threshold = 0.8f; // 80%
+    memory_config.memory_thresholds.critical_threshold = 0.9f; // 90%
     
     auto memory_optimizer = std::make_unique<GPUMemoryOptimizer>(device.get(), memory_config);
     dashboard->integrate_with_memory_optimizer(memory_optimizer.get());
     
     std::cout << "  ✓ Memory optimizer initialized" << std::endl;
     std::cout << "  ✓ Cache size: " << (memory_config.cache_config.max_cache_size / (1024*1024*1024)) << "GB" << std::endl;
-    std::cout << "  ✓ Read-ahead frames: " << memory_config.streaming_config.read_ahead_frames << std::endl;
+    std::cout << "  ✓ Concurrent streams: " << memory_config.streaming_config.max_concurrent_streams << std::endl;
     
     // Step 5: Run comprehensive test suite
     std::cout << "\n5. Running Comprehensive Test Suite..." << std::endl;

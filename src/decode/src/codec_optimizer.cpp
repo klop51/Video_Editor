@@ -323,6 +323,7 @@ bool HEVCOptimization::should_use_hardware_decode(int width, int height, bool is
 }
 
 int HEVCOptimization::get_optimal_thread_count(int width, int height) {
+    (void)height; // Suppress unused parameter warning
     if (width >= 7680) return 1; // 8K uses hardware decode
     if (width >= 3840) return 2; // 4K
     return 4; // HD and below

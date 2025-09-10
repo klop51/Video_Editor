@@ -277,36 +277,11 @@ private:
 };
 
 // ============================================================================
-// Memory Optimizer Stub
+// Forward Declarations for GPU Memory Optimizer
 // ============================================================================
 
-class GPUMemoryOptimizer {
-public:
-    struct CacheConfig {
-        size_t max_cache_size = 1024 * 1024 * 1024; // 1GB default
-    };
-    
-    struct StreamingConfig {
-        uint32_t read_ahead_frames = 30;
-    };
-    
-    struct OptimizerConfig {
-        CacheConfig cache_config;
-        StreamingConfig streaming_config;
-        bool enable_intelligent_prefetch = false;
-    };
-    
-    GPUMemoryOptimizer(GraphicsDevice* device, const OptimizerConfig& config);
-    ~GPUMemoryOptimizer();
-    
-    void notify_frame_change(uint32_t frame_number);
-    TextureHandle get_texture(uint64_t hash);
-    void cache_texture(uint64_t hash, const TextureHandle& texture, float priority);
-    bool ensure_memory_available(size_t required_bytes);
-
-private:
-    GraphicsDevice* device_;
-    OptimizerConfig config_;
-};
+// GPUMemoryOptimizer is defined in gpu_memory_optimizer.hpp
+// This forward declaration avoids circular dependencies
+class GPUMemoryOptimizer;
 
 } // namespace video_editor::gfx
