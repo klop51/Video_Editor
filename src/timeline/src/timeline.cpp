@@ -49,7 +49,7 @@ bool Timeline::remove_track(TrackId track_id) {
     }
     
     std::string track_name = tracks_[index]->name();
-    tracks_.erase(tracks_.begin() + index);
+    tracks_.erase(tracks_.begin() + static_cast<std::vector<std::unique_ptr<Track>>::difference_type>(index));
     
     ve::log::info("Removed track: " + track_name + " (ID: " + std::to_string(track_id) + ")");
     mark_modified();
