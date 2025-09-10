@@ -143,7 +143,8 @@ private:
     std::unordered_set<uint64_t> preloaded_hashes_;
 
 public:
-    explicit IntelligentCache(const Config& config = Config{});
+    explicit IntelligentCache(const Config& config);
+    IntelligentCache() : IntelligentCache(Config{}) {}
     ~IntelligentCache();
 
     // Core cache operations
@@ -281,7 +282,9 @@ private:
 
 public:
     StreamingOptimizer(IntelligentCache* cache, GraphicsDevice* device, 
-                      const StreamingConfig& config = StreamingConfig{});
+                      const StreamingConfig& config);
+    StreamingOptimizer(IntelligentCache* cache, GraphicsDevice* device) 
+        : StreamingOptimizer(cache, device, StreamingConfig{}) {}
     ~StreamingOptimizer();
     
     // Streaming control

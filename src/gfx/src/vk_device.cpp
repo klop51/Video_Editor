@@ -2192,11 +2192,47 @@ static D3D11GraphicsDevice g_device;
 // Stub implementation for non-Windows platforms
 struct D3D11GraphicsDevice {
     struct DeviceInfo {
-        bool debug_enabled = false;
+        bool debug_enabled;
+        bool enable_swapchain;
+        DeviceInfo() : debug_enabled(false), enable_swapchain(false) {}
     };
-    bool create(const DeviceInfo& info = {}) { (void)info; return false; }
+    
+    bool create(const DeviceInfo& info) { (void)info; return false; }
     void destroy() {}
     bool is_created() const { return false; }
+    
+    // Texture management stub methods
+    uint32_t create_texture(uint32_t, uint32_t, uint32_t) { return 0; }
+    void destroy_texture(uint32_t) {}
+    void upload_texture(uint32_t, const void*, uint32_t, uint32_t, uint32_t) {}
+    
+    // Buffer management stub methods  
+    uint32_t create_buffer(size_t, uint32_t, const void*) { return 0; }
+    void destroy_buffer(uint32_t) {}
+    void upload_buffer(uint32_t, const void*, size_t, size_t) {}
+    
+    // Effect pipeline stub methods
+    uint32_t create_effect_pipeline() { return 0; }
+    bool apply_color_correction_effect(uint32_t, uint32_t, const void*) { return false; }
+    bool apply_gaussian_blur_effect(uint32_t, uint32_t, uint32_t, float) { return false; }
+    bool apply_sharpen_effect(uint32_t, uint32_t, float, float) { return false; }
+    bool apply_lut_effect(uint32_t, uint32_t, uint32_t, float) { return false; }
+    
+    // Memory and performance stub methods
+    void get_memory_usage(size_t&, size_t&, size_t&) {}
+    
+    // Shader program stub methods
+    uint32_t create_shader_program(const char*, const char*) { return 0; }
+    void destroy_shader_program(uint32_t) {}
+    void use_shader_program(uint32_t) {}
+    
+    // Effect parameter types (stubs)
+    struct ColorCorrectionParams {
+        float brightness = 0.0f;
+        float contrast = 1.0f;
+        float saturation = 1.0f;
+        float gamma = 1.0f;
+    };
 };
 static D3D11GraphicsDevice g_device;
 #endif // _WIN32

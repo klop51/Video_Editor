@@ -285,7 +285,7 @@ void CommandBuffer::dispatch(uint32_t x, uint32_t y, uint32_t z) {
 // Effect Processor Implementations (Stubs)
 // ============================================================================
 
-TextureHandle FilmGrainProcessor::apply(const TextureHandle& input, const FilmGrainParams& params) {
+TextureHandle FilmGrainProcessor::apply(const TextureHandle& input, const gfx::FilmGrainParams& params) {
     if (!device_ || !device_->is_valid() || !input.is_valid()) {
         return TextureHandle();
     }
@@ -298,7 +298,7 @@ TextureHandle FilmGrainProcessor::apply(const TextureHandle& input, const FilmGr
     return input;
 }
 
-TextureHandle VignetteProcessor::apply(const TextureHandle& input, const VignetteParams& params) {
+TextureHandle VignetteProcessor::apply(const TextureHandle& input, const gfx::VignetteParams& params) {
     if (!device_ || !device_->is_valid() || !input.is_valid()) {
         return TextureHandle();
     }

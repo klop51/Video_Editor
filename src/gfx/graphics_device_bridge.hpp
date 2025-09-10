@@ -4,6 +4,7 @@
 #pragma once
 
 #include "gfx/vk_device.hpp"
+#include "advanced_shader_effects.hpp"
 #include <memory>
 #include <functional>
 #include <vector>
@@ -158,7 +159,7 @@ public:
         bool enable_performance_monitoring = false;
     };
     
-    static std::unique_ptr<GraphicsDevice> create(const Config& config = {});
+    static std::unique_ptr<GraphicsDevice> create(const Config& config = Config{});
     
     GraphicsDevice();
     ~GraphicsDevice();
@@ -208,14 +209,8 @@ private:
 
 class FilmGrainProcessor {
 public:
-    struct FilmGrainParams {
-        float intensity = 0.5f;
-        float size = 1.0f;
-        float color_amount = 0.3f;
-    };
-    
     FilmGrainProcessor(GraphicsDevice* device) : device_(device) {}
-    TextureHandle apply(const TextureHandle& input, const FilmGrainParams& params);
+    TextureHandle apply(const TextureHandle& input, const gfx::FilmGrainParams& params);
 
 private:
     GraphicsDevice* device_;
@@ -223,14 +218,8 @@ private:
 
 class VignetteProcessor {
 public:
-    struct VignetteParams {
-        float radius = 0.8f;
-        float softness = 0.3f;
-        float strength = 0.7f;
-    };
-    
     VignetteProcessor(GraphicsDevice* device) : device_(device) {}
-    TextureHandle apply(const TextureHandle& input, const VignetteParams& params);
+    TextureHandle apply(const TextureHandle& input, const gfx::VignetteParams& params);
 
 private:
     GraphicsDevice* device_;
