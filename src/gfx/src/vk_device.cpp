@@ -15,7 +15,8 @@
 #include <thread>
 #include <chrono>
 
-// DirectX 11 includes
+// DirectX 11 includes (Windows only)
+#ifdef _WIN32
 #include <d3d11.h>
 #include <dxgi1_2.h>
 #include <d3dcompiler.h>
@@ -24,6 +25,7 @@
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "d3dcompiler.lib")
+#endif
 
 // ---- your project headers
 #include "gfx/opengl_headers.hpp"
@@ -33,6 +35,7 @@
 
 // Real DirectX 11 implementation
 
+#ifdef _WIN32
 struct D3D11Texture {
     ID3D11Texture2D* texture = nullptr;
     ID3D11ShaderResourceView* srv = nullptr;
@@ -2185,6 +2188,18 @@ public:
 
 // Global device instance
 static D3D11GraphicsDevice g_device;
+#else
+// Stub implementation for non-Windows platforms
+struct D3D11GraphicsDevice {
+    struct DeviceInfo {
+        bool debug_enabled = false;
+    };
+    bool create(const DeviceInfo& info = {}) { (void)info; return false; }
+    void destroy() {}
+    bool is_created() const { return false; }
+};
+static D3D11GraphicsDevice g_device;
+#endif // _WIN32
 
 namespace ve::gfx {
 

@@ -190,13 +190,16 @@ private:
     std::vector<uint32_t> texture_ids_;
     std::vector<uint32_t> buffer_ids_;
     uint32_t next_texture_id_;
-    uint32_t next_buffer_id_;
+    uint32_t next_buffer_id_;  // Reserved for future buffer ID generation
     
     // Internal helpers
     bool initialize_impl(const Config& config);
     void cleanup_resources();
     uint32_t create_texture_impl(const TextureDesc& desc);
     uint32_t create_buffer_impl(const BufferDesc& desc);
+    
+    // Suppress unused field warnings
+    void suppress_unused_warnings() const { (void)next_buffer_id_; }
 };
 
 // ============================================================================

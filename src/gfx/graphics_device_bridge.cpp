@@ -26,6 +26,7 @@ GraphicsDevice::GraphicsDevice()
     : initialized_(false)
     , next_texture_id_(1)
     , next_buffer_id_(1) {
+    suppress_unused_warnings();  // Suppress unused field warnings
 }
 
 GraphicsDevice::~GraphicsDevice() {
@@ -91,7 +92,7 @@ uint32_t GraphicsDevice::create_texture_impl(const TextureDesc& desc) {
             break;
     }
     
-    uint32_t texture_id = impl_device_.create_texture(desc.width, desc.height, impl_format);
+    uint32_t texture_id = impl_device_.create_texture(static_cast<int>(desc.width), static_cast<int>(desc.height), impl_format);
     if (texture_id == 0) {
         ve::log::error("Failed to create texture: " + std::to_string(desc.width) + "x" + std::to_string(desc.height));
         return 0;
@@ -385,15 +386,16 @@ TextureHandle GPUMemoryOptimizer::get_texture(uint64_t hash) {
     return TextureHandle();
 }
 
-void GPUMemoryOptimizer::cache_texture(uint64_t hash, const TextureHandle& texture, float priority) {
+bool GPUMemoryOptimizer::cache_texture(uint64_t hash, TextureHandle texture, float quality) {
     if (!texture.is_valid()) {
         ve::log::warn("Attempting to cache invalid texture");
-        return;
+        return false;
     }
     
     ve::log::debug("Caching texture: hash=" + std::to_string(hash) + 
                    ", id=" + std::to_string(texture.get_id()) + 
-                   ", priority=" + std::to_string(priority));
+                   ", quality=" + std::to_string(quality));
+    return true;
 }
 
 bool GPUMemoryOptimizer::ensure_memory_available(size_t required_bytes) {

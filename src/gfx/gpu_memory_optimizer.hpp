@@ -68,9 +68,9 @@ struct CacheEntry {
         auto time_since_access = std::chrono::duration_cast<std::chrono::milliseconds>(
             now - last_access_time).count();
         
-        float time_factor = 1.0f / (1.0f + time_since_access * 0.001f); // Decay over time
-        float usage_factor = std::min(access_count / 10.0f, 2.0f);       // Frequent use bonus
-        float recency_factor = 1.0f / (1.0f + (current_frame - frame_last_used)); // Frame recency
+        float time_factor = 1.0f / (1.0f + static_cast<float>(time_since_access) * 0.001f); // Decay over time
+        float usage_factor = std::min(static_cast<float>(access_count) / 10.0f, 2.0f);       // Frequent use bonus
+        float recency_factor = 1.0f / (1.0f + static_cast<float>(current_frame - frame_last_used)); // Frame recency
         float critical_factor = is_critical ? 10.0f : 1.0f;             // Critical protection
         float prediction_factor = is_predicted_needed ? 2.0f : 1.0f;    // AI prediction boost
         
@@ -116,6 +116,7 @@ public:
         uint32_t max_entries = 10000;                       // Maximum cache entries
         bool enable_compression = true;                     // Enable texture compression
         bool enable_prediction = true;                      // Enable AI prediction
+        bool enable_lru_eviction = true;                   // Enable LRU eviction policy
         uint32_t prediction_lookahead = 60;                // Frames to predict ahead
         float quality_threshold = 0.1f;                    // Minimum quality for caching
     };
@@ -243,8 +244,10 @@ class StreamingOptimizer {
 public:
     struct StreamingConfig {
         size_t streaming_buffer_size = 256ULL * 1024 * 1024; // 256MB streaming buffer
+        size_t buffer_size = 256ULL * 1024 * 1024;           // Alias for streaming_buffer_size
         uint32_t read_ahead_frames = 30;                      // Frames to read ahead
         uint32_t max_concurrent_loads = 4;                    // Parallel loading threads
+        uint32_t max_concurrent_streams = 4;                  // Alias for max_concurrent_loads
         float load_threshold = 0.7f;                          // Start loading at 70% buffer
         bool enable_adaptive_quality = true;                  // Dynamic quality adjustment
         bool enable_predictive_loading = true;                // Predict and preload

@@ -16,7 +16,7 @@
 
 // Include all GPU system components  
 #include "gfx/graphics_device.hpp"
-#include "gfx/graphics_device_bridge.hpp"
+#include "graphics_device_bridge.hpp"
 #include "gfx/vk_instance.hpp"
 #include "gfx/vk_device.hpp"
 
@@ -54,6 +54,7 @@ public:
         bool enable_stress_testing = true;
         bool enable_error_recovery_testing = true;
         bool enable_shader_validation = true;
+        bool enable_8k_testing = true;
         uint32_t stress_test_duration_minutes = 10;
         uint32_t performance_sample_count = 100;
         bool verbose_output = true;

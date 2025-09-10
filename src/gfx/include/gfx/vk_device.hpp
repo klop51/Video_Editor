@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>  // For size_t
+
 // NO standard library includes inside headers to avoid MSVC namespace conflicts!
 
 namespace ve::gfx {

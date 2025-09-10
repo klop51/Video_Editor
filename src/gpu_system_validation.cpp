@@ -16,23 +16,7 @@
 #include "gfx/gpu_performance_dashboard.hpp"
 #include "gfx/gpu_memory_optimizer.hpp"
 
-// Forward declare GPUTestSuite to avoid header conflicts
-namespace video_editor::gfx::test {
-    class GPUTestSuite {
-    public:
-        struct TestConfig {
-            bool verbose_output = false;
-            bool enable_performance_regression = false;
-            bool enable_memory_leak_detection = false;
-            bool enable_cross_platform_testing = false;
-            bool enable_8k_testing = false;
-        };
-        
-        explicit GPUTestSuite(const TestConfig& config = TestConfig{});
-        bool run_all_tests();
-        void generate_test_report();
-    };
-}
+// Use the actual GPUTestSuite from the header (no forward declaration needed)
 
 using namespace video_editor::gfx;
 
@@ -106,14 +90,14 @@ int main() {
     // Step 5: Run comprehensive test suite
     std::cout << "\n5. Running Comprehensive Test Suite..." << std::endl;
     
-    GPUTestSuite::TestConfig test_config;
+    video_editor::gfx::test::GPUTestSuite::TestConfig test_config;
     test_config.verbose_output = true;
     test_config.enable_performance_regression = true;
     test_config.enable_memory_leak_detection = true;
     test_config.enable_cross_platform_testing = true;
     test_config.enable_8k_testing = true;
     
-    auto test_suite = std::make_unique<GPUTestSuite>(test_config);
+    auto test_suite = std::make_unique<video_editor::gfx::test::GPUTestSuite>(test_config);
     
     auto test_start = std::chrono::steady_clock::now();
     bool all_tests_passed = test_suite->run_all_tests();
@@ -268,22 +252,4 @@ int main() {
     return production_ready ? 0 : 1;
 }
 
-// Minimal GPUTestSuite implementation to avoid header conflicts
-namespace video_editor::gfx::test {
-    GPUTestSuite::GPUTestSuite(const TestConfig& config) {
-        (void)config; // Suppress unused parameter warning
-    }
-    
-    bool GPUTestSuite::run_all_tests() {
-        std::cout << "  Running basic GPU validation tests..." << std::endl;
-        std::cout << "  ✓ GPU device initialization" << std::endl;
-        std::cout << "  ✓ Memory allocation tests" << std::endl;
-        std::cout << "  ✓ Basic rendering tests" << std::endl;
-        std::cout << "  ✓ Error recovery tests" << std::endl;
-        return true; // Simplified validation - always pass
-    }
-    
-    void GPUTestSuite::generate_test_report() {
-        std::cout << "  ✓ Test report generated" << std::endl;
-    }
-}
+// Note: GPUTestSuite implementation is now in the actual gpu_test_suite.cpp file

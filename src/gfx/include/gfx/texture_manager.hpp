@@ -34,8 +34,7 @@ public:
     uint64_t get_used_memory() const { return 0; }
     
 private:
-    // Placeholder implementation
-    bool initialized_ = false;
+    // Placeholder implementation - no fields needed yet
 };
 
 } // namespace video_editor::gfx
