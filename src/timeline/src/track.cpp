@@ -62,7 +62,7 @@ bool Track::remove_segment(SegmentId segment_id) {
         return false;
     }
     
-    segments_.erase(segments_.begin() + index);
+    segments_.erase(segments_.begin() + static_cast<std::vector<Segment>::difference_type>(index));
     return true;
 }
 

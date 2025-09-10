@@ -102,6 +102,7 @@ bool CodecOptimizer::apply_h264_optimization(bool is_high_profile) {
 }
 
 bool CodecOptimizer::allocate_gpu_memory_pool(size_t size_bytes) {
+    (void)size_bytes; // Suppress unused parameter warning
 #ifdef _WIN32
     // Allocate D3D11 shared memory pool
     // This is a simplified implementation
@@ -115,12 +116,14 @@ bool CodecOptimizer::allocate_gpu_memory_pool(size_t size_bytes) {
 }
 
 void* CodecOptimizer::get_gpu_memory_block(size_t size) {
+    (void)size; // Suppress unused parameter warning
     // Return GPU memory block from pool
     // Implementation depends on memory management strategy
     return nullptr;
 }
 
 void CodecOptimizer::release_gpu_memory_block(void* ptr) {
+    (void)ptr; // Suppress unused parameter warning
     // Release GPU memory block back to pool
 }
 
@@ -192,6 +195,7 @@ CodecOptimizer::HardwareCapabilities CodecOptimizer::detect_hardware_capabilitie
 CodecOptimizerConfig CodecOptimizer::recommend_config(const std::string& codec, 
                                                      int width, int height, 
                                                      double target_fps) const {
+    (void)target_fps; // Suppress unused parameter warning
     auto caps = detect_hardware_capabilities();
     CodecOptimizerConfig config;
     config.codec_name = codec;
@@ -199,6 +203,7 @@ CodecOptimizerConfig CodecOptimizer::recommend_config(const std::string& codec,
     // Resolution-based optimization
     bool is_4k = (width >= 3840 && height >= 2160);
     bool is_8k = (width >= 7680 && height >= 4320);
+    (void)is_8k; // Suppress unused variable warning
     
     // Codec-specific recommendations
     if (codec == "h264") {
@@ -226,7 +231,7 @@ CodecOptimizerConfig CodecOptimizer::recommend_config(const std::string& codec,
     
     // Memory pool sizing
     if (config.strategy == CodecOptimization::ZERO_COPY_GPU) {
-        size_t frame_size = width * height * 2; // NV12 format
+        size_t frame_size = static_cast<size_t>(width) * static_cast<size_t>(height) * 2; // NV12 format
         config.gpu_memory_pool_size = frame_size * 10; // 10 frame buffer
         config.enable_gpu_memory_pool = true;
     }
@@ -287,7 +292,7 @@ bool ProResOptimization::is_gpu_accelerated_variant(const std::string& variant) 
 }
 
 size_t ProResOptimization::estimate_memory_requirements(int width, int height, const std::string& variant) {
-    size_t base_size = width * height;
+    size_t base_size = static_cast<size_t>(width) * static_cast<size_t>(height);
     if (variant == "4444" || variant == "4444XQ") {
         return base_size * 8; // Higher bit depth
     }
@@ -339,7 +344,7 @@ bool H264Optimization::benefits_from_gpu_decode(int width, int height) {
 }
 
 size_t H264Optimization::get_optimal_buffer_size(int width, int height) {
-    return width * height * 2; // NV12 format
+    return static_cast<size_t>(width) * static_cast<size_t>(height) * 2; // NV12 format
 }
 
 } // namespace codec_utils

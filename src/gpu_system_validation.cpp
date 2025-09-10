@@ -9,6 +9,7 @@
 
 // Include all GPU system components
 #include "gfx/graphics_device.hpp"
+#include "gfx/graphics_device_bridge.hpp"
 #include "gfx/gpu_error_handler.hpp"
 #include "gfx/gpu_performance_dashboard.hpp"
 #include "gfx/gpu_memory_optimizer.hpp"
