@@ -2,6 +2,7 @@
 // Connects our GPU system design with existing ve::gfx::GraphicsDevice
 
 #include "graphics_device_bridge.hpp"
+#include "gpu_memory_optimizer.hpp"
 #include "include/gfx/vk_device.hpp"
 #include "../core/include/core/log.hpp"
 #include <algorithm>
