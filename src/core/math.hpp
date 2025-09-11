@@ -76,7 +76,7 @@ struct Mat4 {
     Mat4() {
         for (int i = 0; i < 4; ++i) {
             for (int j = 0; j < 4; ++j) {
-                m[i][j] = 0.0f;
+                m[static_cast<size_t>(i)][static_cast<size_t>(j)] = 0.0f;
             }
         }
     }
@@ -84,7 +84,7 @@ struct Mat4 {
     static Mat4 identity() {
         Mat4 result;
         for (int i = 0; i < 4; ++i) {
-            result.m[i][i] = 1.0f;
+            result.m[static_cast<size_t>(i)][static_cast<size_t>(i)] = 1.0f;
         }
         return result;
     }
@@ -143,7 +143,7 @@ struct Mat4 {
         for (int i = 0; i < 4; ++i) {
             for (int j = 0; j < 4; ++j) {
                 for (int k = 0; k < 4; ++k) {
-                    result.m[i][j] += m[i][k] * other.m[k][j];
+                    result.m[static_cast<size_t>(i)][static_cast<size_t>(j)] += m[static_cast<size_t>(i)][static_cast<size_t>(k)] * other.m[static_cast<size_t>(k)][static_cast<size_t>(j)];
                 }
             }
         }

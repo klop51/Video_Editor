@@ -2305,7 +2305,7 @@ public:
         params.saturation = saturation;
         params.gamma = gamma;
         
-        return g_device.apply_color_correction_effect(input_texture, output_texture, params);
+        return g_device.apply_color_correction_effect(input_texture, output_texture, &params);
     }
 
     bool apply_gaussian_blur(unsigned int input_texture, unsigned int intermediate_texture,
@@ -2325,7 +2325,7 @@ public:
 
     // Memory usage tracking
     void get_memory_usage(size_t* total, size_t* used, size_t* available) {
-        g_device.get_memory_usage(total, used, available);
+        g_device.get_memory_usage(*total, *used, *available);
     }
 
     unsigned int create_shader_program(const char* vertex_src, const char* fragment_src) {
@@ -2353,15 +2353,15 @@ public:
     }
 
     void draw_texture(unsigned int texture_id, float x, float y, float width, float height) {
-        g_device.draw_texture(texture_id, x, y, width, height);
+        g_device.draw_texture(texture_id, x, y, width, height, 0.0f, 0.0f, 1.0f, 1.0f);
     }
 
     void set_viewport(int width, int height) {
-        g_device.set_viewport(width, height);
+        g_device.set_viewport(0, 0, width, height);
     }
 
     bool get_last_present_rgba(const void** data, int* width, int* height, int* stride) {
-        return g_device.get_last_present_rgba(data, width, height, stride);
+        return g_device.get_last_present_rgba(const_cast<void*>(*data), *width, *height);
     }
 
 private:

@@ -337,7 +337,7 @@ private:
     void setup_performance_monitoring();
 
     GraphicsDevice* device_ = nullptr;
-    std::unique_ptr<ComputeContext> primary_context_;
+    std::unique_ptr<VideoEditor::GFX::ComputeContext> primary_context_;
     
     // Shader library
     std::unordered_map<std::string, std::unique_ptr<ComputeShader>> shader_library_;

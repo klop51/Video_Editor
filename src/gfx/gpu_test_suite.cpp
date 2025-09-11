@@ -24,6 +24,14 @@
 
 namespace video_editor::gfx::test {
 
+// Using declarations for parameter types
+using ::gfx::FilmGrainParams;
+using ::gfx::VignetteParams;
+using ::gfx::ChromaticAberrationParams;
+using ::gfx::ColorWheelParams;
+using ::gfx::BezierCurveParams;
+using ::gfx::HSLQualifierParams;
+
 // ============================================================================
 // GPUTestSuite Implementation
 // ============================================================================

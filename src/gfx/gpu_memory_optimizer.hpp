@@ -365,7 +365,7 @@ private:
 
 public:
     explicit GPUMemoryOptimizer(GraphicsDevice* device, 
-                               const OptimizerConfig& config = OptimizerConfig{});
+                               const OptimizerConfig& config);
     ~GPUMemoryOptimizer();
     
     // Main interface

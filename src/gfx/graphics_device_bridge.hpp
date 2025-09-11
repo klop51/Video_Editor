@@ -159,7 +159,7 @@ public:
         bool enable_performance_monitoring = false;
     };
     
-    static std::unique_ptr<GraphicsDevice> create(const Config& config = Config{});
+    static std::unique_ptr<GraphicsDevice> create(const Config& config);
     
     GraphicsDevice();
     ~GraphicsDevice();
