@@ -2211,6 +2211,14 @@ struct D3D11GraphicsDevice {
     void destroy_buffer(uint32_t) {}
     void upload_buffer(uint32_t, const void*, size_t, size_t) {}
     
+    // Effect parameter types (forward declarations)
+    struct ColorCorrectionParams {
+        float brightness = 0.0f;
+        float contrast = 1.0f;
+        float saturation = 1.0f;
+        float gamma = 1.0f;
+    };
+    
     // Effect pipeline stub methods
     uint32_t create_effect_pipeline() { return 0; }
     bool apply_color_correction_effect(uint32_t, uint32_t, const ColorCorrectionParams&) { return false; }
@@ -2231,16 +2239,8 @@ struct D3D11GraphicsDevice {
     // Rendering stub methods
     void clear(float, float, float, float) {}
     void draw_texture(uint32_t, float, float, float, float) {}
-    void set_viewport(int, int, int, int) {}
+    void set_viewport(int, int) {}
     bool get_last_present_rgba(const void**, int*, int*, int*) { return false; }
-    
-    // Effect parameter types (stubs)
-    struct ColorCorrectionParams {
-        float brightness = 0.0f;
-        float contrast = 1.0f;
-        float saturation = 1.0f;
-        float gamma = 1.0f;
-    };
 };
 static D3D11GraphicsDevice g_device;
 #endif // _WIN32
@@ -2357,11 +2357,12 @@ public:
     }
 
     void set_viewport(int width, int height) {
-        g_device.set_viewport(0, 0, width, height);
+        g_device.set_viewport(width, height);
     }
 
     bool get_last_present_rgba(const void** data, int* width, int* height, int* /*stride*/) {
-        return g_device.get_last_present_rgba(data, width, height);
+        int dummy_stride = 0;
+        return g_device.get_last_present_rgba(data, width, height, &dummy_stride);
     }
 
 private:
