@@ -24,7 +24,7 @@ bool CommandHistory::execute(std::unique_ptr<Command> command, ve::timeline::Tim
 
     // Prune any redo branch
     if (current_index_ < commands_.size()) {
-        commands_.erase(commands_.begin() + current_index_, commands_.end());
+        commands_.erase(commands_.begin() + static_cast<std::ptrdiff_t>(current_index_), commands_.end());
     }
 
     // Attempt to coalesce with last executed command (now both have been applied)
@@ -113,7 +113,7 @@ void CommandHistory::trim_history() {
     
     // Remove oldest commands
     size_t excess = commands_.size() - max_history_;
-    commands_.erase(commands_.begin(), commands_.begin() + excess);
+    commands_.erase(commands_.begin(), commands_.begin() + static_cast<std::ptrdiff_t>(excess));
     
     // Adjust current index
     current_index_ = std::max(static_cast<size_t>(0), current_index_ - excess);

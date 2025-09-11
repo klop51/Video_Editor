@@ -90,7 +90,7 @@ bool PlaybackController::load_media(const std::string& path) {
             }
         }
         ve::log::info("Media duration: " + std::to_string(duration_us_) + " us (" + 
-                     std::to_string(duration_us_ / 1000000.0) + " seconds)");
+                     std::to_string(static_cast<double>(duration_us_) / 1000000.0) + " seconds)");
     } else {
         ve::log::warn("Could not determine media duration");
         duration_us_ = 0;
@@ -185,13 +185,13 @@ void PlaybackController::update_frame_stats(double frame_time_ms) {
     double total = total_frame_time_ms_.fetch_add(frame_time_ms) + frame_time_ms;
     
     stats_.frames_displayed = count;
-    stats_.avg_frame_time_ms = total / count;
+    stats_.avg_frame_time_ms = total / static_cast<double>(count);
 }
 
 void PlaybackController::playback_thread_main() {
     ve::log::info("Playback thread started");
     
-    auto last_frame_time = std::chrono::high_resolution_clock::now();
+    auto last_frame_time = std::chrono::steady_clock::now();
     int64_t last_pts_us = 0;
     bool first_frame = true;
     
@@ -374,7 +374,7 @@ void PlaybackController::playback_thread_main() {
                         if (since_last_log > std::chrono::seconds(5)) { // Log every 5 seconds
                             int64_t total_frames = frame_count_.load();
                             int64_t overruns = frame_overruns_60fps_.load();
-                            double overrun_rate = total_frames > 0 ? (double)overruns / total_frames * 100.0 : 0.0;
+                            double overrun_rate = total_frames > 0 ? static_cast<double>(overruns) / static_cast<double>(total_frames) * 100.0 : 0.0;
                             ve::log::info("4K 60fps performance: " + std::to_string(total_frames) + " frames, " + 
                                         std::to_string(overruns) + " overruns (" + std::to_string(overrun_rate) + "%)");
                             last_perf_log_ = now;
@@ -384,7 +384,7 @@ void PlaybackController::playback_thread_main() {
 
                 last_pts_us = video_frame->pts;
                 first_frame = false;
-                last_frame_time = std::chrono::high_resolution_clock::now();
+                last_frame_time = std::chrono::steady_clock::now();
 
                 // Update performance stats
                 auto frame_time = std::chrono::duration<double, std::milli>(last_frame_time - frame_start);
@@ -462,7 +462,7 @@ int64_t PlaybackController::frame_duration_guess_us() const {
                         auto fr = clip_it->second.source->frame_rate;
                         if(fr.num > 0 && fr.den > 0) {
                             long double fps = (long double)fr.num / (long double)fr.den;
-                            if(fps > 1.0 && fps < 480.0) return (int64_t)((1'000'000.0L / fps) + 0.5L);
+                            if(fps > 1.0L && fps < 480.0L) return (int64_t)((1'000'000.0L / fps) + 0.5L);
                         }
                     }
                 }
