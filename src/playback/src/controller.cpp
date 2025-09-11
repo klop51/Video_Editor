@@ -196,7 +196,7 @@ void PlaybackController::playback_thread_main() {
     bool first_frame = true;
     
     while (!thread_should_exit_.load()) {
-        auto frame_start = std::chrono::high_resolution_clock::now();
+        auto frame_start = std::chrono::steady_clock::now();
 
         // Refresh timeline snapshot if timeline attached and version changed
         if(timeline_) {
@@ -328,7 +328,7 @@ void PlaybackController::playback_thread_main() {
                     // Use fixed frame duration based on detected FPS for consistent timing
                     int64_t frame_duration_us = frame_duration_guess_us();
                     auto target_interval = std::chrono::microseconds(frame_duration_us);
-                    auto frame_end = std::chrono::high_resolution_clock::now();
+                    auto frame_end = std::chrono::steady_clock::now();
                     auto actual_duration = frame_end - last_frame_time;
 
                     // Balanced optimization for 4K 60fps content - targeting 80-83% performance
