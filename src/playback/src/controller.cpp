@@ -192,7 +192,6 @@ void PlaybackController::playback_thread_main() {
     ve::log::info("Playback thread started");
     
     auto last_frame_time = std::chrono::steady_clock::now();
-    int64_t last_pts_us = 0;
     bool first_frame = true;
     
     while (!thread_should_exit_.load()) {
@@ -284,7 +283,6 @@ void PlaybackController::playback_thread_main() {
 
                         // keep existing time advance:
                         // current_time_us_.store(next_pts); // already done above
-                        last_pts_us = current_pts;
                     }
                     continue; // Skip decoding new frame this iteration
                 } else {
@@ -382,7 +380,6 @@ void PlaybackController::playback_thread_main() {
                     }
                 }
 
-                last_pts_us = video_frame->pts;
                 first_frame = false;
                 last_frame_time = std::chrono::steady_clock::now();
 
@@ -429,7 +426,7 @@ void PlaybackController::playback_thread_main() {
         // Handle single-step completion (after any frame decode above)
         if(single_step_.load() && state_.load() == PlaybackState::Playing) {
             // After issuing single step we pause right after first new pts displayed
-            // We track last_pts_us; when it changes post-step we pause.
+            // We track step_start_pts; when it changes post-step we pause.
             static thread_local int64_t step_start_pts = -1;
             if(step_start_pts < 0) step_start_pts = current_time_us_.load();
             if(current_time_us_.load() != step_start_pts) {
