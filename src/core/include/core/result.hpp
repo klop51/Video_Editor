@@ -68,7 +68,7 @@ Result<T> Error(std::string message) {
 using VoidResult = Result<bool>;
 
 inline VoidResult Ok() {
-    return Result<bool>(true);
+    return VoidResult(true);
 }
 
 } // namespace ve::core

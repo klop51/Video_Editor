@@ -1,0 +1,27 @@
+﻿2025-09-11T19:48:49.0719043Z ##[group]Run actions/upload-artifact@v4
+2025-09-11T19:48:49.0719383Z with:
+2025-09-11T19:48:49.0719603Z   name: profiling-windows-latest-Debug-pre
+2025-09-11T19:48:49.0720131Z   path: **/profiling.json
+**/profiling_*.json
+
+2025-09-11T19:48:49.0720399Z   if-no-files-found: ignore
+2025-09-11T19:48:49.0720614Z   compression-level: 6
+2025-09-11T19:48:49.0720813Z   overwrite: false
+2025-09-11T19:48:49.0720999Z   include-hidden-files: false
+2025-09-11T19:48:49.0721206Z env:
+2025-09-11T19:48:49.0721377Z   VCPKG_FORCE_SYSTEM_BINARIES: 1
+2025-09-11T19:48:49.0721603Z   VCPKG_MAX_CONCURRENCY: 2
+2025-09-11T19:48:49.0721801Z   VCPKG_ROOT: C:/vcpkg
+2025-09-11T19:48:49.0722004Z   VCPKG_DEFAULT_TRIPLET: x64-windows
+2025-09-11T19:48:49.0722226Z ##[endgroup]
+2025-09-11T19:48:52.5134652Z With the provided path, there will be 3 files uploaded
+2025-09-11T19:48:52.5141924Z Artifact name is valid!
+2025-09-11T19:48:52.5144570Z Root directory input is valid!
+2025-09-11T19:48:52.8462639Z Beginning upload of artifact content to blob storage
+2025-09-11T19:48:53.1808352Z Uploaded bytes 933
+2025-09-11T19:48:53.2662049Z Finished uploading artifact content to blob storage!
+2025-09-11T19:48:53.2666310Z SHA256 digest of uploaded artifact zip is e7506b4b7d44e9054d2be128a89f7fbbc51edcdd8739ed74eead2703468a1909
+2025-09-11T19:48:53.2668802Z Finalizing artifact upload
+2025-09-11T19:48:53.4217865Z Artifact profiling-windows-latest-Debug-pre.zip successfully finalized. Artifact ID 3989902896
+2025-09-11T19:48:53.4219361Z Artifact profiling-windows-latest-Debug-pre has been successfully uploaded! Final size is 933 bytes. Artifact ID is 3989902896
+2025-09-11T19:48:53.4232172Z Artifact download URL: https://github.com/klop51/Video_Editor/actions/runs/17652654393/artifacts/3989902896

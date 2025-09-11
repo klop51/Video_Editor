@@ -54,16 +54,16 @@ struct Rectangle {
     Rectangle(Point2D pos, Size2D sz) : position(pos), size(sz) {}
 };
 
-// Common result type for operations that may fail
+// Common result type for operations that may fail (specifically for media probing)
 template<typename T>
-struct Result {
+struct ProbeResult {
     bool success = false;
     T value = {};
     std::string error_message;
     
-    Result() = default;
-    explicit Result(T val) : success(true), value(std::move(val)) {}
-    explicit Result(const std::string& error) : success(false), error_message(error) {}
+    ProbeResult() = default;
+    explicit ProbeResult(T val) : success(true), value(std::move(val)) {}
+    explicit ProbeResult(const std::string& error) : success(false), error_message(error) {}
     
     bool is_success() const { return success; }
     bool is_error() const { return !success; }

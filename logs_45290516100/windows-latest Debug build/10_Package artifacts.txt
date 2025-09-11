@@ -1,0 +1,10 @@
+﻿2025-09-11T19:46:35.7595318Z ##[group]Run mkdir -p dist
+2025-09-11T19:46:35.7595648Z [36;1mmkdir -p dist[0m
+2025-09-11T19:46:35.7596001Z [36;1mif [ -d "build/qt-debug" ]; then cp -r build/qt-debug/* dist/ 2>/dev/null || true; fi[0m
+2025-09-11T19:46:35.7607694Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+2025-09-11T19:46:35.7608051Z env:
+2025-09-11T19:46:35.7608217Z   VCPKG_FORCE_SYSTEM_BINARIES: 1
+2025-09-11T19:46:35.7608437Z   VCPKG_MAX_CONCURRENCY: 2
+2025-09-11T19:46:35.7608624Z   VCPKG_ROOT: C:/vcpkg
+2025-09-11T19:46:35.7608810Z   VCPKG_DEFAULT_TRIPLET: x64-windows
+2025-09-11T19:46:35.7609018Z ##[endgroup]

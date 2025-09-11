@@ -1,0 +1,18 @@
+﻿2025-09-11T19:48:53.4516044Z ##[group]Run python scripts/ci_failure_scrape.py --log build/*/Testing/Temporary/LastTest.log --out error_drafts --append-main --flaky-list tests/FLAKY_TESTS.txt --dedupe-window 5 --failure-history failure_history.json --auto-classify-flaky || true
+2025-09-11T19:48:53.4517746Z [36;1mpython scripts/ci_failure_scrape.py --log build/*/Testing/Temporary/LastTest.log --out error_drafts --append-main --flaky-list tests/FLAKY_TESTS.txt --dedupe-window 5 --failure-history failure_history.json --auto-classify-flaky || true[0m
+2025-09-11T19:48:53.4518657Z [36;1mif [ -f failure_history.json ]; then[0m
+2025-09-11T19:48:53.4518945Z [36;1m  echo "Captured failure history"[0m
+2025-09-11T19:48:53.4519183Z [36;1mfi[0m
+2025-09-11T19:48:53.4613119Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+2025-09-11T19:48:53.4613464Z env:
+2025-09-11T19:48:53.4613642Z   VCPKG_FORCE_SYSTEM_BINARIES: 1
+2025-09-11T19:48:53.4613882Z   VCPKG_MAX_CONCURRENCY: 2
+2025-09-11T19:48:53.4614091Z   VCPKG_ROOT: C:/vcpkg
+2025-09-11T19:48:53.4614329Z   VCPKG_DEFAULT_TRIPLET: x64-windows
+2025-09-11T19:48:53.4614561Z ##[endgroup]
+2025-09-11T19:48:54.7829256Z [31;1mParserError: [0mD:\a\_temp\cfcfc0d3-f5f0-4aa1-be1c-9a53590a8339.ps1:3[0m
+2025-09-11T19:48:54.7830497Z [31;1m[0m[36;1mLine |[0m
+2025-09-11T19:48:54.7831477Z [31;1m[0m[36;1m[36;1m   3 | [0m if[36;1m [0m[ -f failure_history.json ]; then[0m
+2025-09-11T19:48:54.7832426Z [31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m     | [31;1m   ~[0m
+2025-09-11T19:48:54.7832990Z [31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m     | [31;1mMissing '(' after 'if' in if statement.[0m
+2025-09-11T19:48:54.8333845Z ##[error]Process completed with exit code 1.

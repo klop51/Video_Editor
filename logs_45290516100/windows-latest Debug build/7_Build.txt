@@ -1,0 +1,530 @@
+﻿2025-09-11T19:44:40.5861216Z ##[group]Run cmake --build build/qt-debug --config Debug --parallel 2
+2025-09-11T19:44:40.5862124Z [36;1mcmake --build build/qt-debug --config Debug --parallel 2[0m
+2025-09-11T19:44:40.5898437Z shell: C:\Program Files\Git\bin\bash.EXE --noprofile --norc -e -o pipefail {0}
+2025-09-11T19:44:40.5898897Z env:
+2025-09-11T19:44:40.5899108Z   VCPKG_FORCE_SYSTEM_BINARIES: 1
+2025-09-11T19:44:40.5899400Z   VCPKG_MAX_CONCURRENCY: 2
+2025-09-11T19:44:40.5899639Z   VCPKG_ROOT: C:/vcpkg
+2025-09-11T19:44:40.5899905Z   VCPKG_DEFAULT_TRIPLET: x64-windows
+2025-09-11T19:44:40.5900297Z ##[endgroup]
+2025-09-11T19:44:40.8671249Z MSBuild version 17.14.19+164abd434 for .NET Framework
+2025-09-11T19:44:40.8999098Z 
+2025-09-11T19:44:41.2596506Z   1>Checking Build System
+2025-09-11T19:44:41.5336938Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/src/core/CMakeLists.txt
+2025-09-11T19:44:41.6876195Z   log.cpp
+2025-09-11T19:44:44.0145110Z   time.cpp
+2025-09-11T19:44:44.9448856Z   profiling.cpp
+2025-09-11T19:44:46.7669209Z   job_system.cpp
+2025-09-11T19:44:47.5700212Z   Generating Code...
+2025-09-11T19:44:47.8105563Z   ve_core.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\src\core\Debug\ve_core.lib
+2025-09-11T19:44:47.8773840Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/src/media_io/CMakeLists.txt
+2025-09-11T19:44:47.9461053Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/src/gfx/CMakeLists.txt
+2025-09-11T19:44:47.9467974Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/src/audio/CMakeLists.txt
+2025-09-11T19:44:48.0157210Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/src/timeline/CMakeLists.txt
+2025-09-11T19:44:48.1040466Z   track.cpp
+2025-09-11T19:44:48.1140440Z   vk_instance.cpp
+2025-09-11T19:44:48.1895693Z   audio_engine.cpp
+2025-09-11T19:44:48.2948127Z   media_probe.cpp
+2025-09-11T19:44:48.9021497Z   vk_device.cpp
+2025-09-11T19:44:49.3487193Z   timeline.cpp
+2025-09-11T19:44:50.7985347Z   Generating Code...
+2025-09-11T19:44:50.8812133Z   graphics_device_bridge.cpp
+2025-09-11T19:44:51.0474434Z   ve_timeline.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\src\timeline\Debug\ve_timeline.lib
+2025-09-11T19:44:51.1423675Z   demuxer.cpp
+2025-09-11T19:44:51.8782148Z   format_detector.cpp
+2025-09-11T19:44:52.0784503Z   ve_audio.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\src\audio\Debug\ve_audio.lib
+2025-09-11T19:44:52.1715879Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/src/persistence/CMakeLists.txt
+2025-09-11T19:44:52.1757548Z   Generating Code...
+2025-09-11T19:44:52.3272327Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/src/commands/CMakeLists.txt
+2025-09-11T19:44:52.4330142Z   project_serializer.cpp
+2025-09-11T19:44:52.4904506Z   ve_gfx.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\src\gfx\Debug\ve_gfx.lib
+2025-09-11T19:44:52.5686414Z   command.cpp
+2025-09-11T19:44:53.8680964Z   prores_support.cpp
+2025-09-11T19:44:54.1613741Z   ve_persistence.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\src\persistence\Debug\ve_persistence.lib
+2025-09-11T19:44:54.2445259Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/CMakeLists.txt
+2025-09-11T19:44:54.3297445Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/tests/CMakeLists.txt
+2025-09-11T19:44:54.4067001Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/src/tools/test_d3d11/CMakeLists.txt
+2025-09-11T19:44:54.4924414Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/CMakeLists.txt
+2025-09-11T19:44:54.5772713Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/CMakeLists.txt
+2025-09-11T19:44:54.6777065Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/CMakeLists.txt
+2025-09-11T19:44:54.7769534Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/CMakeLists.txt
+2025-09-11T19:44:54.8809605Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/CMakeLists.txt
+2025-09-11T19:44:54.9722208Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/tests/CMakeLists.txt
+2025-09-11T19:44:55.0088956Z   timeline_commands.cpp
+2025-09-11T19:44:55.0638980Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/tests/CMakeLists.txt
+2025-09-11T19:44:55.1495024Z   gpu_bridge_phase2_complete.cpp
+2025-09-11T19:44:55.6597038Z   dnxhd_support.cpp
+2025-09-11T19:44:56.4649970Z   gpu_bridge_phase2_complete.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\Debug\gpu_bridge_phase2_complete.exe
+2025-09-11T19:44:57.0693718Z   modern_codec_support.cpp
+2025-09-11T19:44:57.3350773Z   Generating Code...
+2025-09-11T19:44:57.5114924Z   test_gfx_headers.cpp
+2025-09-11T19:44:57.8366064Z   test_gfx_headers.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\Debug\test_gfx_headers.exe
+2025-09-11T19:44:58.4624026Z   test_memory_management.cpp
+2025-09-11T19:44:58.5197242Z   modern_codec_format_integration.cpp
+2025-09-11T19:44:58.8223830Z   main.cpp
+2025-09-11T19:44:59.6417904Z   hdr_infrastructure.cpp
+2025-09-11T19:44:59.9814907Z   gpu_test_suite.cpp
+2025-09-11T19:44:59.9819587Z   test_memory_management.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\Debug\test_memory_management.exe
+2025-09-11T19:45:01.0390463Z   hdr_utilities.cpp
+2025-09-11T19:45:01.1677999Z   test_d3d11_simple.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\test_d3d11\Debug\ve_test_d3d11.exe
+2025-09-11T19:45:02.1310345Z   log_format_support.cpp
+2025-09-11T19:45:02.1524587Z   gpu_system_validation.cpp
+2025-09-11T19:45:02.9840600Z D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(14,7): error C2220: the following warning is treated as an error [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:02.9842575Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:02.9843999Z   
+2025-09-11T19:45:02.9948857Z D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(14,7): warning C4099: 've::core::Result': type name first seen using 'struct' now seen using 'class' [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:02.9956203Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:02.9971418Z       D:\a\Video_Editor\Video_Editor\src\core\types.hpp(59,8):
+2025-09-11T19:45:02.9973501Z       see declaration of 've::core::Result'
+2025-09-11T19:45:02.9974862Z   
+2025-09-11T19:45:02.9976342Z D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(14,7): error C2953: 've::core::Result': class template has already been defined [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:02.9978252Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:02.9979261Z       D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(14,7):
+2025-09-11T19:45:02.9980126Z       see declaration of 've::core::Result'
+2025-09-11T19:45:02.9980813Z   
+2025-09-11T19:45:02.9982287Z D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(58,11): error C2955: 've::core::Result': use of class template requires template argument list [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:02.9985102Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:02.9985902Z       D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(14,7):
+2025-09-11T19:45:02.9986790Z       see declaration of 've::core::Result'
+2025-09-11T19:45:02.9987485Z   
+2025-09-11T19:45:02.9989986Z D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(63,11): error C2955: 've::core::Result': use of class template requires template argument list [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:02.9991854Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:02.9992887Z       D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(14,7):
+2025-09-11T19:45:02.9993813Z       see declaration of 've::core::Result'
+2025-09-11T19:45:02.9994482Z   
+2025-09-11T19:45:02.9995935Z D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(70,19): error C2955: 've::core::Result': use of class template requires template argument list [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:02.9999476Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.0000488Z       D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(14,7):
+2025-09-11T19:45:03.0001427Z       see declaration of 've::core::Result'
+2025-09-11T19:45:03.0002095Z   
+2025-09-11T19:45:03.0003612Z D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(71,24): error C2641: cannot deduce template arguments for 've::core::Result' [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.0014595Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.0015368Z   
+2025-09-11T19:45:03.0896645Z D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(71,24): error C2893: Failed to specialize function template 've::core::Result<T> ve::core::Result(T)' [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.0899120Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.0901883Z       D:\a\Video_Editor\Video_Editor\src\core\types.hpp(65,5):
+2025-09-11T19:45:03.0906368Z       see declaration of 've::core::Result'
+2025-09-11T19:45:03.0907595Z       D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(71,24):
+2025-09-11T19:45:03.0909695Z       With the following template arguments:
+2025-09-11T19:45:03.0910538Z           D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(71,24):
+2025-09-11T19:45:03.0911576Z           'T=bool'
+2025-09-11T19:45:03.0912043Z   
+2025-09-11T19:45:03.0913522Z D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(71,24): error C2780: 've::core::Result<T> ve::core::Result(void)': expects 0 arguments - 1 provided [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.0915229Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.0916020Z       D:\a\Video_Editor\Video_Editor\src\core\types.hpp(64,5):
+2025-09-11T19:45:03.0916682Z       see declaration of 've::core::Result'
+2025-09-11T19:45:03.0917244Z   
+2025-09-11T19:45:03.0918778Z D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(71,24): error C2784: 've::core::Result<T> ve::core::Result(ve::core::Result<T>)': could not deduce template argument for 've::core::Result<T>' from 'bool' [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.0920631Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.0921498Z       D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(14,7):
+2025-09-11T19:45:03.0922239Z       see declaration of 've::core::Result'
+2025-09-11T19:45:03.0923181Z   
+2025-09-11T19:45:03.7266498Z   high_bitdepth_support.cpp
+2025-09-11T19:45:03.7404705Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(118,35): error C2061: syntax error: identifier 'GraphicsDevice' [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7409391Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7410184Z   
+2025-09-11T19:45:03.7412507Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(118,28): error C2955: 've::core::Result': use of class template requires template argument list [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7417280Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7420429Z       D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(14,7):
+2025-09-11T19:45:03.7421697Z       see declaration of 've::core::Result'
+2025-09-11T19:45:03.7424422Z   
+2025-09-11T19:45:03.7427600Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(119,28): error C2955: 've::core::Result': use of class template requires template argument list [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7429840Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7430775Z       D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(14,7):
+2025-09-11T19:45:03.7431573Z       see declaration of 've::core::Result'
+2025-09-11T19:45:03.7432199Z   
+2025-09-11T19:45:03.7433592Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(120,28): error C2955: 've::core::Result': use of class template requires template argument list [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7435822Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7436773Z       D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(14,7):
+2025-09-11T19:45:03.7437632Z       see declaration of 've::core::Result'
+2025-09-11T19:45:03.7438233Z   
+2025-09-11T19:45:03.7474510Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(141,19): error C2143: syntax error: missing ';' before '*' [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7475927Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7476657Z   
+2025-09-11T19:45:03.7479746Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(141,5): error C4430: missing type specifier - int assumed. Note: C++ does not support default-int [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7481397Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7482024Z   
+2025-09-11T19:45:03.7483113Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(141,38): error C2238: unexpected token(s) preceding ';' [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7484563Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7485185Z   
+2025-09-11T19:45:03.7529375Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(154,38): error C2061: syntax error: identifier 'GraphicsDevice' [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7531578Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7534379Z   
+2025-09-11T19:45:03.7538503Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(154,28): error C2955: 've::core::Result': use of class template requires template argument list [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7541574Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7544183Z       D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(14,7):
+2025-09-11T19:45:03.7547024Z       see declaration of 've::core::Result'
+2025-09-11T19:45:03.7548649Z   
+2025-09-11T19:45:03.7550083Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(156,38): error C2061: syntax error: identifier 'GraphicsDevice' [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7551733Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7552513Z   
+2025-09-11T19:45:03.7554824Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(156,28): error C2955: 've::core::Result': use of class template requires template argument list [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7557392Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7558536Z       D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(14,7):
+2025-09-11T19:45:03.7560383Z       see declaration of 've::core::Result'
+2025-09-11T19:45:03.7564096Z   
+2025-09-11T19:45:03.7590182Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(195,47): error C2061: syntax error: identifier 'GraphicsDevice' [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7595380Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7597482Z   
+2025-09-11T19:45:03.7601656Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(195,28): error C2955: 've::core::Result': use of class template requires template argument list [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7604858Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7607845Z       D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(14,7):
+2025-09-11T19:45:03.7610723Z       see declaration of 've::core::Result'
+2025-09-11T19:45:03.7612587Z   
+2025-09-11T19:45:03.7616632Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(196,45): error C2061: syntax error: identifier 'GraphicsDevice' [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7619835Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7621293Z   
+2025-09-11T19:45:03.7626131Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(196,28): error C2955: 've::core::Result': use of class template requires template argument list [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7630447Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7632758Z       D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(14,7):
+2025-09-11T19:45:03.7634958Z       see declaration of 've::core::Result'
+2025-09-11T19:45:03.7638485Z   
+2025-09-11T19:45:03.7641105Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(208,49): error C2955: 've::core::Result': use of class template requires template argument list [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7644361Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7646332Z       D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(14,7):
+2025-09-11T19:45:03.7649028Z       see declaration of 've::core::Result'
+2025-09-11T19:45:03.7651698Z   
+2025-09-11T19:45:03.7655712Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(209,49): error C2955: 've::core::Result': use of class template requires template argument list [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7658851Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7660578Z       D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(14,7):
+2025-09-11T19:45:03.7661572Z       see declaration of 've::core::Result'
+2025-09-11T19:45:03.7662614Z   
+2025-09-11T19:45:03.7664134Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(210,49): error C2955: 've::core::Result': use of class template requires template argument list [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7666338Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7667285Z       D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(14,7):
+2025-09-11T19:45:03.7668139Z       see declaration of 've::core::Result'
+2025-09-11T19:45:03.7668809Z   
+2025-09-11T19:45:03.7670313Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(212,49): error C2955: 've::core::Result': use of class template requires template argument list [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7672174Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7673188Z       D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(14,7):
+2025-09-11T19:45:03.7674093Z       see declaration of 've::core::Result'
+2025-09-11T19:45:03.7676057Z   
+2025-09-11T19:45:03.7677581Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(221,28): error C2955: 've::core::Result': use of class template requires template argument list [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7679360Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7680317Z       D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(14,7):
+2025-09-11T19:45:03.7681171Z       see declaration of 've::core::Result'
+2025-09-11T19:45:03.7681769Z   
+2025-09-11T19:45:03.7683111Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(227,19): error C2143: syntax error: missing ';' before '*' [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7684646Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7685781Z   
+2025-09-11T19:45:03.7687255Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(227,5): error C4430: missing type specifier - int assumed. Note: C++ does not support default-int [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7691863Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7692462Z   
+2025-09-11T19:45:03.7693580Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(227,38): error C2238: unexpected token(s) preceding ';' [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7694934Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7695532Z   
+2025-09-11T19:45:03.7771343Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(253,39): error C2061: syntax error: identifier 'GraphicsDevice' [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7773308Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7775373Z   
+2025-09-11T19:45:03.7779735Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(253,28): error C2955: 've::core::Result': use of class template requires template argument list [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7784885Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7786637Z       D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(14,7):
+2025-09-11T19:45:03.7788535Z       see declaration of 've::core::Result'
+2025-09-11T19:45:03.7789011Z   
+2025-09-11T19:45:03.7790409Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(264,28): error C2955: 've::core::Result': use of class template requires template argument list [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7795015Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7796774Z       D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(14,7):
+2025-09-11T19:45:03.7798977Z       see declaration of 've::core::Result'
+2025-09-11T19:45:03.7801836Z   
+2025-09-11T19:45:03.7805803Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(277,19): error C2143: syntax error: missing ';' before '*' [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7808747Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7810126Z   
+2025-09-11T19:45:03.7811737Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(277,5): error C4430: missing type specifier - int assumed. Note: C++ does not support default-int [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7813623Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7814409Z   
+2025-09-11T19:45:03.7815812Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(277,38): error C2238: unexpected token(s) preceding ';' [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7817797Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7818580Z   
+2025-09-11T19:45:03.7975928Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(303,39): error C2061: syntax error: identifier 'GraphicsDevice' [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7977766Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7983424Z   
+2025-09-11T19:45:03.7987803Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(303,28): error C2955: 've::core::Result': use of class template requires template argument list [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.7992187Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.7993716Z       D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(14,7):
+2025-09-11T19:45:03.7995757Z       see declaration of 've::core::Result'
+2025-09-11T19:45:03.7998485Z   
+2025-09-11T19:45:03.8002406Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(311,38): error C2955: 've::core::Result': use of class template requires template argument list [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.8005838Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.8008350Z       D:\a\Video_Editor\Video_Editor\src\core\include\core\result.hpp(14,7):
+2025-09-11T19:45:03.8010710Z       see declaration of 've::core::Result'
+2025-09-11T19:45:03.8011981Z   
+2025-09-11T19:45:03.8013372Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(339,19): error C2143: syntax error: missing ';' before '*' [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.8014976Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.8015774Z   
+2025-09-11T19:45:03.8017315Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(339,5): error C4430: missing type specifier - int assumed. Note: C++ does not support default-int [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.8019186Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.8019972Z   
+2025-09-11T19:45:03.8021202Z D:\a\Video_Editor\Video_Editor\src\gfx\compute_shader_system.hpp(339,38): error C2238: unexpected token(s) preceding ';' [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:03.8022820Z   (compiling source file '../../../src/gfx/gpu_test_suite.cpp')
+2025-09-11T19:45:03.8023584Z   
+2025-09-11T19:45:04.3059480Z D:\a\Video_Editor\Video_Editor\src\gfx\gpu_test_suite.cpp(442,9): error C2280: 'std::unique_ptr<video_editor::gfx::GraphicsDevice,std::default_delete<video_editor::gfx::GraphicsDevice>>::unique_ptr(const std::unique_ptr<video_editor::gfx::GraphicsDevice,std::default_delete<video_editor::gfx::GraphicsDevice>> &)': attempting to reference a deleted function [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:04.3063220Z       C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\14.44.35207\include\memory(3475,5):
+2025-09-11T19:45:04.3064850Z       see declaration of 'std::unique_ptr<video_editor::gfx::GraphicsDevice,std::default_delete<video_editor::gfx::GraphicsDevice>>::unique_ptr'
+2025-09-11T19:45:04.3066837Z       C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\14.44.35207\include\memory(3475,5):
+2025-09-11T19:45:04.3069111Z       'std::unique_ptr<video_editor::gfx::GraphicsDevice,std::default_delete<video_editor::gfx::GraphicsDevice>>::unique_ptr(const std::unique_ptr<video_editor::gfx::GraphicsDevice,std::default_delete<video_editor::gfx::GraphicsDevice>> &)': function was explicitly deleted
+2025-09-11T19:45:04.3071863Z   
+2025-09-11T19:45:04.3147831Z D:\a\Video_Editor\Video_Editor\src\gfx\gpu_test_suite.cpp(548,40): error C2664: 'video_editor::gfx::TextureHandle video_editor::gfx::ChromaticAberrationProcessor::apply(const video_editor::gfx::TextureHandle &,const video_editor::gfx::ChromaticAberrationProcessor::ChromaticAberrationParams &)': cannot convert argument 2 from 'gfx::ChromaticAberrationParams' to 'const video_editor::gfx::ChromaticAberrationProcessor::ChromaticAberrationParams &' [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:04.3153246Z       D:\a\Video_Editor\Video_Editor\src\gfx\gpu_test_suite.cpp(548,61):
+2025-09-11T19:45:04.3157415Z       Reason: cannot convert from 'gfx::ChromaticAberrationParams' to 'const video_editor::gfx::ChromaticAberrationProcessor::ChromaticAberrationParams'
+2025-09-11T19:45:04.3165829Z       D:\a\Video_Editor\Video_Editor\src\gfx\gpu_test_suite.cpp(548,61):
+2025-09-11T19:45:04.3168082Z       No user-defined-conversion operator available that can perform this conversion, or the operator cannot be called
+2025-09-11T19:45:04.3171226Z       D:\a\Video_Editor\Video_Editor\src\gfx\graphics_device_bridge.hpp(236,19):
+2025-09-11T19:45:04.3174852Z       see declaration of 'video_editor::gfx::ChromaticAberrationProcessor::apply'
+2025-09-11T19:45:04.3177788Z       D:\a\Video_Editor\Video_Editor\src\gfx\gpu_test_suite.cpp(548,40):
+2025-09-11T19:45:04.3179068Z       while trying to match the argument list '(video_editor::gfx::TextureHandle, gfx::ChromaticAberrationParams)'
+2025-09-11T19:45:04.3180152Z   
+2025-09-11T19:45:04.3183088Z D:\a\Video_Editor\Video_Editor\src\gfx\gpu_test_suite.cpp(574,41): error C2664: 'video_editor::gfx::TextureHandle video_editor::gfx::ColorGradingProcessor::apply_color_wheels(const video_editor::gfx::TextureHandle &,const video_editor::gfx::ColorGradingProcessor::ColorWheelParams &)': cannot convert argument 2 from 'gfx::ColorWheelParams' to 'const video_editor::gfx::ColorGradingProcessor::ColorWheelParams &' [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:04.3186611Z       D:\a\Video_Editor\Video_Editor\src\gfx\gpu_test_suite.cpp(574,75):
+2025-09-11T19:45:04.3188175Z       Reason: cannot convert from 'gfx::ColorWheelParams' to 'const video_editor::gfx::ColorGradingProcessor::ColorWheelParams'
+2025-09-11T19:45:04.3189561Z       D:\a\Video_Editor\Video_Editor\src\gfx\gpu_test_suite.cpp(574,75):
+2025-09-11T19:45:04.3190895Z       No user-defined-conversion operator available that can perform this conversion, or the operator cannot be called
+2025-09-11T19:45:04.3192228Z       D:\a\Video_Editor\Video_Editor\src\gfx\graphics_device_bridge.hpp(263,19):
+2025-09-11T19:45:04.3193378Z       see declaration of 'video_editor::gfx::ColorGradingProcessor::apply_color_wheels'
+2025-09-11T19:45:04.3194417Z       D:\a\Video_Editor\Video_Editor\src\gfx\gpu_test_suite.cpp(574,41):
+2025-09-11T19:45:04.3195955Z       while trying to match the argument list '(video_editor::gfx::TextureHandle, gfx::ColorWheelParams)'
+2025-09-11T19:45:04.3196942Z   
+2025-09-11T19:45:04.3199817Z D:\a\Video_Editor\Video_Editor\src\gfx\gpu_test_suite.cpp(588,41): error C2664: 'video_editor::gfx::TextureHandle video_editor::gfx::ColorGradingProcessor::apply_curves(const video_editor::gfx::TextureHandle &,const video_editor::gfx::ColorGradingProcessor::BezierCurveParams &)': cannot convert argument 2 from 'gfx::ColorCurvesParams' to 'const video_editor::gfx::ColorGradingProcessor::BezierCurveParams &' [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:04.3203040Z       D:\a\Video_Editor\Video_Editor\src\gfx\gpu_test_suite.cpp(588,69):
+2025-09-11T19:45:04.3204374Z       Reason: cannot convert from 'gfx::ColorCurvesParams' to 'const video_editor::gfx::ColorGradingProcessor::BezierCurveParams'
+2025-09-11T19:45:04.3205777Z       D:\a\Video_Editor\Video_Editor\src\gfx\gpu_test_suite.cpp(588,69):
+2025-09-11T19:45:04.3207061Z       No user-defined-conversion operator available that can perform this conversion, or the operator cannot be called
+2025-09-11T19:45:04.3209172Z       D:\a\Video_Editor\Video_Editor\src\gfx\graphics_device_bridge.hpp(264,19):
+2025-09-11T19:45:04.3210330Z       see declaration of 'video_editor::gfx::ColorGradingProcessor::apply_curves'
+2025-09-11T19:45:04.3211384Z       D:\a\Video_Editor\Video_Editor\src\gfx\gpu_test_suite.cpp(588,41):
+2025-09-11T19:45:04.3212580Z       while trying to match the argument list '(video_editor::gfx::TextureHandle, gfx::ColorCurvesParams)'
+2025-09-11T19:45:04.3213576Z   
+2025-09-11T19:45:04.3216555Z D:\a\Video_Editor\Video_Editor\src\gfx\gpu_test_suite.cpp(601,41): error C2664: 'video_editor::gfx::TextureHandle video_editor::gfx::ColorGradingProcessor::apply_hsl_qualifier(const video_editor::gfx::TextureHandle &,const video_editor::gfx::ColorGradingProcessor::HSLQualifierParams &)': cannot convert argument 2 from 'gfx::HSLQualifierParams' to 'const video_editor::gfx::ColorGradingProcessor::HSLQualifierParams &' [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_test_suite.vcxproj]
+2025-09-11T19:45:04.3219850Z       D:\a\Video_Editor\Video_Editor\src\gfx\gpu_test_suite.cpp(601,76):
+2025-09-11T19:45:04.3221185Z       Reason: cannot convert from 'gfx::HSLQualifierParams' to 'const video_editor::gfx::ColorGradingProcessor::HSLQualifierParams'
+2025-09-11T19:45:04.3222473Z       D:\a\Video_Editor\Video_Editor\src\gfx\gpu_test_suite.cpp(601,76):
+2025-09-11T19:45:04.3223646Z       No user-defined-conversion operator available that can perform this conversion, or the operator cannot be called
+2025-09-11T19:45:04.3224874Z       D:\a\Video_Editor\Video_Editor\src\gfx\graphics_device_bridge.hpp(265,19):
+2025-09-11T19:45:04.3225907Z       see declaration of 'video_editor::gfx::ColorGradingProcessor::apply_hsl_qualifier'
+2025-09-11T19:45:04.3226885Z       D:\a\Video_Editor\Video_Editor\src\gfx\gpu_test_suite.cpp(601,41):
+2025-09-11T19:45:04.3228478Z       while trying to match the argument list '(video_editor::gfx::TextureHandle, gfx::HSLQualifierParams)'
+2025-09-11T19:45:04.3229435Z   
+2025-09-11T19:45:04.4414843Z   gpu_bridge_phase5_advanced_validation.cpp
+2025-09-11T19:45:05.2774180Z   color_management.cpp
+2025-09-11T19:45:06.6150635Z   high_resolution_support.cpp
+2025-09-11T19:45:06.9381435Z gpu_system_validation.obj : error LNK2019: unresolved external symbol "public: __cdecl video_editor::gfx::test::GPUTestSuite::GPUTestSuite(struct video_editor::gfx::test::GPUTestSuite::TestConfig const &)" (??0GPUTestSuite@test@gfx@video_editor@@QEAA@AEBUTestConfig@0123@@Z) referenced in function "class std::unique_ptr<class video_editor::gfx::test::GPUTestSuite,struct std::default_delete<class video_editor::gfx::test::GPUTestSuite> > __cdecl std::make_unique<class video_editor::gfx::test::GPUTestSuite,struct video_editor::gfx::test::GPUTestSuite::TestConfig &,0>(struct video_editor::gfx::test::GPUTestSuite::TestConfig &)" (??$make_unique@VGPUTestSuite@test@gfx@video_editor@@AEAUTestConfig@1234@$0A@@std@@YA?AV?$unique_ptr@VGPUTestSuite@test@gfx@video_editor@@U?$default_delete@VGPUTestSuite@test@gfx@video_editor@@@std@@@0@AEAUTestConfig@GPUTestSuite@test@gfx@video_editor@@@Z) [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_system_validation.vcxproj]
+2025-09-11T19:45:06.9394004Z gpu_system_validation.obj : error LNK2019: unresolved external symbol "public: __cdecl video_editor::gfx::test::GPUTestSuite::~GPUTestSuite(void)" (??1GPUTestSuite@test@gfx@video_editor@@QEAA@XZ) referenced in function "public: void * __cdecl video_editor::gfx::test::GPUTestSuite::`scalar deleting destructor'(unsigned int)" (??_GGPUTestSuite@test@gfx@video_editor@@QEAAPEAXI@Z) [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_system_validation.vcxproj]
+2025-09-11T19:45:06.9400749Z gpu_system_validation.obj : error LNK2019: unresolved external symbol "public: bool __cdecl video_editor::gfx::test::GPUTestSuite::run_all_tests(void)" (?run_all_tests@GPUTestSuite@test@gfx@video_editor@@QEAA_NXZ) referenced in function main [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_system_validation.vcxproj]
+2025-09-11T19:45:06.9407439Z gpu_system_validation.obj : error LNK2019: unresolved external symbol "public: void __cdecl video_editor::gfx::test::GPUTestSuite::generate_test_report(void)" (?generate_test_report@GPUTestSuite@test@gfx@video_editor@@QEAAXXZ) referenced in function main [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_system_validation.vcxproj]
+2025-09-11T19:45:06.9438919Z gpu_system_validation.obj : error LNK2019: unresolved external symbol "public: __cdecl video_editor::gfx::GPUErrorHandler::~GPUErrorHandler(void)" (??1GPUErrorHandler@gfx@video_editor@@QEAA@XZ) referenced in function "public: void * __cdecl video_editor::gfx::GPUErrorHandler::`scalar deleting destructor'(unsigned int)" (??_GGPUErrorHandler@gfx@video_editor@@QEAAPEAXI@Z) [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_system_validation.vcxproj]
+2025-09-11T19:45:06.9444309Z gpu_system_validation.obj : error LNK2019: unresolved external symbol "public: void __cdecl video_editor::gfx::GPUErrorHandler::report_error(enum video_editor::gfx::GPUErrorType,class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > const &,class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > const &,unsigned int)" (?report_error@GPUErrorHandler@gfx@video_editor@@QEAAXW4GPUErrorType@23@AEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@1I@Z) referenced in function main [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_system_validation.vcxproj]
+2025-09-11T19:45:06.9449130Z gpu_system_validation.obj : error LNK2019: unresolved external symbol "public: struct video_editor::gfx::GPUErrorHandler::ErrorStatistics __cdecl video_editor::gfx::GPUErrorHandler::get_error_statistics(void)const " (?get_error_statistics@GPUErrorHandler@gfx@video_editor@@QEBA?AUErrorStatistics@123@XZ) referenced in function main [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_system_validation.vcxproj]
+2025-09-11T19:45:06.9453098Z gpu_system_validation.obj : error LNK2019: unresolved external symbol "public: bool __cdecl video_editor::gfx::GPUErrorHandler::is_system_healthy(void)const " (?is_system_healthy@GPUErrorHandler@gfx@video_editor@@QEBA_NXZ) referenced in function main [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_system_validation.vcxproj]
+2025-09-11T19:45:06.9456706Z gpu_system_validation.obj : error LNK2019: unresolved external symbol "public: float __cdecl video_editor::gfx::GPUErrorHandler::get_system_stability_score(void)const " (?get_system_stability_score@GPUErrorHandler@gfx@video_editor@@QEBAMXZ) referenced in function main [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_system_validation.vcxproj]
+2025-09-11T19:45:06.9461565Z gpu_system_validation.obj : error LNK2019: unresolved external symbol "public: __cdecl video_editor::gfx::ErrorContext::ErrorContext(class video_editor::gfx::GPUErrorHandler *,class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > const &)" (??0ErrorContext@gfx@video_editor@@QEAA@PEAVGPUErrorHandler@12@AEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z) referenced in function main [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_system_validation.vcxproj]
+2025-09-11T19:45:06.9466000Z gpu_system_validation.obj : error LNK2019: unresolved external symbol "public: __cdecl video_editor::gfx::ErrorContext::~ErrorContext(void)" (??1ErrorContext@gfx@video_editor@@QEAA@XZ) referenced in function main [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_system_validation.vcxproj]
+2025-09-11T19:45:06.9471270Z gpu_system_validation.obj : error LNK2019: unresolved external symbol "public: static class std::unique_ptr<class video_editor::gfx::GPUErrorHandler,struct std::default_delete<class video_editor::gfx::GPUErrorHandler> > __cdecl video_editor::gfx::ErrorHandlerFactory::create_with_config(class video_editor::gfx::GraphicsDevice *,struct video_editor::gfx::ErrorHandlerConfig const &)" (?create_with_config@ErrorHandlerFactory@gfx@video_editor@@SA?AV?$unique_ptr@VGPUErrorHandler@gfx@video_editor@@U?$default_delete@VGPUErrorHandler@gfx@video_editor@@@std@@@std@@PEAVGraphicsDevice@23@AEBUErrorHandlerConfig@23@@Z) referenced in function main [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_system_validation.vcxproj]
+2025-09-11T19:45:06.9477920Z gpu_system_validation.obj : error LNK2019: unresolved external symbol "public: static struct video_editor::gfx::ErrorHandlerConfig __cdecl video_editor::gfx::ErrorHandlerFactory::get_production_config(void)" (?get_production_config@ErrorHandlerFactory@gfx@video_editor@@SA?AUErrorHandlerConfig@23@XZ) referenced in function main [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_system_validation.vcxproj]
+2025-09-11T19:45:06.9483011Z gpu_system_validation.obj : error LNK2019: unresolved external symbol "public: struct video_editor::gfx::PerformanceStatistics::TimingStatistics __cdecl video_editor::gfx::PerformanceStatistics::get_frame_timing_stats(class std::chrono::duration<__int64,struct std::ratio<1,1> >)const " (?get_frame_timing_stats@PerformanceStatistics@gfx@video_editor@@QEBA?AUTimingStatistics@123@V?$duration@_JU?$ratio@$00$00@std@@@chrono@std@@@Z) referenced in function main [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_system_validation.vcxproj]
+2025-09-11T19:45:06.9488503Z gpu_system_validation.obj : error LNK2019: unresolved external symbol "public: struct video_editor::gfx::PerformanceStatistics::MemoryStatistics __cdecl video_editor::gfx::PerformanceStatistics::get_memory_stats(class std::chrono::duration<__int64,struct std::ratio<1,1> >)const " (?get_memory_stats@PerformanceStatistics@gfx@video_editor@@QEBA?AUMemoryStatistics@123@V?$duration@_JU?$ratio@$00$00@std@@@chrono@std@@@Z) referenced in function main [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_system_validation.vcxproj]
+2025-09-11T19:45:06.9497380Z gpu_system_validation.obj : error LNK2019: unresolved external symbol "public: __cdecl video_editor::gfx::PerformanceDashboard::PerformanceDashboard(class video_editor::gfx::GraphicsDevice *,struct video_editor::gfx::PerformanceTargets const &)" (??0PerformanceDashboard@gfx@video_editor@@QEAA@PEAVGraphicsDevice@12@AEBUPerformanceTargets@12@@Z) referenced in function "class std::unique_ptr<class video_editor::gfx::PerformanceDashboard,struct std::default_delete<class video_editor::gfx::PerformanceDashboard> > __cdecl std::make_unique<class video_editor::gfx::PerformanceDashboard,class video_editor::gfx::GraphicsDevice *,struct video_editor::gfx::PerformanceTargets &,0>(class video_editor::gfx::GraphicsDevice * &&,struct video_editor::gfx::PerformanceTargets &)" (??$make_unique@VPerformanceDashboard@gfx@video_editor@@PEAVGraphicsDevice@23@AEAUPerformanceTargets@23@$0A@@std@@YA?AV?$unique_ptr@VPerformanceDashboard@gfx@video_editor@@U?$default_delete@VPerformanceDashboard@gfx@video_editor@@@std@@@0@$$QEAPEAVGraphicsDevice@gfx@video_editor@@AEAUPerformanceTargets@34@@Z) [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_system_validation.vcxproj]
+2025-09-11T19:45:06.9507065Z gpu_system_validation.obj : error LNK2019: unresolved external symbol "public: __cdecl video_editor::gfx::PerformanceDashboard::~PerformanceDashboard(void)" (??1PerformanceDashboard@gfx@video_editor@@QEAA@XZ) referenced in function "public: void * __cdecl video_editor::gfx::PerformanceDashboard::`scalar deleting destructor'(unsigned int)" (??_GPerformanceDashboard@gfx@video_editor@@QEAAPEAXI@Z) [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_system_validation.vcxproj]
+2025-09-11T19:45:06.9511456Z gpu_system_validation.obj : error LNK2019: unresolved external symbol "public: void __cdecl video_editor::gfx::PerformanceDashboard::start_monitoring(void)" (?start_monitoring@PerformanceDashboard@gfx@video_editor@@QEAAXXZ) referenced in function main [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_system_validation.vcxproj]
+2025-09-11T19:45:06.9515073Z gpu_system_validation.obj : error LNK2019: unresolved external symbol "public: void __cdecl video_editor::gfx::PerformanceDashboard::stop_monitoring(void)" (?stop_monitoring@PerformanceDashboard@gfx@video_editor@@QEAAXXZ) referenced in function main [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_system_validation.vcxproj]
+2025-09-11T19:45:06.9521424Z gpu_system_validation.obj : error LNK2019: unresolved external symbol "public: class std::vector<struct video_editor::gfx::PerformanceOptimizer::OptimizationRecommendation,class std::allocator<struct video_editor::gfx::PerformanceOptimizer::OptimizationRecommendation> > __cdecl video_editor::gfx::PerformanceDashboard::get_recommendations(void)const " (?get_recommendations@PerformanceDashboard@gfx@video_editor@@QEBA?AV?$vector@UOptimizationRecommendation@PerformanceOptimizer@gfx@video_editor@@V?$allocator@UOptimizationRecommendation@PerformanceOptimizer@gfx@video_editor@@@std@@@std@@XZ) referenced in function main [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_system_validation.vcxproj]
+2025-09-11T19:45:06.9527946Z gpu_system_validation.obj : error LNK2019: unresolved external symbol "public: bool __cdecl video_editor::gfx::PerformanceDashboard::export_statistics(class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > const &)const " (?export_statistics@PerformanceDashboard@gfx@video_editor@@QEBA_NAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z) referenced in function main [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_system_validation.vcxproj]
+2025-09-11T19:45:06.9532721Z gpu_system_validation.obj : error LNK2019: unresolved external symbol "public: void __cdecl video_editor::gfx::PerformanceDashboard::integrate_with_error_handler(class video_editor::gfx::GPUErrorHandler *)" (?integrate_with_error_handler@PerformanceDashboard@gfx@video_editor@@QEAAXPEAVGPUErrorHandler@23@@Z) referenced in function main [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_system_validation.vcxproj]
+2025-09-11T19:45:06.9537354Z gpu_system_validation.obj : error LNK2019: unresolved external symbol "public: void __cdecl video_editor::gfx::PerformanceDashboard::integrate_with_memory_optimizer(class video_editor::gfx::GPUMemoryOptimizer *)" (?integrate_with_memory_optimizer@PerformanceDashboard@gfx@video_editor@@QEAAXPEAVGPUMemoryOptimizer@23@@Z) referenced in function main [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_system_validation.vcxproj]
+2025-09-11T19:45:06.9545211Z gpu_system_validation.obj : error LNK2019: unresolved external symbol "public: __cdecl video_editor::gfx::PerformanceProfiler::PerformanceProfiler(class video_editor::gfx::PerformanceDashboard *)" (??0PerformanceProfiler@gfx@video_editor@@QEAA@PEAVPerformanceDashboard@12@@Z) referenced in function "class std::unique_ptr<class video_editor::gfx::PerformanceProfiler,struct std::default_delete<class video_editor::gfx::PerformanceProfiler> > __cdecl std::make_unique<class video_editor::gfx::PerformanceProfiler,class video_editor::gfx::PerformanceDashboard *,0>(class video_editor::gfx::PerformanceDashboard * &&)" (??$make_unique@VPerformanceProfiler@gfx@video_editor@@PEAVPerformanceDashboard@23@$0A@@std@@YA?AV?$unique_ptr@VPerformanceProfiler@gfx@video_editor@@U?$default_delete@VPerformanceProfiler@gfx@video_editor@@@std@@@0@$$QEAPEAVPerformanceDashboard@gfx@video_editor@@@Z) [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_system_validation.vcxproj]
+2025-09-11T19:45:06.9553149Z gpu_system_validation.obj : error LNK2019: unresolved external symbol "public: __cdecl video_editor::gfx::PerformanceProfiler::~PerformanceProfiler(void)" (??1PerformanceProfiler@gfx@video_editor@@QEAA@XZ) referenced in function "public: void * __cdecl video_editor::gfx::PerformanceProfiler::`scalar deleting destructor'(unsigned int)" (??_GPerformanceProfiler@gfx@video_editor@@QEAAPEAXI@Z) [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_system_validation.vcxproj]
+2025-09-11T19:45:06.9558872Z gpu_system_validation.obj : error LNK2019: unresolved external symbol "public: __cdecl video_editor::gfx::PerformanceProfiler::ProfileScope::ProfileScope(class video_editor::gfx::PerformanceProfiler *,class std::basic_string<char,struct std::char_traits<char>,class std::allocator<char> > const &)" (??0ProfileScope@PerformanceProfiler@gfx@video_editor@@QEAA@PEAV123@AEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@@Z) referenced in function main [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_system_validation.vcxproj]
+2025-09-11T19:45:06.9563612Z gpu_system_validation.obj : error LNK2019: unresolved external symbol "public: __cdecl video_editor::gfx::PerformanceProfiler::ProfileScope::~ProfileScope(void)" (??1ProfileScope@PerformanceProfiler@gfx@video_editor@@QEAA@XZ) referenced in function main [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_system_validation.vcxproj]
+2025-09-11T19:45:06.9567920Z ve_gfx.lib(graphics_device_bridge.obj) : error LNK2019: unresolved external symbol "public: __cdecl video_editor::gfx::IntelligentCache::~IntelligentCache(void)" (??1IntelligentCache@gfx@video_editor@@QEAA@XZ) referenced in function "public: void * __cdecl video_editor::gfx::IntelligentCache::`scalar deleting destructor'(unsigned int)" (??_GIntelligentCache@gfx@video_editor@@QEAAPEAXI@Z) [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_system_validation.vcxproj]
+2025-09-11T19:45:06.9572938Z ve_gfx.lib(graphics_device_bridge.obj) : error LNK2019: unresolved external symbol "public: __cdecl video_editor::gfx::StreamingOptimizer::~StreamingOptimizer(void)" (??1StreamingOptimizer@gfx@video_editor@@QEAA@XZ) referenced in function "public: void * __cdecl video_editor::gfx::StreamingOptimizer::`scalar deleting destructor'(unsigned int)" (??_GStreamingOptimizer@gfx@video_editor@@QEAAPEAXI@Z) [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_system_validation.vcxproj]
+2025-09-11T19:45:06.9576870Z D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\Debug\gpu_system_validation.exe : fatal error LNK1120: 29 unresolved externals [D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\gpu_system_validation.vcxproj]
+2025-09-11T19:45:07.0583992Z   gpu_bridge_phase6_production_validation.cpp
+2025-09-11T19:45:07.5147995Z   gpu_bridge_phase5_advanced_validation.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\Debug\gpu_bridge_phase5_advanced_validation.exe
+2025-09-11T19:45:08.3195136Z   raw_format_support.cpp
+2025-09-11T19:45:08.3726022Z   gpu_bridge_phase4_effects_validation.cpp
+2025-09-11T19:45:09.9124207Z   gpu_bridge_phase6_production_validation.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\Debug\gpu_bridge_phase6_production_validation.exe
+2025-09-11T19:45:10.1616411Z   container_formats.cpp
+2025-09-11T19:45:10.7323547Z   gpu_bridge_phase3_compute_validation.cpp
+2025-09-11T19:45:11.3007102Z   gpu_bridge_phase4_effects_validation.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\Debug\gpu_bridge_phase4_effects_validation.exe
+2025-09-11T19:45:12.1687290Z   ve_commands.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\src\commands\Debug\ve_commands.lib
+2025-09-11T19:45:12.5456604Z   performance_optimizer.cpp
+2025-09-11T19:45:13.6568950Z   gpu_bridge_phase3_compute_validation.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\Debug\gpu_bridge_phase3_compute_validation.exe
+2025-09-11T19:45:15.7362725Z   Generating Code...
+2025-09-11T19:45:16.8981931Z   ve_media_io.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\src\media_io\Debug\ve_media_io.lib
+2025-09-11T19:45:16.9616254Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/src/decode/CMakeLists.txt
+2025-09-11T19:45:16.9661327Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/CMakeLists.txt
+2025-09-11T19:45:17.0310958Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/CMakeLists.txt
+2025-09-11T19:45:17.0376936Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/CMakeLists.txt
+2025-09-11T19:45:17.1038320Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/tests/CMakeLists.txt
+2025-09-11T19:45:17.1087245Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/CMakeLists.txt
+2025-09-11T19:45:17.1721212Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/src/tools/media_probe/CMakeLists.txt
+2025-09-11T19:45:17.1786051Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/tests/CMakeLists.txt
+2025-09-11T19:45:17.2479446Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/CMakeLists.txt
+2025-09-11T19:45:17.2500791Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/CMakeLists.txt
+2025-09-11T19:45:17.3205447Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/tests/CMakeLists.txt
+2025-09-11T19:45:17.3206742Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/CMakeLists.txt
+2025-09-11T19:45:17.3851209Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/tests/CMakeLists.txt
+2025-09-11T19:45:17.4680800Z   test_hdr_infrastructure_simple.cpp
+2025-09-11T19:45:17.4703121Z   color_management_validation_test.cpp
+2025-09-11T19:45:17.4816648Z   simple_modern_codec_test.cpp
+2025-09-11T19:45:18.7532648Z   test_hdr_infrastructure.cpp
+2025-09-11T19:45:19.2596981Z   color_management_validation_test.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\Debug\color_management_validation_test.exe
+2025-09-11T19:45:19.2827787Z   simple_modern_codec_test.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\Debug\simple_modern_codec_test.exe
+2025-09-11T19:45:19.9453139Z   raw_format_validation_test.cpp
+2025-09-11T19:45:21.1617348Z   test_hdr_infrastructure_simple.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\Debug\test_hdr_infrastructure_simple.exe
+2025-09-11T19:45:21.8440249Z   test_hdr_infrastructure.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\Debug\test_hdr_infrastructure.exe
+2025-09-11T19:45:22.1102195Z   performance_optimizer_validation.cpp
+2025-09-11T19:45:22.5862812Z   log_format_validation_test.cpp
+2025-09-11T19:45:23.0245047Z   raw_format_validation_test.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\Debug\raw_format_validation_test.exe
+2025-09-11T19:45:23.8175713Z   main.cpp
+2025-09-11T19:45:24.2455911Z   high_resolution_validation_test.cpp
+2025-09-11T19:45:25.1904642Z   hdr_validation_test.cpp
+2025-09-11T19:45:25.9962094Z   high_resolution_validation_test.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\Debug\high_resolution_validation_test.exe
+2025-09-11T19:45:26.7534291Z   performance_optimizer_validation.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\Debug\performance_optimizer_validation.exe
+2025-09-11T19:45:27.0262496Z   media_probe.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\media_probe\Debug\ve_media_probe.exe
+2025-09-11T19:45:27.6044935Z   log_format_validation_test.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\Debug\log_format_validation_test.exe
+2025-09-11T19:45:28.1358652Z   hdr_validation_test.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\Debug\hdr_validation_test.exe
+2025-09-11T19:45:28.3638576Z   high_bitdepth_validation_test.cpp
+2025-09-11T19:45:28.3893686Z   container_format_validation_test.cpp
+2025-09-11T19:45:29.0362021Z   decoder.cpp
+2025-09-11T19:45:30.0516821Z   video_decoder_ffmpeg.cpp
+2025-09-11T19:45:31.2685073Z   container_format_validation_test.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\Debug\container_format_validation_test.exe
+2025-09-11T19:45:32.0875588Z   high_bitdepth_validation_test.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\Debug\high_bitdepth_validation_test.exe
+2025-09-11T19:45:32.2820644Z   color_convert.cpp
+2025-09-11T19:45:34.1784211Z   async_decoder.cpp
+2025-09-11T19:45:36.1180890Z   audio_resampler.cpp
+2025-09-11T19:45:36.7397179Z   playback_controller.cpp
+2025-09-11T19:45:38.6607016Z   gpu_upload_stub.cpp
+2025-09-11T19:45:39.7357657Z   codec_optimizer.cpp
+2025-09-11T19:45:40.6893769Z   Generating Code...
+2025-09-11T19:45:41.0304607Z   ve_decode.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\src\decode\Debug\ve_decode.lib
+2025-09-11T19:45:41.0933548Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/CMakeLists.txt
+2025-09-11T19:45:41.0934847Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/CMakeLists.txt
+2025-09-11T19:45:41.1621548Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/src/cache/CMakeLists.txt
+2025-09-11T19:45:41.2213667Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/src/tools/playback_demo/CMakeLists.txt
+2025-09-11T19:45:41.2813829Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/CMakeLists.txt
+2025-09-11T19:45:41.3577417Z   format_support_phase1_week1_validation.cpp
+2025-09-11T19:45:41.3679027Z   main.cpp
+2025-09-11T19:45:42.0142380Z   format_support_phase1_week3_validation.cpp
+2025-09-11T19:45:42.9805032Z   format_support_phase1_week1_validation.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\Debug\format_support_phase1_week1_validation.exe
+2025-09-11T19:45:43.4974243Z   Automatic MOC and UIC for target qt_preview
+2025-09-11T19:45:43.8795822Z   cache_placeholder.cpp
+2025-09-11T19:45:43.9179963Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/src/tools/qt_preview/CMakeLists.txt
+2025-09-11T19:45:44.0138682Z   mocs_compilation_Debug.cpp
+2025-09-11T19:45:44.0250503Z   main.cpp
+2025-09-11T19:45:44.4446141Z   playback_demo.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\playback_demo\Debug\ve_playback_demo.exe
+2025-09-11T19:45:45.3674133Z   format_support_phase1_week3_validation.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\Debug\format_support_phase1_week3_validation.exe
+2025-09-11T19:45:45.7043065Z   ve_cache.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\src\cache\Debug\ve_cache.lib
+2025-09-11T19:45:45.7797181Z   format_support_phase1_week2_validation.cpp
+2025-09-11T19:45:46.2238115Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/src/render/CMakeLists.txt
+2025-09-11T19:45:46.3016867Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/src/playback/CMakeLists.txt
+2025-09-11T19:45:46.4227289Z   controller.cpp
+2025-09-11T19:45:47.6582060Z   format_support_phase1_week2_validation.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\Debug\format_support_phase1_week2_validation.exe
+2025-09-11T19:45:48.4841065Z   render_graph.cpp
+2025-09-11T19:45:49.4709261Z   nodes.cpp
+2025-09-11T19:45:49.5061984Z   player_window.cpp
+2025-09-11T19:45:49.8377071Z   ve_playback.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\src\playback\Debug\ve_playback.lib
+2025-09-11T19:45:49.8954431Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/tests/CMakeLists.txt
+2025-09-11T19:45:50.3767308Z   gpu_frame_resource.cpp
+2025-09-11T19:45:50.5100627Z   test_time.cpp
+2025-09-11T19:45:51.5591613Z   shader_renderer.cpp
+2025-09-11T19:45:52.5736072Z   gpu_render_graph.cpp
+2025-09-11T19:45:52.7270411Z   test_decoder.cpp
+2025-09-11T19:45:53.7279296Z   Generating Code...
+2025-09-11T19:45:53.9405988Z   ve_render.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\src\render\Debug\ve_render.lib
+2025-09-11T19:45:53.9893251Z   Automatic MOC for target ve_ui
+2025-09-11T19:45:54.5367160Z   Generating Code...
+2025-09-11T19:45:55.0774075Z   qt_preview.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\qt_preview\Debug\ve_qt_preview.exe
+2025-09-11T19:45:55.3043775Z   test_frame_cache.cpp
+2025-09-11T19:45:55.5145344Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/src/ui/CMakeLists.txt
+2025-09-11T19:45:55.5954777Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/src/fx/CMakeLists.txt
+2025-09-11T19:45:55.6800625Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/src/tools/gpu_render_demo/CMakeLists.txt
+2025-09-11T19:45:56.7633613Z   main.cpp
+2025-09-11T19:45:56.7789085Z   mocs_compilation_Debug.cpp
+2025-09-11T19:45:57.8011803Z   test_color_convert.cpp
+2025-09-11T19:45:59.5332190Z   gpu_render_demo.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\gpu_render_demo\Debug\ve_gpu_render_demo.exe
+2025-09-11T19:45:59.5876273Z   fx_placeholder.cpp
+2025-09-11T19:46:00.0798817Z   test_color_convert_guards.cpp
+2025-09-11T19:46:00.4289085Z   ve_fx.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\src\fx\Debug\ve_fx.lib
+2025-09-11T19:46:02.2995089Z   test_playback_scheduler.cpp
+2025-09-11T19:46:02.3798447Z   main_window.cpp
+2025-09-11T19:46:04.0756570Z   test_persistence.cpp
+2025-09-11T19:46:06.4191576Z   test_timeline_basic.cpp
+2025-09-11T19:46:08.2462484Z   timeline_panel.cpp
+2025-09-11T19:46:08.2535003Z   test_timeline_invariants.cpp
+2025-09-11T19:46:10.0582049Z   test_commands.cpp
+2025-09-11T19:46:11.9077584Z   test_commands_macro_and_random.cpp
+2025-09-11T19:46:12.4459303Z   viewer_panel.cpp
+2025-09-11T19:46:14.2039783Z   test_timeline_additional_invariants.cpp
+2025-09-11T19:46:16.0721076Z   test_command_coalescing.cpp
+2025-09-11T19:46:16.8860352Z   gl_video_widget.cpp
+2025-09-11T19:46:18.0300879Z   test_profiling_stats.cpp
+2025-09-11T19:46:19.9542378Z   test_project_roundtrip.cpp
+2025-09-11T19:46:20.5431813Z   Generating Code...
+2025-09-11T19:46:21.1729100Z   ve_ui.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\src\ui\Debug\ve_ui.lib
+2025-09-11T19:46:21.2103560Z   Automatic MOC for target ve_app
+2025-09-11T19:46:21.5484608Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/src/app/CMakeLists.txt
+2025-09-11T19:46:21.6343130Z   mocs_compilation_Debug.cpp
+2025-09-11T19:46:22.3802668Z   Generating Code...
+2025-09-11T19:46:23.8648256Z   unit_tests.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\tests\Debug\unit_tests.exe
+2025-09-11T19:46:25.6971956Z   application.cpp
+2025-09-11T19:46:29.6272250Z   Generating Code...
+2025-09-11T19:46:29.7962504Z   ve_app.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\src\app\Debug\ve_app.lib
+2025-09-11T19:46:29.8487438Z   Building Custom Rule D:/a/Video_Editor/Video_Editor/src/tools/video_editor/CMakeLists.txt
+2025-09-11T19:46:29.9244947Z   main.cpp
+2025-09-11T19:46:33.7329141Z   video_editor.vcxproj -> D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\Debug\video_editor.exe
+2025-09-11T19:46:33.7469454Z   	Copying Qt6 core DLLs to output directory	Copying additional DLLs to output directory	Copying Qt6 platform plugins to output directory
+2025-09-11T19:46:35.0456478Z   Error copying file (if different) from "D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/debug/bin/Qt6Cored.dll" to "D:/a/Video_Editor/Video_Editor/build/qt-debug/src/tools/video_editor/Debug".
+2025-09-11T19:46:35.0460450Z   Error copying file (if different) from "D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/debug/bin/Qt6Guid.dll" to "D:/a/Video_Editor/Video_Editor/build/qt-debug/src/tools/video_editor/Debug".
+2025-09-11T19:46:35.0464046Z   Error copying file (if different) from "D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/debug/bin/Qt6Widgetsd.dll" to "D:/a/Video_Editor/Video_Editor/build/qt-debug/src/tools/video_editor/Debug".
+2025-09-11T19:46:35.0466437Z   Error copying file (if different) from "D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/debug/bin/Qt6Networkd.dll" to "D:/a/Video_Editor/Video_Editor/build/qt-debug/src/tools/video_editor/Debug".
+2025-09-11T19:46:35.0468958Z   Error copying file (if different) from "D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/debug/bin/Qt6DBusd.dll" to "D:/a/Video_Editor/Video_Editor/build/qt-debug/src/tools/video_editor/Debug".
+2025-09-11T19:46:35.0471025Z   Error copying file (if different) from "D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/debug/bin/icudtd74.dll" to "D:/a/Video_Editor/Video_Editor/build/qt-debug/src/tools/video_editor/Debug".
+2025-09-11T19:46:35.0473341Z   Error copying file (if different) from "D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/debug/bin/icuind74.dll" to "D:/a/Video_Editor/Video_Editor/build/qt-debug/src/tools/video_editor/Debug".
+2025-09-11T19:46:35.0475197Z   Error copying file (if different) from "D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/debug/bin/icuucd74.dll" to "D:/a/Video_Editor/Video_Editor/build/qt-debug/src/tools/video_editor/Debug".
+2025-09-11T19:46:35.0476428Z   Error copying file (if different) from "D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/debug/bin/pcre2-16d.dll" to "D:/a/Video_Editor/Video_Editor/build/qt-debug/src/tools/video_editor/Debug".
+2025-09-11T19:46:35.0477849Z   Error copying file (if different) from "D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/bin/double-conversion.dll" to "D:/a/Video_Editor/Video_Editor/build/qt-debug/src/tools/video_editor/Debug".
+2025-09-11T19:46:35.0479032Z   Error copying file (if different) from "D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/debug/bin/zlibd1.dll" to "D:/a/Video_Editor/Video_Editor/build/qt-debug/src/tools/video_editor/Debug".
+2025-09-11T19:46:35.0480223Z   Error copying file (if different) from "D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/debug/bin/harfbuzz.dll" to "D:/a/Video_Editor/Video_Editor/build/qt-debug/src/tools/video_editor/Debug".
+2025-09-11T19:46:35.0481398Z   Error copying file (if different) from "D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/debug/bin/freetyped.dll" to "D:/a/Video_Editor/Video_Editor/build/qt-debug/src/tools/video_editor/Debug".
+2025-09-11T19:46:35.0482566Z   Error copying file (if different) from "D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/bin/brotlicommon.dll" to "D:/a/Video_Editor/Video_Editor/build/qt-debug/src/tools/video_editor/Debug".
+2025-09-11T19:46:35.0483709Z   Error copying file (if different) from "D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/bin/brotlidec.dll" to "D:/a/Video_Editor/Video_Editor/build/qt-debug/src/tools/video_editor/Debug".
+2025-09-11T19:46:35.0484855Z   Error copying file (if different) from "D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/debug/bin/libpng16d.dll" to "D:/a/Video_Editor/Video_Editor/build/qt-debug/src/tools/video_editor/Debug".
+2025-09-11T19:46:35.0566887Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: The command "setlocal [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0571180Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: "C:\Program Files\PowerShell\7\pwsh.exe" -noprofile -executionpolicy Bypass -file C:/vcpkg/scripts/buildsystems/msbuild/applocal.ps1 -targetBinary D:/a/Video_Editor/Video_Editor/build/qt-debug/src/tools/video_editor/Debug/video_editor.exe -installedDir D:/a/Video_Editor/Video_Editor/build/qt-debug/vcpkg_installed/x64-windows/debug/bin -OutVariable out [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0574916Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: if %errorlevel% neq 0 goto :cmEnd [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0577450Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: :cmEnd [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0579607Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0581152Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: :cmErrorLevel [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0582499Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: exit /b %1 [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0583803Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: :cmDone [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0585983Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: if %errorlevel% neq 0 goto :VCEnd [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0590040Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: setlocal [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0596929Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: "C:\Program Files\CMake\bin\cmake.exe" -E copy_if_different D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/debug/bin/Qt6Cored.dll D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/debug/bin/Qt6Guid.dll D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/debug/bin/Qt6Widgetsd.dll D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/debug/bin/Qt6Networkd.dll D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/debug/bin/Qt6DBusd.dll D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/debug/bin/icudtd74.dll D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/debug/bin/icuind74.dll D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/debug/bin/icuucd74.dll D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/debug/bin/pcre2-16d.dll D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/bin/double-conversion.dll D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/debug/bin/zlibd1.dll D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/debug/bin/harfbuzz.dll D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/debug/bin/freetyped.dll D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/bin/brotlicommon.dll D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/bin/brotlidec.dll D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/debug/bin/libpng16d.dll D:/a/Video_Editor/Video_Editor/build/qt-debug/src/tools/video_editor/Debug [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0603084Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: if %errorlevel% neq 0 goto :cmEnd [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0604460Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: :cmEnd [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0606099Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0607572Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: :cmErrorLevel [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0608899Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: exit /b %1 [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0610212Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: :cmDone [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0612187Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: if %errorlevel% neq 0 goto :VCEnd [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0613888Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: setlocal [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0618561Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: "C:\Program Files\CMake\bin\cmake.exe" -E copy_if_different D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/debug/bin/fmtd.dll D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/debug/bin/spdlogd.dll D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/bin/avcodec-61.dll D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/bin/avformat-61.dll D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/bin/avutil-59.dll D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/bin/swscale-8.dll D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/bin/swresample-5.dll D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/bin/avfilter-10.dll D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/bin/avdevice-61.dll D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/debug/bin/bz2d.dll D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/debug/bin/lz4d.dll D:/a/Video_Editor/Video_Editor/vcpkg_installed/x64-windows/bin/zstd.dll D:/a/Video_Editor/Video_Editor/build/qt-debug/src/tools/video_editor/Debug [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0623356Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: if %errorlevel% neq 0 goto :cmEnd [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0624732Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: :cmEnd [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0626168Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0627653Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: :cmErrorLevel [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0629117Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: exit /b %1 [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0630413Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: :cmDone [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0632129Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: if %errorlevel% neq 0 goto :VCEnd [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0633508Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: setlocal [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0635525Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: "C:\Program Files\CMake\bin\cmake.exe" -E make_directory D:/a/Video_Editor/Video_Editor/build/qt-debug/src/tools/video_editor/Debug/platforms [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0637843Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: if %errorlevel% neq 0 goto :cmEnd [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0641431Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: "C:\Program Files\CMake\bin\cmake.exe" -E copy_if_different D:/a/Video_Editor/Video_Editor/build/qt-debug/vcpkg_installed/x64-windows/plugins/platforms/qwindowsd.dll D:/a/Video_Editor/Video_Editor/build/qt-debug/vcpkg_installed/x64-windows/plugins/platforms/qminimald.dll D:/a/Video_Editor/Video_Editor/build/qt-debug/src/tools/video_editor/Debug/platforms/ [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0645403Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: if %errorlevel% neq 0 goto :cmEnd [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0647151Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: :cmEnd [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0648656Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0650300Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: :cmErrorLevel [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0653228Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: exit /b %1 [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0654655Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: :cmDone [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0656360Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: if %errorlevel% neq 0 goto :VCEnd [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.0658427Z C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Microsoft\VC\v170\Microsoft.CppCommon.targets(166,5): error MSB3073: :VCEnd" exited with code 1. [D:\a\Video_Editor\Video_Editor\build\qt-debug\src\tools\video_editor\video_editor.vcxproj]
+2025-09-11T19:46:35.1127973Z ##[error]Process completed with exit code 1.

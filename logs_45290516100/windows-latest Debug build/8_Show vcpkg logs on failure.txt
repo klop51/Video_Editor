@@ -1,0 +1,20 @@
+﻿2025-09-11T19:46:35.1447596Z ##[group]Run echo "=== VCPKG BUILD LOGS ==="
+2025-09-11T19:46:35.1447971Z [36;1mecho "=== VCPKG BUILD LOGS ==="[0m
+2025-09-11T19:46:35.1448434Z [36;1mfind build -path '*/buildtrees/*/*.log' -print -exec echo "=== {} ===" \; -exec tail -n 100 {} \; 2>/dev/null || true[0m
+2025-09-11T19:46:35.1448937Z [36;1mecho "=== VCPKG MANIFEST INSTALL LOG ==="[0m
+2025-09-11T19:46:35.1449278Z [36;1mif [ -f "build/qt-debug/vcpkg-manifest-install.log" ]; then[0m
+2025-09-11T19:46:35.1449645Z [36;1m  tail -n 200 "build/qt-debug/vcpkg-manifest-install.log"[0m
+2025-09-11T19:46:35.1449920Z [36;1mfi[0m
+2025-09-11T19:46:35.1538209Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+2025-09-11T19:46:35.1538522Z env:
+2025-09-11T19:46:35.1538680Z   VCPKG_FORCE_SYSTEM_BINARIES: 1
+2025-09-11T19:46:35.1538897Z   VCPKG_MAX_CONCURRENCY: 2
+2025-09-11T19:46:35.1539082Z   VCPKG_ROOT: C:/vcpkg
+2025-09-11T19:46:35.1539270Z   VCPKG_DEFAULT_TRIPLET: x64-windows
+2025-09-11T19:46:35.1539483Z ##[endgroup]
+2025-09-11T19:46:35.7060930Z [31;1mParserError: [0mD:\a\_temp\c1333fc0-99ed-4aef-af8a-f13d7132f6b7.ps1:5[0m
+2025-09-11T19:46:35.7061412Z [31;1m[0m[36;1mLine |[0m
+2025-09-11T19:46:35.7061847Z [31;1m[0m[36;1m[36;1m   5 | [0m if[36;1m [0m[ -f "build/qt-debug/vcpkg-manifest-install.log" ]; then[0m
+2025-09-11T19:46:35.7062310Z [31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m     | [31;1m   ~[0m
+2025-09-11T19:46:35.7062745Z [31;1m[0m[36;1m[36;1m[0m[36;1m[0m[36;1m[31;1m[31;1m[36;1m     | [31;1mMissing '(' after 'if' in if statement.[0m
+2025-09-11T19:46:35.7448406Z ##[error]Process completed with exit code 1.

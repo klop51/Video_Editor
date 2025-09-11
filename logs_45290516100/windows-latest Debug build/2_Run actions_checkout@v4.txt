@@ -1,0 +1,62 @@
+﻿2025-09-11T17:40:10.5485835Z ##[group]Run actions/checkout@v4
+2025-09-11T17:40:10.5487196Z with:
+2025-09-11T17:40:10.5487871Z   repository: klop51/Video_Editor
+2025-09-11T17:40:10.5488971Z   token: ***
+2025-09-11T17:40:10.5489625Z   ssh-strict: true
+2025-09-11T17:40:10.5490751Z   ssh-user: git
+2025-09-11T17:40:10.5491467Z   persist-credentials: true
+2025-09-11T17:40:10.5492260Z   clean: true
+2025-09-11T17:40:10.5492964Z   sparse-checkout-cone-mode: true
+2025-09-11T17:40:10.5493799Z   fetch-depth: 1
+2025-09-11T17:40:10.5494483Z   fetch-tags: false
+2025-09-11T17:40:10.5495202Z   show-progress: true
+2025-09-11T17:40:10.5495906Z   lfs: false
+2025-09-11T17:40:10.5496543Z   submodules: false
+2025-09-11T17:40:10.5497243Z   set-safe-directory: true
+2025-09-11T17:40:10.5498261Z env:
+2025-09-11T17:40:10.5498905Z   VCPKG_FORCE_SYSTEM_BINARIES: 1
+2025-09-11T17:40:10.5499744Z   VCPKG_MAX_CONCURRENCY: 2
+2025-09-11T17:40:10.5500508Z   VCPKG_ROOT: C:/vcpkg
+2025-09-11T17:40:10.5501254Z   VCPKG_DEFAULT_TRIPLET: x64-windows
+2025-09-11T17:40:10.5502141Z ##[endgroup]
+2025-09-11T17:40:10.7190783Z Syncing repository: klop51/Video_Editor
+2025-09-11T17:40:10.7193092Z ##[group]Getting Git version info
+2025-09-11T17:40:10.7194181Z Working directory is 'D:\a\Video_Editor\Video_Editor'
+2025-09-11T17:40:10.8007368Z [command]"C:\Program Files\Git\bin\git.exe" version
+2025-09-11T17:40:10.9978757Z git version 2.51.0.windows.1
+2025-09-11T17:40:11.0029640Z ##[endgroup]
+2025-09-11T17:40:11.0050303Z Temporarily overriding HOME='D:\a\_temp\582feace-12c3-4868-b074-e008f9277459' before making global git config changes
+2025-09-11T17:40:11.0052516Z Adding repository directory to the temporary git global config as a safe directory
+2025-09-11T17:40:11.0061824Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\Video_Editor\Video_Editor
+2025-09-11T17:40:11.0354792Z Deleting the contents of 'D:\a\Video_Editor\Video_Editor'
+2025-09-11T17:40:11.0361524Z ##[group]Initializing the repository
+2025-09-11T17:40:11.0371563Z [command]"C:\Program Files\Git\bin\git.exe" init D:\a\Video_Editor\Video_Editor
+2025-09-11T17:40:11.1007170Z Initialized empty Git repository in D:/a/Video_Editor/Video_Editor/.git/
+2025-09-11T17:40:11.1053284Z [command]"C:\Program Files\Git\bin\git.exe" remote add origin https://github.com/klop51/Video_Editor
+2025-09-11T17:40:11.1372905Z ##[endgroup]
+2025-09-11T17:40:11.1374256Z ##[group]Disabling automatic garbage collection
+2025-09-11T17:40:11.1384012Z [command]"C:\Program Files\Git\bin\git.exe" config --local gc.auto 0
+2025-09-11T17:40:11.1699423Z ##[endgroup]
+2025-09-11T17:40:11.1700669Z ##[group]Setting up auth
+2025-09-11T17:40:11.1702054Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+2025-09-11T17:40:11.2004390Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+2025-09-11T17:40:12.2293291Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2025-09-11T17:40:12.2593629Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+2025-09-11T17:40:12.8066467Z [command]"C:\Program Files\Git\bin\git.exe" config --local http.https://github.com/.extraheader "AUTHORIZATION: basic ***"
+2025-09-11T17:40:12.8368078Z ##[endgroup]
+2025-09-11T17:40:12.8368674Z ##[group]Fetching the repository
+2025-09-11T17:40:12.8382311Z [command]"C:\Program Files\Git\bin\git.exe" -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +7ef3832a0da4cbffdc686e8563a9ae953d72fd44:refs/remotes/origin/main
+2025-09-11T17:40:14.1833863Z From https://github.com/klop51/Video_Editor
+2025-09-11T17:40:14.1834463Z  * [new ref]         7ef3832a0da4cbffdc686e8563a9ae953d72fd44 -> origin/main
+2025-09-11T17:40:14.2005957Z ##[endgroup]
+2025-09-11T17:40:14.2006343Z ##[group]Determining the checkout info
+2025-09-11T17:40:14.2009032Z ##[endgroup]
+2025-09-11T17:40:14.2019707Z [command]"C:\Program Files\Git\bin\git.exe" sparse-checkout disable
+2025-09-11T17:40:14.2338877Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset-all extensions.worktreeConfig
+2025-09-11T17:40:14.2619091Z ##[group]Checking out the ref
+2025-09-11T17:40:14.2629197Z [command]"C:\Program Files\Git\bin\git.exe" checkout --progress --force -B main refs/remotes/origin/main
+2025-09-11T17:40:14.4210564Z branch 'main' set up to track 'origin/main'.
+2025-09-11T17:40:14.4221633Z Switched to a new branch 'main'
+2025-09-11T17:40:14.4259667Z ##[endgroup]
+2025-09-11T17:40:14.4595213Z [command]"C:\Program Files\Git\bin\git.exe" log -1 --format=%H
+2025-09-11T17:40:14.4866344Z 7ef3832a0da4cbffdc686e8563a9ae953d72fd44

@@ -1,0 +1,31 @@
+﻿2025-09-11T17:40:09.3304131Z Current runner version: '2.328.0'
+2025-09-11T17:40:09.3344715Z ##[group]Runner Image Provisioner
+2025-09-11T17:40:09.3345787Z Hosted Compute Agent
+2025-09-11T17:40:09.3346300Z Version: 20250829.383
+2025-09-11T17:40:09.3346929Z Commit: 27cb235aab5b0e52e153a26cd86b4742e89dac5d
+2025-09-11T17:40:09.3347797Z Build Date: 2025-08-29T13:48:48Z
+2025-09-11T17:40:09.3348376Z ##[endgroup]
+2025-09-11T17:40:09.3348953Z ##[group]Operating System
+2025-09-11T17:40:09.3349496Z Microsoft Windows Server 2025
+2025-09-11T17:40:09.3350021Z 10.0.26100
+2025-09-11T17:40:09.3350457Z Datacenter
+2025-09-11T17:40:09.3350878Z ##[endgroup]
+2025-09-11T17:40:09.3351268Z ##[group]Runner Image
+2025-09-11T17:40:09.3351758Z Image: windows-2025
+2025-09-11T17:40:09.3352223Z Version: 20250907.19.1
+2025-09-11T17:40:09.3353123Z Included Software: https://github.com/actions/runner-images/blob/win25/20250907.19/images/windows/Windows2025-Readme.md
+2025-09-11T17:40:09.3354429Z Image Release: https://github.com/actions/runner-images/releases/tag/win25%2F20250907.19
+2025-09-11T17:40:09.3355657Z ##[endgroup]
+2025-09-11T17:40:09.3356655Z ##[group]GITHUB_TOKEN Permissions
+2025-09-11T17:40:09.3358393Z Contents: read
+2025-09-11T17:40:09.3358917Z Metadata: read
+2025-09-11T17:40:09.3359398Z Packages: read
+2025-09-11T17:40:09.3359809Z ##[endgroup]
+2025-09-11T17:40:09.3361727Z Secret source: Actions
+2025-09-11T17:40:09.3362341Z Prepare workflow directory
+2025-09-11T17:40:09.3751293Z Prepare all required actions
+2025-09-11T17:40:09.3806895Z Getting action download info
+2025-09-11T17:40:09.8056003Z Download action repository 'actions/checkout@v4' (SHA:08eba0b27e820071cde6df949e0beb9ba4906955)
+2025-09-11T17:40:09.9255228Z Download action repository 'actions/cache@v4' (SHA:0400d5f644dc74513175e3cd8d07132dd4860809)
+2025-09-11T17:40:10.0590542Z Download action repository 'actions/upload-artifact@v4' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+2025-09-11T17:40:10.4016302Z Complete job name: windows-latest Debug build

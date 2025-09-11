@@ -1,0 +1,20 @@
+﻿2025-09-11T17:40:34.5162510Z ##[group]Run actions/cache@v4
+2025-09-11T17:40:34.5162802Z with:
+2025-09-11T17:40:34.5163028Z   path: C:/vcpkg/installed
+C:/vcpkg/buildtrees
+
+2025-09-11T17:40:34.5163482Z   key: vcpkg-windows-2da18a10b4fcc623cc77e7682b639703eb2a83e8d79dbf6210ae5bcad27e3b97-v3
+2025-09-11T17:40:34.5164152Z   restore-keys: vcpkg-windows-2da18a10b4fcc623cc77e7682b639703eb2a83e8d79dbf6210ae5bcad27e3b97-
+vcpkg-windows-
+
+2025-09-11T17:40:34.5164653Z   enableCrossOsArchive: false
+2025-09-11T17:40:34.5164884Z   fail-on-cache-miss: false
+2025-09-11T17:40:34.5165086Z   lookup-only: false
+2025-09-11T17:40:34.5165259Z   save-always: false
+2025-09-11T17:40:34.5165420Z env:
+2025-09-11T17:40:34.5165577Z   VCPKG_FORCE_SYSTEM_BINARIES: 1
+2025-09-11T17:40:34.5165800Z   VCPKG_MAX_CONCURRENCY: 2
+2025-09-11T17:40:34.5165991Z   VCPKG_ROOT: C:/vcpkg
+2025-09-11T17:40:34.5166171Z   VCPKG_DEFAULT_TRIPLET: x64-windows
+2025-09-11T17:40:34.5166393Z ##[endgroup]
+2025-09-11T17:40:35.1859210Z Cache not found for input keys: vcpkg-windows-2da18a10b4fcc623cc77e7682b639703eb2a83e8d79dbf6210ae5bcad27e3b97-v3, vcpkg-windows-2da18a10b4fcc623cc77e7682b639703eb2a83e8d79dbf6210ae5bcad27e3b97-, vcpkg-windows-

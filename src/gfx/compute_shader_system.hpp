@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include "core/result.hpp"
-#include "gfx/graphics_device.hpp"
+#include "core/include/core/result.hpp"
+#include "include/gfx/graphics_device.hpp"
 #include <d3d11.h>
 #include <wrl/client.h>
 #include <vector>
