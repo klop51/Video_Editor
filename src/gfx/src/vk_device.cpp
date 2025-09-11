@@ -2213,13 +2213,13 @@ struct D3D11GraphicsDevice {
     
     // Effect pipeline stub methods
     uint32_t create_effect_pipeline() { return 0; }
-    bool apply_color_correction_effect(uint32_t, uint32_t, const void*) { return false; }
+    bool apply_color_correction_effect(uint32_t, uint32_t, const ColorCorrectionParams&) { return false; }
     bool apply_gaussian_blur_effect(uint32_t, uint32_t, uint32_t, float) { return false; }
     bool apply_sharpen_effect(uint32_t, uint32_t, float, float) { return false; }
     bool apply_lut_effect(uint32_t, uint32_t, uint32_t, float) { return false; }
     
     // Memory and performance stub methods
-    void get_memory_usage(size_t&, size_t&, size_t&) {}
+    void get_memory_usage(size_t*, size_t*, size_t*) {}
     
     // Shader program stub methods
     uint32_t create_shader_program(const char*, const char*) { return 0; }
@@ -2230,9 +2230,9 @@ struct D3D11GraphicsDevice {
     
     // Rendering stub methods
     void clear(float, float, float, float) {}
-    void draw_texture(uint32_t, float, float, float, float, float, float, float, float) {}
+    void draw_texture(uint32_t, float, float, float, float) {}
     void set_viewport(int, int, int, int) {}
-    bool get_last_present_rgba(void*, int, int) { return false; }
+    bool get_last_present_rgba(const void**, int*, int*, int*) { return false; }
     
     // Effect parameter types (stubs)
     struct ColorCorrectionParams {
@@ -2305,7 +2305,7 @@ public:
         params.saturation = saturation;
         params.gamma = gamma;
         
-        return g_device.apply_color_correction_effect(input_texture, output_texture, &params);
+        return g_device.apply_color_correction_effect(input_texture, output_texture, params);
     }
 
     bool apply_gaussian_blur(unsigned int input_texture, unsigned int intermediate_texture,
@@ -2325,7 +2325,7 @@ public:
 
     // Memory usage tracking
     void get_memory_usage(size_t* total, size_t* used, size_t* available) {
-        g_device.get_memory_usage(*total, *used, *available);
+        g_device.get_memory_usage(total, used, available);
     }
 
     unsigned int create_shader_program(const char* vertex_src, const char* fragment_src) {
@@ -2353,15 +2353,15 @@ public:
     }
 
     void draw_texture(unsigned int texture_id, float x, float y, float width, float height) {
-        g_device.draw_texture(texture_id, x, y, width, height, 0.0f, 0.0f, 1.0f, 1.0f);
+        g_device.draw_texture(texture_id, x, y, width, height);
     }
 
     void set_viewport(int width, int height) {
         g_device.set_viewport(0, 0, width, height);
     }
 
-    bool get_last_present_rgba(const void** data, int* width, int* height, int* stride) {
-        return g_device.get_last_present_rgba(const_cast<void*>(*data), *width, *height);
+    bool get_last_present_rgba(const void** data, int* width, int* height, int* /*stride*/) {
+        return g_device.get_last_present_rgba(data, width, height);
     }
 
 private:
