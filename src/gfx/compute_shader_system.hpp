@@ -13,7 +13,7 @@
 #include <unordered_map>
 #include <functional>
 
-namespace VideoEditor::GFX {
+namespace video_editor::gfx {
 
 // =============================================================================
 // Forward Declarations
@@ -337,7 +337,7 @@ private:
     void setup_performance_monitoring();
 
     GraphicsDevice* device_ = nullptr;
-    std::unique_ptr<VideoEditor::GFX::ComputeContext> primary_context_;
+    std::unique_ptr<ComputeContext> primary_context_;
     
     // Shader library
     std::unordered_map<std::string, std::unique_ptr<ComputeShader>> shader_library_;
@@ -385,4 +385,4 @@ namespace ComputeUtils {
     float estimate_memory_bandwidth_gb_s(size_t data_size_bytes, float execution_time_ms);
 }
 
-} // namespace VideoEditor::GFX
+} // namespace video_editor::gfx

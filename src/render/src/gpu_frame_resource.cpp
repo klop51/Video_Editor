@@ -44,7 +44,7 @@ bool GpuFrameResource::upload_frame(const ve::decode::VideoFrame& frame) {
             // Convert YUV420P to RGB for now (simple CPU conversion)
             // In a real implementation, this would be done with shaders
             gl_format = 1; // RGB
-            upload_size = frame.width * frame.height * 3;
+            upload_size = static_cast<size_t>(frame.width) * static_cast<size_t>(frame.height) * 3;
             std::vector<uint8_t> rgb_data(upload_size);
 
             // Simple YUV to RGB conversion (not color-accurate)
@@ -72,7 +72,7 @@ bool GpuFrameResource::upload_frame(const ve::decode::VideoFrame& frame) {
                     g = std::max(0, std::min(255, g));
                     b = std::max(0, std::min(255, b));
 
-                    int idx = (y * frame.width + x) * 3;
+                    size_t idx = static_cast<size_t>((y * frame.width + x) * 3);
                     rgb_data[idx] = static_cast<uint8_t>(r);
                     rgb_data[idx + 1] = static_cast<uint8_t>(g);
                     rgb_data[idx + 2] = static_cast<uint8_t>(b);
