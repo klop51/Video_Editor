@@ -58,6 +58,7 @@ jobs:
 
       - name: Show vcpkg logs on failure
         if: failure()
+        shell: bash
         run: |
           echo "=== VCPKG BUILD LOGS ==="
           find build -path '*/buildtrees/*/*.log' -print -exec echo "=== {} ===" \; -exec tail -n 100 {} \; 2>/dev/null || true
@@ -98,6 +99,7 @@ jobs:
 
       - name: Generate failure draft (on failure)
         if: failure()
+        shell: bash
         run: |
           python scripts/ci_failure_scrape.py --log build/*/Testing/Temporary/LastTest.log --out error_drafts --append-main --flaky-list tests/FLAKY_TESTS.txt --dedupe-window 5 --failure-history failure_history.json --auto-classify-flaky || true
           if [ -f failure_history.json ]; then
