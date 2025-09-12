@@ -400,7 +400,7 @@ bool GPUTestSuite::test_parallel_compute_operations() {
     std::vector<std::future<bool>> futures;
     
     for (int i = 0; i < 4; ++i) {
-        futures.push_back(std::async(std::launch::async, [device, i]() {
+        futures.push_back(std::async(std::launch::async, [&device, i]() {
             // Each thread runs a compute operation
             const char* shader_code = R"(
                 RWBuffer<float> OutputBuffer : register(u0);
@@ -541,7 +541,7 @@ bool GPUTestSuite::test_cinematic_effects_quality() {
     // Test Chromatic Aberration
     {
         ChromaticAberrationProcessor chroma_processor(device.get());
-        ChromaticAberrationParams params{};
+        ChromaticAberrationProcessor::ChromaticAberrationParams params{};
         params.strength = 0.4f;
         params.edge_falloff = 2.0f;
         
@@ -566,7 +566,7 @@ bool GPUTestSuite::test_color_grading_accuracy() {
     
     // Test Color Wheels
     {
-        ColorWheelParams params{};
+        ColorGradingProcessor::ColorWheelParams params{};
         params.lift = {0.1f, 0.05f, 0.0f};      // Slight warm lift
         params.gamma = {1.2f, 1.0f, 0.9f};      // Contrast adjustment
         params.gain = {1.0f, 1.0f, 1.1f};       // Cool highlights
@@ -579,7 +579,7 @@ bool GPUTestSuite::test_color_grading_accuracy() {
     
     // Test Bezier Curves
     {
-        ColorCurvesParams curves{};
+        ColorGradingProcessor::BezierCurveParams curves{};
         // Create slight S-curve for contrast
         curves.red_curve = {{0.0f, 0.0f}, {0.25f, 0.2f}, {0.75f, 0.8f}, {1.0f, 1.0f}};
         curves.green_curve = curves.red_curve;
@@ -593,10 +593,10 @@ bool GPUTestSuite::test_color_grading_accuracy() {
     
     // Test HSL Qualifier
     {
-        HSLQualifierParams params{};
+        ColorGradingProcessor::HSLQualifierParams params{};
         params.hue_center = 0.5f;    // Green
-        params.hue_range = 0.1f;     // Narrow selection
-        params.selection_strength = 1.5f;
+        params.hue_width = 0.1f;     // Narrow selection
+        params.saturation_boost = 1.5f;
         
         auto result = grading_processor.apply_hsl_qualifier(input_texture, params);
         if (!result.is_valid()) return false;
