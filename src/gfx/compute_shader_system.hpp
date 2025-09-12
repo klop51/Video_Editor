@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "core/include/core/result.hpp"
+#include "../core/include/core/result.hpp"
 #include "include/gfx/graphics_device.hpp"
 #include <d3d11.h>
 #include <wrl/client.h>

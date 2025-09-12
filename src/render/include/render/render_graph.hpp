@@ -50,10 +50,10 @@ public:
     void set_current_frame(const ve::decode::VideoFrame& frame);
 
     // Set viewport dimensions
-    void set_viewport(int width, int height);
+    void set_viewport(int width, int height) override;
 
     // Set effect parameters
-    void set_brightness(float brightness);
+    void set_brightness(float brightness) override;
 
 private:
     struct Impl;
