@@ -83,7 +83,7 @@ static void parse_segments_array(Lexer& lex, timeline::Track* track){
 
 static void parse_tracks(Lexer& lex, timeline::Timeline& tl){
     for(;;){ Tok t=lex.next(); if(t.type==Tok::RBrack || t.type==Tok::End) break; if(t.type!=Tok::LBrace) continue; // track object
-        timeline::Track::Type trackType = timeline::Track::Video; std::string tname; bool haveName=false; // removed unused segsPending & segStartPos
+        timeline::Track::Type trackType = timeline::Track::Video; std::string tname; // removed unused haveName, segsPending & segStartPos
         // We'll collect segments after creating track when we meet segments key
         timeline::Track* trackPtr=nullptr; bool done=false;
         while(!done){ Tok k=lex.next(); if(k.type==Tok::Str){ std::string key=k.text; Tok c=lex.next(); if(c.type!=Tok::Colon) continue; Tok v=lex.next();
