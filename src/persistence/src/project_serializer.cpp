@@ -88,7 +88,7 @@ static void parse_tracks(Lexer& lex, timeline::Timeline& tl){
         timeline::Track* trackPtr=nullptr; bool done=false;
         while(!done){ Tok k=lex.next(); if(k.type==Tok::Str){ std::string key=k.text; Tok c=lex.next(); if(c.type!=Tok::Colon) continue; Tok v=lex.next();
                 if(key=="type" && v.type==Tok::Str){ trackType = (v.text=="audio"? timeline::Track::Audio: timeline::Track::Video); }
-                else if(key=="name" && v.type==Tok::Str){ tname=v.text; haveName=true; }
+                else if(key=="name" && v.type==Tok::Str){ tname=v.text; }
                 else if(key=="segments" && v.type==Tok::LBrack){ if(!trackPtr){ auto newId = tl.add_track(trackType, tname); trackPtr = tl.get_track(newId);} parse_segments_array(lex, trackPtr); }
                 else { // skip primitive/object/array by naive consumption if needed
                     if(v.type==Tok::LBrace){ int depth=1; while(depth>0){ Tok tmp=lex.next(); if(tmp.type==Tok::LBrace) ++depth; else if(tmp.type==Tok::RBrace) --depth; if(tmp.type==Tok::End) break; } }
