@@ -409,7 +409,7 @@ void ComputeTexture::release() {
 // Compute Shader Implementation
 // =============================================================================
 
-Core::Result<void> ComputeShader::create_from_source(GraphicsDevice* device, const ComputeShaderDesc& desc) {
+ve::core::Result<bool> ComputeShaderImpl::create_from_source(GraphicsDevice* device, const ComputeShaderSystemDesc& desc) {
     try {
         device_ = device;
         entry_point_ = desc.entry_point;
@@ -461,7 +461,7 @@ Core::Result<void> ComputeShader::create_from_source(GraphicsDevice* device, con
     }
 }
 
-Core::Result<void> ComputeShader::create_from_file(GraphicsDevice* device, const std::string& file_path,
+Core::Result<void> ComputeShaderImpl::create_from_file(GraphicsDevice* device, const std::string& file_path,
                                                    const std::string& entry_point) {
     try {
         // Read shader file
@@ -474,7 +474,7 @@ Core::Result<void> ComputeShader::create_from_file(GraphicsDevice* device, const
         buffer << file.rdbuf();
         std::string shader_source = buffer.str();
 
-        ComputeShaderDesc desc;
+        ComputeShaderSystemDesc desc;
         desc.shader_source = shader_source;
         desc.entry_point = entry_point;
 
@@ -485,7 +485,7 @@ Core::Result<void> ComputeShader::create_from_file(GraphicsDevice* device, const
     }
 }
 
-Core::Result<void> ComputeShader::compile_shader(const std::string& source, const ComputeShaderDesc& desc) {
+Core::Result<void> ComputeShaderImpl::compile_shader(const std::string& source, const ComputeShaderSystemDesc& desc) {
     try {
         // Prepare defines
         std::vector<D3D_SHADER_MACRO> macros;
@@ -549,37 +549,37 @@ Core::Result<void> ComputeShader::compile_shader(const std::string& source, cons
     }
 }
 
-void ComputeShader::bind_constant_buffer(uint32_t slot, ComputeBuffer* buffer) {
+void ComputeShaderImpl::bind_constant_buffer(uint32_t slot, ComputeBuffer* buffer) {
     if (slot < bound_constant_buffers_.size() && buffer) {
         bound_constant_buffers_[slot] = buffer->get_buffer();
     }
 }
 
-void ComputeShader::bind_structured_buffer(uint32_t slot, ComputeBuffer* buffer) {
+void ComputeShaderImpl::bind_structured_buffer(uint32_t slot, ComputeBuffer* buffer) {
     if (slot < bound_srvs_.size() && buffer) {
         bound_srvs_[slot] = buffer->get_srv();
     }
 }
 
-void ComputeShader::bind_texture_srv(uint32_t slot, ComputeTexture* texture) {
+void ComputeShaderImpl::bind_texture_srv(uint32_t slot, ComputeTexture* texture) {
     if (slot < bound_srvs_.size() && texture) {
         bound_srvs_[slot] = texture->get_srv();
     }
 }
 
-void ComputeShader::bind_texture_uav(uint32_t slot, ComputeTexture* texture) {
+void ComputeShaderImpl::bind_texture_uav(uint32_t slot, ComputeTexture* texture) {
     if (slot < bound_uavs_.size() && texture) {
         bound_uavs_[slot] = texture->get_uav();
     }
 }
 
-void ComputeShader::bind_buffer_uav(uint32_t slot, ComputeBuffer* buffer) {
+void ComputeShaderImpl::bind_buffer_uav(uint32_t slot, ComputeBuffer* buffer) {
     if (slot < bound_uavs_.size() && buffer) {
         bound_uavs_[slot] = buffer->get_uav();
     }
 }
 
-Core::Result<ComputePerformanceMetrics> ComputeShader::dispatch(const ComputeDispatchParams& params) {
+Core::Result<ComputePerformanceMetrics> ComputeShaderImpl::dispatch(const ComputeDispatchParams& params) {
     if (!shader_ || !context_) {
         return Core::Result<ComputePerformanceMetrics>::error("Shader not initialized");
     }
@@ -647,7 +647,7 @@ Core::Result<ComputePerformanceMetrics> ComputeShader::dispatch(const ComputeDis
     }
 }
 
-Core::Result<ComputePerformanceMetrics> ComputeShader::dispatch_1d(uint32_t num_elements, uint32_t threads_per_group) {
+Core::Result<ComputePerformanceMetrics> ComputeShaderImpl::dispatch_1d(uint32_t num_elements, uint32_t threads_per_group) {
     ComputeDispatchParams params;
     params.thread_groups_x = (num_elements + threads_per_group - 1) / threads_per_group;
     params.thread_groups_y = 1;
@@ -659,7 +659,7 @@ Core::Result<ComputePerformanceMetrics> ComputeShader::dispatch_1d(uint32_t num_
     return dispatch(params);
 }
 
-Core::Result<ComputePerformanceMetrics> ComputeShader::dispatch_2d(uint32_t width, uint32_t height, 
+Core::Result<ComputePerformanceMetrics> ComputeShaderImpl::dispatch_2d(uint32_t width, uint32_t height, 
                                                                    uint32_t threads_x, uint32_t threads_y) {
     ComputeDispatchParams params;
     params.thread_groups_x = (width + threads_x - 1) / threads_x;
@@ -672,7 +672,7 @@ Core::Result<ComputePerformanceMetrics> ComputeShader::dispatch_2d(uint32_t widt
     return dispatch(params);
 }
 
-Core::Result<ComputePerformanceMetrics> ComputeShader::dispatch_3d(uint32_t width, uint32_t height, uint32_t depth,
+Core::Result<ComputePerformanceMetrics> ComputeShaderImpl::dispatch_3d(uint32_t width, uint32_t height, uint32_t depth,
                                                                    uint32_t threads_x, uint32_t threads_y, uint32_t threads_z) {
     ComputeDispatchParams params;
     params.thread_groups_x = (width + threads_x - 1) / threads_x;
@@ -685,7 +685,7 @@ Core::Result<ComputePerformanceMetrics> ComputeShader::dispatch_3d(uint32_t widt
     return dispatch(params);
 }
 
-void ComputeShader::clear_bindings() {
+void ComputeShaderImpl::clear_bindings() {
     if (!context_) return;
 
     // Clear constant buffers
@@ -704,7 +704,7 @@ void ComputeShader::clear_bindings() {
     context_->CSSetShader(nullptr, nullptr, 0);
 }
 
-ComputePerformanceMetrics ComputeShader::measure_performance(const ComputeDispatchParams& params) {
+ComputePerformanceMetrics ComputeShaderImpl::measure_performance(const ComputeDispatchParams& params) {
     ComputePerformanceMetrics metrics = {};
     
     if (!timestamp_disjoint_ || !timestamp_start_ || !timestamp_end_) {
@@ -746,7 +746,7 @@ ComputePerformanceMetrics ComputeShader::measure_performance(const ComputeDispat
     return metrics;
 }
 
-void ComputeShader::release() {
+void ComputeShaderImpl::release() {
     clear_bindings();
     timestamp_disjoint_.Reset();
     timestamp_end_.Reset();

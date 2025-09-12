@@ -19,7 +19,7 @@ namespace video_editor::gfx {
 // Forward Declarations
 // =============================================================================
 
-class ComputeShader;
+class ComputeShaderImpl;
 class ComputeContext;
 class ComputeBuffer;
 class ComputeTexture;
@@ -72,7 +72,7 @@ struct ComputeDispatchParams {
     uint32_t threads_per_group_z = 1;
 };
 
-struct ComputeShaderDesc {
+struct ComputeShaderSystemDesc {
     std::string shader_source;
     std::string entry_point = "cs_main";
     std::string shader_model = "cs_5_0";
@@ -186,13 +186,13 @@ private:
 // Compute Shader Class
 // =============================================================================
 
-class ComputeShader {
+class ComputeShaderImpl {
 public:
-    ComputeShader() = default;
-    ~ComputeShader() = default;
+    ComputeShaderImpl() = default;
+    ~ComputeShaderImpl() = default;
 
     // Shader compilation and management
-    ve::core::Result<bool> create_from_source(GraphicsDevice* device, const ComputeShaderDesc& desc);
+    ve::core::Result<bool> create_from_source(GraphicsDevice* device, const ComputeShaderSystemDesc& desc);
     ve::core::Result<bool> create_from_file(GraphicsDevice* device, const std::string& file_path,
                                        const std::string& entry_point = "cs_main");
     void release();
@@ -218,7 +218,7 @@ public:
     bool is_valid() const { return shader_ != nullptr; }
 
 private:
-    ve::core::Result<bool> compile_shader(const std::string& source, const ComputeShaderDesc& desc);
+    ve::core::Result<bool> compile_shader(const std::string& source, const ComputeShaderSystemDesc& desc);
     void clear_bindings();
     ComputePerformanceMetrics measure_performance(const ComputeDispatchParams& params);
 
@@ -254,7 +254,7 @@ public:
     void shutdown();
 
     // Resource creation
-    std::unique_ptr<ComputeShader> create_shader();
+    std::unique_ptr<ComputeShaderImpl> create_shader();
     std::unique_ptr<ComputeBuffer> create_buffer();
     std::unique_ptr<ComputeTexture> create_texture();
 
@@ -285,7 +285,7 @@ private:
     // Performance tracking
     bool profiling_enabled_ = false;
     ComputePerformanceMetrics accumulated_metrics_;
-    std::vector<std::unique_ptr<ComputeShader>> active_shaders_;
+    std::vector<std::unique_ptr<ComputeShaderImpl>> active_shaders_;
     std::vector<std::unique_ptr<ComputeBuffer>> active_buffers_;
     std::vector<std::unique_ptr<ComputeTexture>> active_textures_;
 };
@@ -308,8 +308,8 @@ public:
     std::unique_ptr<ComputeContext> create_context();
 
     // Shader library management
-    ve::core::Result<ComputeShader*> load_shader(const std::string& name, const std::string& file_path);
-    ComputeShader* get_shader(const std::string& name);
+    ve::core::Result<ComputeShaderImpl*> load_shader(const std::string& name, const std::string& file_path);
+    ComputeShaderImpl* get_shader(const std::string& name);
     void precompile_common_shaders();
 
     // System capabilities
@@ -340,7 +340,7 @@ private:
     std::unique_ptr<ComputeContext> primary_context_;
     
     // Shader library
-    std::unordered_map<std::string, std::unique_ptr<ComputeShader>> shader_library_;
+    std::unordered_map<std::string, std::unique_ptr<ComputeShaderImpl>> shader_library_;
     
     // System info
     ComputeCapabilities capabilities_;
