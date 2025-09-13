@@ -92,9 +92,9 @@ jobs:
           echo Configuring for ${{ matrix.config }} build...
           
           if "${{ matrix.config }}"=="Debug" (
-            cmake --preset qt-debug
+            "C:\Program Files\CMake\bin\cmake.exe" --preset qt-debug
           ) else (
-            cmake --preset qt-release
+            "C:\Program Files\CMake\bin\cmake.exe" --preset qt-release
           )
 
       - name: Build Video Editor
@@ -107,9 +107,9 @@ jobs:
           echo Using %CORES% parallel jobs
           
           if "${{ matrix.config }}"=="Debug" (
-            cmake --build build/qt-debug --config Debug --parallel %CORES%
+            "C:\Program Files\CMake\bin\cmake.exe" --build build/qt-debug --config Debug --parallel %CORES%
           ) else (
-            cmake --build build/qt-release --config Release --parallel %CORES%
+            "C:\Program Files\CMake\bin\cmake.exe" --build build/qt-release --config Release --parallel %CORES%
           )
 
       - name: Run Unit Tests
