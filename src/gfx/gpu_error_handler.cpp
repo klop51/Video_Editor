@@ -20,6 +20,10 @@ void GPUErrorHandler::report_error(GPUErrorType error_type, const std::string& m
                                   const std::string& source, unsigned int line) {
     // Basic error reporting implementation
     // In a real implementation, this would log errors, handle recovery, etc.
+    (void)error_type;  // Mark as used to avoid warning
+    (void)message;     // Mark as used to avoid warning
+    (void)source;      // Mark as used to avoid warning
+    (void)line;        // Mark as used to avoid warning
 }
 
 // ============================================================================
