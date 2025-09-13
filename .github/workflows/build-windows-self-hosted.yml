@@ -64,13 +64,33 @@ jobs:
           echo CMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake>> %GITHUB_ENV%
           echo VCPKG_INSTALLED_DIR=%GITHUB_WORKSPACE%/build/vcpkg_installed>> %GITHUB_ENV%
           
-          REM Verify Visual Studio
-          if exist "%ProgramFiles%\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe" (
+          REM Comprehensive Visual Studio detection
+          echo Checking for Visual Studio installation...
+          set VS_FOUND=false
+          
+          if exist "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\devenv.exe" (
+            echo Visual Studio 2022 Enterprise found
+            set VS_FOUND=true
+          ) else if exist "%ProgramFiles%\Microsoft Visual Studio\2022\Professional\Common7\IDE\devenv.exe" (
+            echo Visual Studio 2022 Professional found  
+            set VS_FOUND=true
+          ) else if exist "%ProgramFiles%\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe" (
             echo Visual Studio 2022 Community found
-          ) else if exist "%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" (
-            echo Visual Studio installer found
+            set VS_FOUND=true
+          ) else if exist "%ProgramFiles%\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\devenv.exe" (
+            echo Visual Studio 2022 Build Tools found
+            set VS_FOUND=true
           ) else (
-            echo WARNING: Visual Studio 2022 not found
+            echo WARNING: Visual Studio 2022 not found in standard locations
+            echo Attempting to use Build Tools or Windows SDK...
+            REM Try to find Windows SDK or fallback options
+            if exist "%ProgramFiles(x86)%\Windows Kits\10" (
+              echo Windows 10 SDK found - may work for basic builds
+            ) else (
+              echo ERROR: No suitable build tools found
+              echo Please install Visual Studio 2022 Community or Build Tools
+              exit /b 1
+            )
           )
           
           echo Build environment setup complete
@@ -94,7 +114,7 @@ jobs:
           if "${{ matrix.config }}"=="Debug" (
             "C:\Program Files\CMake\bin\cmake.exe" --preset qt-debug
           ) else (
-            "C:\Program Files\CMake\bin\cmake.exe" --preset qt-release
+            "C:\Program Files\CMake\bin\cmake.exe" --preset vs-release
           )
 
       - name: Build Video Editor
@@ -109,7 +129,7 @@ jobs:
           if "${{ matrix.config }}"=="Debug" (
             "C:\Program Files\CMake\bin\cmake.exe" --build build/qt-debug --config Debug --parallel %CORES%
           ) else (
-            "C:\Program Files\CMake\bin\cmake.exe" --build build/qt-release --config Release --parallel %CORES%
+            "C:\Program Files\CMake\bin\cmake.exe" --build build/vs-release --config Release --parallel %CORES%
           )
 
       - name: Run Unit Tests
