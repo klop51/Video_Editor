@@ -1,5 +1,5 @@
 #pragma once
-#include "decode/frame.hpp"
+#include "frame.hpp"
 #include <optional>
 
 namespace ve::decode {

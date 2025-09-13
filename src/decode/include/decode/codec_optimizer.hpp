@@ -1,6 +1,6 @@
 #pragma once
-#include "decode/frame.hpp"
-#include "decode/gpu_upload.hpp"
+#include "frame.hpp"
+#include "gpu_upload.hpp"
 #include <string>
 #include <memory>
 #include <functional>

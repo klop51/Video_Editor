@@ -1,6 +1,6 @@
 #pragma once
-#include "decode/decoder.hpp"
-#include "decode/frame_cache.hpp"
+#include "decoder.hpp"
+#include "frame_cache.hpp"
 #include <thread>
 #include <atomic>
 #include <queue>

@@ -1,7 +1,7 @@
 #pragma once
-#include "decode/async_decoder.hpp"
-#include "decode/playback_scheduler.hpp"
-#include "decode/color_convert.hpp"
+#include "async_decoder.hpp"
+#include "playback_scheduler.hpp"
+#include "color_convert.hpp"
 #include "core/log.hpp"
 #include <atomic>
 #include <functional>

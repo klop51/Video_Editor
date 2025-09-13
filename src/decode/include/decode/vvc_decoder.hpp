@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/frame.hpp"
-#include "decode/decoder_interface.hpp"
+#include "decoder_interface.hpp"
 #include <memory>
 #include <string>
 #include <vector>
