@@ -171,8 +171,7 @@ void IntelligentCache::update_access_patterns() {
         access_pattern_.confidence = 0.9f;
     } else {
         // Check for burst pattern (multiple frames accessed quickly)
-        auto now = std::chrono::steady_clock::now();
-        // Note: recent_time would be used for time-based analysis in full implementation
+        // Note: Time-based analysis would be used in full implementation
         
         // Count recent accesses
         size_t recent_accesses = 0;
@@ -289,7 +288,7 @@ bool IntelligentCache::ensure_free_memory(size_t required_bytes) {
     
     size_t target_size = config_.max_cache_size - required_bytes;
     if (target_size < 0) {
-        target_size = static_cast<size_t>(config_.max_cache_size * 0.7); // Target 70% usage
+        target_size = static_cast<size_t>(static_cast<double>(config_.max_cache_size) * 0.7); // Target 70% usage
     }
     
     evict_by_size(current_size - target_size);
