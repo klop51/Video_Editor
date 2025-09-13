@@ -104,7 +104,8 @@ jobs:
           echo "CC=$CC"
           echo "CXX=$CXX"
 
-      - name: Cache vcpkg
+      - name: Cache vcpkg (disabled)
+        if: false
         uses: actions/cache@v4
         with:
           path: |
@@ -115,7 +116,8 @@ jobs:
             vcpkg-linux-${{ hashFiles('vcpkg.json') }}-
             vcpkg-linux-
 
-      - name: Setup vcpkg
+      - name: Setup vcpkg (disabled)
+        if: false
         run: |
           export CMAKE_MAKE_PROGRAM=/usr/bin/make
           export CC=clang
@@ -129,6 +131,16 @@ jobs:
             cd $HOME/vcpkg && git pull
           fi
           cd $HOME/vcpkg && ./bootstrap-vcpkg.sh
+          
+          # Pre-configure vcpkg triplet to avoid compiler detection
+          mkdir -p $HOME/vcpkg/triplets/community
+          cat > $HOME/vcpkg/triplets/x64-linux-makefiles.cmake << 'EOF'
+          set(VCPKG_TARGET_ARCHITECTURE x64)
+          set(VCPKG_CRT_LINKAGE dynamic)
+          set(VCPKG_LIBRARY_LINKAGE static)
+          set(VCPKG_CMAKE_SYSTEM_NAME Linux)
+          set(VCPKG_CMAKE_CONFIGURE_OPTIONS -G "Unix Makefiles")
+          EOF
 
       - name: Install ccache
         run: |
@@ -149,9 +161,14 @@ jobs:
           export CXX=clang++
           export CMAKE_MAKE_PROGRAM=/usr/bin/make
           echo "CMAKE_MAKE_PROGRAM=$CMAKE_MAKE_PROGRAM"
-          # Use dev-debug preset but override generator to Unix Makefiles
-          cmake --preset dev-debug -G "Unix Makefiles" \
-            -DVCPKG_TARGET_TRIPLET=x64-linux \
+          # Try without vcpkg first to isolate the issue
+          cmake -B build/dev-debug -G "Unix Makefiles" \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_STANDARD=20 \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DENABLE_TESTS=ON \
+            -DENABLE_TOOLS=ON \
+            -DENABLE_FFMPEG=OFF \
             -DCMAKE_C_COMPILER=clang \
             -DCMAKE_CXX_COMPILER=clang++ \
             -DCMAKE_MAKE_PROGRAM="$CMAKE_MAKE_PROGRAM" \
