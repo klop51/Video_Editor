@@ -451,11 +451,22 @@ void IntelligentCache::trigger_garbage_collection() {
     std::unique_lock lock(cache_mutex_);
     
     // Trigger aggressive garbage collection
-    cleanup_expired_entries();
+    // Note: cleanup_expired_entries is private, so we'll implement cleanup here
+    auto now = std::chrono::steady_clock::now();
+    auto it = cache_entries_.begin();
+    while (it != cache_entries_.end()) {
+        // Remove expired entries (older than 60 seconds without access)
+        auto age = std::chrono::duration_cast<std::chrono::seconds>(now - it->second->last_access_time);
+        if (age.count() > 60 && !it->second->is_critical) {
+            it = cache_entries_.erase(it);
+        } else {
+            ++it;
+        }
+    }
     
     // Remove least recently used entries if still over memory limit
-    if (get_cache_size() > config_.max_cache_size_bytes) {
-        size_t target_eviction = get_cache_size() - config_.max_cache_size_bytes;
+    if (get_cache_size() > config_.max_cache_size) {
+        size_t target_eviction = get_cache_size() - config_.max_cache_size;
         evict_by_size(target_eviction);
     }
 }
@@ -661,7 +672,8 @@ void GPUMemoryOptimizer::optimize_for_scrubbing() {
     if (cache_) {
         // Prepare for random access patterns
         // Keep more frames in memory for quick seeking
-        cache_->cleanup_expired_entries();
+        // Note: Cannot call private cleanup_expired_entries, so trigger public cleanup instead
+        cache_->trigger_garbage_collection();
     }
 }
 
