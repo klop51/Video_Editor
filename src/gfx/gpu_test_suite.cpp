@@ -158,8 +158,8 @@ TestResult GPUTestSuite::run_test(const std::string& test_name, std::function<bo
         result.passed = test_func();
         
         auto end_time = std::chrono::high_resolution_clock::now();
-        result.execution_time_ms = std::chrono::duration_cast<std::chrono::microseconds>(
-            end_time - start_time).count() / 1000.0;
+        result.execution_time_ms = static_cast<double>(std::chrono::duration_cast<std::chrono::microseconds>(
+            end_time - start_time).count()) / 1000.0;
         
         size_t memory_after = get_current_memory_usage();
         result.memory_used_mb = (memory_after - memory_before) / (1024 * 1024);
@@ -407,7 +407,7 @@ bool GPUTestSuite::test_parallel_compute_operations() {
     std::vector<std::future<bool>> futures;
     
     for (int i = 0; i < 4; ++i) {
-        futures.push_back(std::async(std::launch::async, [&device, i]() {
+        futures.push_back(std::async(std::launch::async, [&device]() {
             // Each thread runs a compute operation
             const char* shader_code = R"(
                 RWBuffer<float> OutputBuffer : register(u0);
@@ -646,13 +646,14 @@ void GPUTestSuite::record_benchmark(const std::string& operation, double time_ms
     benchmark.max_time_ms = std::max(benchmark.max_time_ms, time_ms);
     
     // Update running average
-    benchmark.avg_time_ms = (benchmark.avg_time_ms * benchmark.sample_count + time_ms) / (benchmark.sample_count + 1);
+    benchmark.avg_time_ms = (benchmark.avg_time_ms * static_cast<double>(benchmark.sample_count) + time_ms) / static_cast<double>(benchmark.sample_count + 1);
     benchmark.sample_count++;
     benchmark.target_time_ms = target_ms;
     benchmark.meets_target = time_ms <= target_ms;
 }
 
 bool GPUTestSuite::validate_performance_target(const std::string& operation, double target_ms) {
+    (void)target_ms; // Suppress unused parameter warning
     auto it = benchmarks_.find(operation);
     if (it != benchmarks_.end()) {
         return it->second.meets_target;
