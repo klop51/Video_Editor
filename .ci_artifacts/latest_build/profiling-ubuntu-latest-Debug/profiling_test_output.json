@@ -1,0 +1,5 @@
+{
+  "samples": [
+    { "name": "io", "count": 1, "total_ms": 5, "avg_ms": 5, "min_ms": 5, "max_ms": 5, "p50_ms": 5, "p95_ms": 5 }
+  ]
+}

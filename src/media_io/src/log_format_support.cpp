@@ -311,7 +311,7 @@ float LogFormatSupport::linear_to_slog3(float linear_value) {
     const float d = 0.037584f;
     
     if (linear_value >= 0.0f) {
-        return 0.9f * std::log10f(a * linear_value + b) + d;
+        return 0.9f * log10f(a * linear_value + b) + d;
     } else {
         return 3.53881f * linear_value + 0.030001f;
     }
@@ -336,7 +336,7 @@ float LogFormatSupport::linear_to_clog3(float linear_value) {
     const float c = 0.30103f;
     
     if (linear_value >= 0.014f) {
-        return 0.36f * std::log10f(a * linear_value + 1.0f) + c;
+        return 0.36f * log10f(a * linear_value + 1.0f) + c;
     } else {
         return 2.755341f * linear_value + b;
     }
@@ -358,7 +358,7 @@ float LogFormatSupport::linear_to_logc4(float linear_value) {
     const float c = 0.247190f;
     const float d = 0.386036f;
     
-    return c * std::log10f(a * linear_value + b) + d;
+    return c * log10f(a * linear_value + b) + d;
 }
 
 // RED Log conversion functions
@@ -367,7 +367,7 @@ float LogFormatSupport::redlog_to_linear(float log_value) {
 }
 
 float LogFormatSupport::linear_to_redlog(float linear_value) {
-    return (154.0f * std::log10f(511.0f * linear_value + 1.0f) + 512.0f) / 1023.0f;
+    return (154.0f * log10f(511.0f * linear_value + 1.0f) + 512.0f) / 1023.0f;
 }
 
 // Blackmagic Log conversion functions
@@ -383,7 +383,7 @@ float LogFormatSupport::linear_to_bmlog(float linear_value) {
     if (linear_value < 0.005f / 6.025f) {
         return linear_value * 6.025f;
     } else {
-        return 0.0929f * std::log10f(18.8515625f * linear_value + 1.0f) + 0.00692f;
+        return 0.0929f * log10f(18.8515625f * linear_value + 1.0f) + 0.00692f;
     }
 }
 
@@ -414,7 +414,7 @@ float LogFormatSupport::linear_to_vlog(float linear_value) {
     if (linear_value < cut1) {
         return a * linear_value + b;
     } else {
-        return c * std::log10f(linear_value + 0.00873f) + d;
+        return c * log10f(linear_value + 0.00873f) + d;
     }
 }
 

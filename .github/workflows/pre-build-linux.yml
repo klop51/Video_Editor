@@ -77,6 +77,8 @@ jobs:
           fi
           # Install additional C++ development packages
           sudo apt-get install -y libfmt-dev libspdlog-dev
+          # Install Google Test and Google Mock for test compilation
+          sudo apt-get install -y libgtest-dev libgmock-dev
           # Install OpenGL development packages
           sudo apt-get install -y libgl1-mesa-dev libglu1-mesa-dev
           # Install additional system libraries
