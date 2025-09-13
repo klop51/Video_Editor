@@ -133,8 +133,8 @@ private:
             
             // Verify matrix is not zero
             bool non_zero = false;
-            for (int i = 0; i < 3; ++i) {
-                for (int j = 0; j < 3; ++j) {
+            for (size_t i = 0; i < 3; ++i) {
+                for (size_t j = 0; j < 3; ++j) {
                     if (std::abs(matrix[i][j]) > 0.001) {
                         non_zero = true;
                         break;

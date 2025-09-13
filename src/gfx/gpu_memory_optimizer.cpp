@@ -3,7 +3,7 @@
 
 #include "gpu_memory_optimizer.hpp"
 #include "graphics_device.hpp"
-#include "texture_manager.hpp"
+#include "graphics_device_bridge.hpp"
 #include <algorithm>
 #include <future>
 #include <random>
