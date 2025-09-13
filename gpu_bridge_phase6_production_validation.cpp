@@ -125,7 +125,7 @@ public:
     // Simulate real-world workflow processing
     bool process_workflow(const ve::gfx::WorkflowSimulation& workflow) {
         // Simulate workflow complexity
-        float processing_time = workflow.complexity_factor * workflow.estimated_duration_seconds / 100.0f; // Scaled down
+        float processing_time = workflow.complexity_factor * static_cast<float>(workflow.estimated_duration_seconds) / 100.0f; // Scaled down
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(processing_time * 100)));
         
         // 98% success rate for production workflows
@@ -318,8 +318,8 @@ private:
                       << " (" << recovery_result.recovery_time_ms << "ms)" << std::endl;
         }
         
-        float recovery_rate = static_cast<float>(successful_recoveries) / error_scenarios.size();
-        float average_recovery_time = total_recovery_time / error_scenarios.size();
+        float recovery_rate = static_cast<float>(successful_recoveries) / static_cast<float>(error_scenarios.size());
+        float average_recovery_time = total_recovery_time / static_cast<float>(error_scenarios.size());
         
         bool recovery_rate_passed = recovery_rate >= 0.95f; // >95% recovery rate
         bool recovery_time_passed = average_recovery_time <= 150.0f; // <150ms average
@@ -466,8 +466,8 @@ private:
                       << " (" << processing_time << "ms)" << std::endl;
         }
         
-        float success_rate = static_cast<float>(successful_workflows) / production_workflows.size();
-        float average_processing_time = total_processing_time / production_workflows.size();
+        float success_rate = static_cast<float>(successful_workflows) / static_cast<float>(production_workflows.size());
+        float average_processing_time = total_processing_time / static_cast<float>(production_workflows.size());
         
         bool success_rate_passed = success_rate >= 0.95f; // >95% success rate
         bool processing_time_passed = average_processing_time <= 1000.0f; // <1 second average
