@@ -43,6 +43,39 @@ jobs:
         with:
           fetch-depth: 0  # Full history for proper versioning
 
+      - name: Install Windows SDK (if missing)
+        shell: cmd
+        run: |
+          echo Checking for Windows SDK RC compiler...
+          
+          REM Check if RC compiler is available
+          where rc >nul 2>&1
+          if %ERRORLEVEL% EQU 0 (
+            echo RC compiler found in PATH
+            goto :skip_sdk_install
+          )
+          
+          REM Check for RC in Windows SDK paths
+          if exist "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\rc.exe" (
+            echo Windows SDK RC found at standard location
+            goto :skip_sdk_install
+          )
+          
+          echo RC compiler not found, checking for any Windows SDK...
+          if exist "C:\Program Files (x86)\Windows Kits\10\bin" (
+            echo Windows SDK directory exists, checking versions...
+            dir "C:\Program Files (x86)\Windows Kits\10\bin" /B
+          ) else (
+            echo No Windows SDK found, installing...
+            curl -L -o winsdksetup.exe "https://go.microsoft.com/fwlink/?linkid=2196241"
+            echo Installing Windows 11 SDK 22H2...
+            winsdksetup.exe /quiet /installpath "C:\Program Files (x86)\Windows Kits\10"
+            echo Windows SDK installation completed
+          )
+          
+          :skip_sdk_install
+          echo Windows SDK check complete
+
       - name: Setup build environment
         shell: cmd
         run: |
@@ -91,6 +124,23 @@ jobs:
               echo Please install Visual Studio 2022 Community or Build Tools
               exit /b 1
             )
+          )
+          
+          REM Set up Windows SDK environment
+          echo Setting up Windows SDK environment...
+          if exist "%ProgramFiles(x86)%\Windows Kits\10\bin\10.0.22621.0\x64" (
+            echo Adding Windows SDK to PATH...
+            echo %ProgramFiles(x86)%\Windows Kits\10\bin\10.0.22621.0\x64;%PATH%>> %GITHUB_ENV%
+          ) else (
+            echo Checking for other Windows SDK versions...
+            for /f %%i in ('dir "%ProgramFiles(x86)%\Windows Kits\10\bin" /B /AD 2^>nul ^| findstr "10.0"') do (
+              if exist "%ProgramFiles(x86)%\Windows Kits\10\bin\%%i\x64\rc.exe" (
+                echo Found Windows SDK %%i
+                echo %ProgramFiles(x86)%\Windows Kits\10\bin\%%i\x64;%PATH%>> %GITHUB_ENV%
+                goto :sdk_found
+              )
+            )
+            :sdk_found
           )
           
           echo Build environment setup complete
