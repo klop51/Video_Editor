@@ -81,19 +81,16 @@ if(WIN32)
     )
     
     # Create platforms directory and copy Qt6 platform plugins (Debug/Release versions)
-    # Use Qt's plugin discovery mechanism for more robust path resolution
-    find_package(Qt6 QUIET COMPONENTS Core Widgets REQUIRED)
-    get_target_property(QT_PLUGINS_DIR Qt6::Core LOCATION)
-    get_filename_component(QT_PLUGINS_DIR "${QT_PLUGINS_DIR}" DIRECTORY)
-    get_filename_component(QT_PLUGINS_DIR "${QT_PLUGINS_DIR}" DIRECTORY)
-    set(QT_PLUGINS_DIR "${QT_PLUGINS_DIR}/plugins")
+    # Use vcpkg-specific paths that we know work
+    set(QT_DEBUG_PLUGINS_DIR "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/debug/Qt6/plugins")
+    set(QT_RELEASE_PLUGINS_DIR "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/Qt6/plugins")
 
     add_custom_command(TARGET video_editor POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory
             $<TARGET_FILE_DIR:video_editor>/platforms
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "$<IF:$<CONFIG:Debug>,${QT_PLUGINS_DIR}/platforms/qwindowsd.dll,${QT_PLUGINS_DIR}/platforms/qwindows.dll>"
-            "$<IF:$<CONFIG:Debug>,${QT_PLUGINS_DIR}/platforms/qminimald.dll,${QT_PLUGINS_DIR}/platforms/qminimal.dll>"
+            "$<IF:$<CONFIG:Debug>,${QT_DEBUG_PLUGINS_DIR}/platforms/qwindowsd.dll,${QT_RELEASE_PLUGINS_DIR}/platforms/qwindows.dll>"
+            "$<IF:$<CONFIG:Debug>,${QT_DEBUG_PLUGINS_DIR}/platforms/qminimald.dll,${QT_RELEASE_PLUGINS_DIR}/platforms/qminimal.dll>"
             $<TARGET_FILE_DIR:video_editor>/platforms/
         COMMENT "Copying Qt6 platform plugins to output directory"
     )

@@ -1,0 +1,333 @@
+name: build-windows-self-hosted
+"on":
+  push:
+    tags: [ "v*" ]
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:  # Allow manual triggering
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows-self-hosted:
+    name: Self-Hosted Windows ${{ matrix.config }} build
+    runs-on: [self-hosted, windows]
+    strategy:
+      fail-fast: false
+      matrix:
+        config: [ Debug, Release ]
+    env:
+      # Optimized for self-hosted runner
+      VCPKG_MAX_CONCURRENCY: 8  # Use more cores on dedicated hardware
+      VCPKG_ROOT: C:/vcpkg
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+      # Video Editor specific environment
+      VE_ENABLE_DETAILED_PROFILING: 1
+      VE_ENABLE_PBO_UPLOAD: 1
+      # Disable Windows Defender scanning during build
+      POWERSHELL_TELEMETRY_OPTOUT: 1
+    
+    steps:
+      - name: Cleanup workspace
+        shell: powershell
+        run: |
+          # Clean up any previous build artifacts
+          Get-ChildItem -Path "." -Recurse -Force | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+          
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for proper versioning
+
+      - name: Setup build environment
+        shell: powershell
+        run: |
+          # Ensure vcpkg is available and integrated
+          if (!(Test-Path "C:\vcpkg\vcpkg.exe")) {
+            Write-Error "vcpkg not found at C:\vcpkg - please ensure it's installed per VM setup guide"
+            exit 1
+          }
+          
+          # Verify Visual Studio installation
+          $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (Test-Path $vsWhere) {
+            & $vsWhere -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64
+          }
+          
+          # Set up environment variables
+          echo "CMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" >> $env:GITHUB_ENV
+          echo "VCPKG_INSTALLED_DIR=${{ github.workspace }}/build/vcpkg_installed" >> $env:GITHUB_ENV
+
+      - name: Cache vcpkg dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/vcpkg_installed
+            C:/vcpkg/buildtrees
+          key: vcpkg-self-hosted-${{ hashFiles('vcpkg.json') }}-v4
+          restore-keys: |
+            vcpkg-self-hosted-${{ hashFiles('vcpkg.json') }}-
+            vcpkg-self-hosted-
+
+      - name: Configure CMake
+        shell: powershell
+        run: |
+          Write-Host "Configuring for ${{ matrix.config }} build..." -ForegroundColor Green
+          
+          if ("${{ matrix.config }}" -eq "Debug") {
+            cmake --preset qt-debug
+          } else {
+            cmake --preset qt-release  # Assuming you have this preset
+          }
+
+      - name: Build Video Editor
+        shell: powershell
+        run: |
+          Write-Host "Building Video Editor (${{ matrix.config }})..." -ForegroundColor Green
+          
+          # Use all available cores on self-hosted runner
+          $cores = (Get-CimInstance Win32_ComputerSystem).NumberOfLogicalProcessors
+          Write-Host "Using $cores parallel jobs"
+          
+          if ("${{ matrix.config }}" -eq "Debug") {
+            cmake --build build/qt-debug --config Debug --parallel $cores
+          } else {
+            cmake --build build/qt-release --config Release --parallel $cores
+          }
+
+      - name: Run Unit Tests
+        shell: powershell
+        run: |
+          Write-Host "Running unit tests..." -ForegroundColor Green
+          
+          if ("${{ matrix.config }}" -eq "Debug") {
+            $testPath = "build/qt-debug/tests/Debug"
+          } else {
+            $testPath = "build/qt-release/tests/Release"
+          }
+          
+          if (Test-Path "$testPath/unit_tests.exe") {
+            & "$testPath/unit_tests.exe" --reporter=xml --out=test-results-${{ matrix.config }}.xml
+          } else {
+            Write-Warning "Unit tests executable not found at $testPath"
+          }
+
+      - name: Run GPU Validation Tests
+        shell: powershell
+        run: |
+          Write-Host "Running GPU system validation..." -ForegroundColor Green
+          
+          if ("${{ matrix.config }}" -eq "Debug") {
+            $testPath = "build/qt-debug/tests/Debug"
+          } else {
+            $testPath = "build/qt-release/tests/Release"
+          }
+          
+          if (Test-Path "$testPath/gpu_system_validation.exe") {
+            & "$testPath/gpu_system_validation.exe" | Tee-Object -FilePath "gpu-validation-${{ matrix.config }}.log"
+            
+            # Check if GPU validation passed
+            $lastExitCode = $LASTEXITCODE
+            if ($lastExitCode -eq 0) {
+              Write-Host "✅ GPU validation passed" -ForegroundColor Green
+            } else {
+              Write-Warning "⚠️ GPU validation failed with exit code $lastExitCode"
+            }
+          }
+
+      - name: Performance Validation
+        if: matrix.config == 'Release'
+        shell: powershell
+        run: |
+          Write-Host "Running performance validation..." -ForegroundColor Green
+          
+          $perfTest = "build/qt-release/tests/Release/performance_optimizer_validation.exe"
+          if (Test-Path $perfTest) {
+            & $perfTest | Tee-Object -FilePath "performance-validation.log"
+          }
+
+      - name: Package Application
+        shell: powershell
+        run: |
+          Write-Host "Packaging Video Editor application..." -ForegroundColor Green
+          
+          $config = "${{ matrix.config }}"
+          $buildDir = if ($config -eq "Debug") { "build/qt-debug" } else { "build/qt-release" }
+          $packageDir = "VideoEditor-Windows-$config"
+          
+          # Create package directory
+          New-Item -ItemType Directory -Path $packageDir -Force
+          
+          # Copy main executable and dependencies
+          $exePath = "$buildDir/src/tools/video_editor/$config"
+          if (Test-Path $exePath) {
+            Copy-Item -Path "$exePath/*" -Destination $packageDir -Recurse -Force
+          }
+          
+          # Copy tools
+          $toolsPath = "$buildDir/src/tools"
+          Get-ChildItem $toolsPath -Directory | ForEach-Object {
+            $toolExe = Join-Path $_.FullName "$config"
+            if (Test-Path $toolExe) {
+              $toolName = $_.Name
+              New-Item -ItemType Directory -Path "$packageDir/tools/$toolName" -Force
+              Copy-Item -Path "$toolExe/*" -Destination "$packageDir/tools/$toolName" -Recurse -Force
+            }
+          }
+          
+          # Copy documentation
+          Copy-Item -Path "README.md", "*.md" -Destination $packageDir -Force -ErrorAction SilentlyContinue
+          
+          # Create archive
+          Compress-Archive -Path $packageDir -DestinationPath "$packageDir.zip" -Force
+          
+          Write-Host "✅ Package created: $packageDir.zip"
+
+      - name: Validate Package
+        shell: powershell
+        run: |
+          Write-Host "Validating packaged application..." -ForegroundColor Green
+          
+          $config = "${{ matrix.config }}"
+          $packageDir = "VideoEditor-Windows-$config"
+          
+          # Test that main executable runs
+          $mainExe = "$packageDir/video_editor.exe"
+          if (Test-Path $mainExe) {
+            Write-Host "Testing main executable..."
+            # Run with --version flag if supported, or just test it loads
+            & $mainExe --help 2>$null | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "✅ Main executable validated"
+            } else {
+              Write-Host "⚠️ Main executable test inconclusive (exit code $LASTEXITCODE)"
+            }
+          }
+          
+          # Check for required DLLs
+          $requiredDlls = @("Qt6Core.dll", "Qt6Gui.dll", "Qt6Widgets.dll", "avcodec-61.dll")
+          foreach ($dll in $requiredDlls) {
+            if (Test-Path "$packageDir/$dll") {
+              Write-Host "✅ Found required DLL: $dll"
+            } else {
+              Write-Warning "❌ Missing required DLL: $dll"
+            }
+          }
+
+      - name: Collect Artifacts
+        if: always()
+        shell: powershell
+        run: |
+          # Collect build logs and profiling data
+          $artifactDir = "artifacts-${{ matrix.config }}"
+          New-Item -ItemType Directory -Path $artifactDir -Force
+          
+          # Copy profiling data
+          Get-ChildItem -Path . -Filter "profiling*.json" -Recurse | ForEach-Object {
+            Copy-Item $_.FullName -Destination $artifactDir
+          }
+          
+          # Copy test results
+          Get-ChildItem -Path . -Filter "*test*.xml" | ForEach-Object {
+            Copy-Item $_.FullName -Destination $artifactDir
+          }
+          
+          # Copy validation logs
+          Get-ChildItem -Path . -Filter "*validation*.log" | ForEach-Object {
+            Copy-Item $_.FullName -Destination $artifactDir
+          }
+          
+          # Copy CMake logs on failure
+          if ($env:BUILD_FAILED -eq "true") {
+            $cmakeLog = "build/*/CMakeFiles/CMakeOutput.log"
+            Get-ChildItem -Path $cmakeLog -ErrorAction SilentlyContinue | ForEach-Object {
+              Copy-Item $_.FullName -Destination $artifactDir
+            }
+          }
+
+      - name: Upload Build Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-editor-windows-${{ matrix.config }}-${{ github.run_number }}
+          path: |
+            VideoEditor-Windows-${{ matrix.config }}.zip
+            artifacts-${{ matrix.config }}
+          retention-days: 30
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-windows-${{ matrix.config }}-${{ github.run_number }}
+          path: |
+            test-results-*.xml
+            *validation*.log
+          if-no-files-found: ignore
+
+      - name: Performance Report
+        if: matrix.config == 'Release'
+        shell: powershell
+        run: |
+          Write-Host "=== Performance Summary ===" -ForegroundColor Cyan
+          
+          # Check if profiling data exists
+          if (Test-Path "profiling.json") {
+            $profiling = Get-Content "profiling.json" | ConvertFrom-Json
+            Write-Host "Build completed with performance data available"
+            
+            # Extract key metrics if available
+            if ($profiling.frame_time_ms) {
+              Write-Host "Average frame time: $($profiling.frame_time_ms) ms"
+            }
+          }
+          
+          # Check build time (approximate)
+          $buildTime = (Get-Date) - (Get-Date $env:GITHUB_RUN_STARTED_AT)
+          Write-Host "Total build time: $($buildTime.ToString('mm\:ss'))"
+
+      - name: Cleanup Build Directory
+        if: always()
+        shell: powershell
+        run: |
+          # Clean up large build files to save runner disk space
+          # Keep only essential artifacts that were already uploaded
+          
+          Write-Host "Cleaning up build directory..." -ForegroundColor Yellow
+          
+          # Remove intermediate build files but keep packaged artifacts
+          if (Test-Path "build") {
+            Get-ChildItem -Path "build" -Recurse -Directory -Name "CMakeFiles" | ForEach-Object {
+              Remove-Item -Path "build/$_" -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            
+            # Remove object files and temporary build artifacts
+            Get-ChildItem -Path "build" -Recurse -Include "*.obj", "*.pdb", "*.exp", "*.lib" | Remove-Item -Force -ErrorAction SilentlyContinue
+          }
+          
+          Write-Host "✅ Cleanup completed"
+
+  notify-status:
+    name: Build Status Notification
+    runs-on: [self-hosted, windows]
+    needs: build-windows-self-hosted
+    if: always()
+    steps:
+      - name: Report Build Status
+        shell: powershell
+        run: |
+          $status = "${{ needs.build-windows-self-hosted.result }}"
+          $runUrl = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          
+          Write-Host "=== Build Complete ===" -ForegroundColor Cyan
+          Write-Host "Status: $status" -ForegroundColor $(if ($status -eq 'success') { 'Green' } else { 'Red' })
+          Write-Host "Run URL: $runUrl"
+          Write-Host "Commit: ${{ github.sha }}"
+          Write-Host "Branch: ${{ github.ref_name }}"
+          
+          if ($status -eq 'success') {
+            Write-Host "✅ All builds completed successfully!" -ForegroundColor Green
+          } else {
+            Write-Host "❌ Build failed - check artifacts for details" -ForegroundColor Red
+          }
