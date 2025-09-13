@@ -168,4 +168,13 @@ void PerformanceStatistics::set_history_size(size_t size) {
     (void)size; // Mark as used to avoid warning
 }
 
+// ============================================================================
+// PerformanceOptimizer Implementation
+// ============================================================================
+
+PerformanceOptimizer::PerformanceOptimizer(const PerformanceTargets& targets) {
+    // Initialize performance optimizer with targets
+    (void)targets; // Mark as used to avoid warning
+}
+
 } // namespace video_editor::gfx

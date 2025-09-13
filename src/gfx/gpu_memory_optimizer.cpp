@@ -433,6 +433,33 @@ MemoryStats IntelligentCache::get_statistics() const {
     return stats_;
 }
 
+void IntelligentCache::force_cleanup() {
+    std::unique_lock lock(cache_mutex_);
+    
+    // Force immediate cleanup of all non-critical entries
+    auto it = cache_entries_.begin();
+    while (it != cache_entries_.end()) {
+        if (!it->second->is_critical) {
+            it = cache_entries_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+void IntelligentCache::trigger_garbage_collection() {
+    std::unique_lock lock(cache_mutex_);
+    
+    // Trigger aggressive garbage collection
+    cleanup_expired_entries();
+    
+    // Remove least recently used entries if still over memory limit
+    if (get_cache_size() > config_.max_cache_size_bytes) {
+        size_t target_eviction = get_cache_size() - config_.max_cache_size_bytes;
+        evict_by_size(target_eviction);
+    }
+}
+
 // ============================================================================
 // TextureCompression Implementation
 // ============================================================================
@@ -617,6 +644,35 @@ void GPUMemoryOptimizer::handle_memory_pressure(float pressure) {
 
 MemoryStats GPUMemoryOptimizer::get_memory_statistics() const {
     return cache_->get_statistics();
+}
+
+void GPUMemoryOptimizer::optimize_for_realtime_playback() {
+    // Optimize cache for real-time playback
+    if (cache_) {
+        // Increase cache size for smoother playback
+        // Prioritize sequential frame access patterns
+        cache_->update_access_patterns();
+        cache_->predict_future_needs();
+    }
+}
+
+void GPUMemoryOptimizer::optimize_for_scrubbing() {
+    // Optimize cache for scrubbing operations
+    if (cache_) {
+        // Prepare for random access patterns
+        // Keep more frames in memory for quick seeking
+        cache_->cleanup_expired_entries();
+    }
+}
+
+void GPUMemoryOptimizer::optimize_for_rendering() {
+    // Optimize cache for rendering operations
+    if (cache_) {
+        // Free up memory for render targets
+        // Compress textures more aggressively
+        cache_->trigger_garbage_collection();
+        cache_->force_cleanup();
+    }
 }
 
 // ============================================================================

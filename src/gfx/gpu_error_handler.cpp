@@ -129,4 +129,28 @@ std::unique_ptr<GPUErrorHandler> ErrorHandlerFactory::create_with_config(Graphic
     return std::make_unique<GPUErrorHandler>(device, config);
 }
 
+// ============================================================================
+// DeviceLostRecoveryManager Implementation
+// ============================================================================
+
+DeviceLostRecoveryManager::~DeviceLostRecoveryManager() {
+    // Cleanup device recovery manager
+}
+
+// ============================================================================
+// MemoryPressureHandler Implementation
+// ============================================================================
+
+MemoryPressureHandler::~MemoryPressureHandler() {
+    // Cleanup memory pressure handler
+}
+
+// ============================================================================
+// ThermalProtectionManager Implementation
+// ============================================================================
+
+ThermalProtectionManager::~ThermalProtectionManager() {
+    // Cleanup thermal protection manager
+}
+
 } // namespace video_editor::gfx
