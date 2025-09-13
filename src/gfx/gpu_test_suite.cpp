@@ -15,10 +15,8 @@
 #include <random>
 #include <iomanip>
 #include <future>
-#include <iostream>
-#include <fstream>
-#include <algorithm>
-#include <numeric>
+#include <thread>
+#include <chrono>
 #include <cmath>
 #include <random>
 #include <iomanip>
