@@ -42,7 +42,16 @@ void GPUErrorHandler::report_error(GPUErrorType error_type, const std::string& m
 
 GPUErrorHandler::ErrorStatistics GPUErrorHandler::get_error_statistics() const {
     GPUErrorHandler::ErrorStatistics stats;
-    // Return basic error statistics
+    // Initialize all fields to avoid garbage values
+    stats.total_errors = 0;
+    stats.successful_recoveries = 0;
+    stats.failed_recoveries = 0;
+    stats.error_counts.clear();
+    stats.strategy_success_counts.clear();
+    stats.first_error = std::chrono::steady_clock::time_point{};
+    stats.last_error = std::chrono::steady_clock::time_point{};
+    stats.mean_time_between_failures_hours = 0.0f;
+    
     return stats;
 }
 

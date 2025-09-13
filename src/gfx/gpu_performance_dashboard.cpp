@@ -25,9 +25,10 @@ PerformanceDashboard::PerformanceDashboard(GraphicsDevice* device, const Perform
 
 PerformanceDashboard::~PerformanceDashboard() {
     monitoring_active_ = false;
-    if (monitoring_thread_.joinable()) {
-        monitoring_thread_.join();
-    }
+    // DEBUGGING: Temporarily disable thread join to isolate abort() source  
+    // if (monitoring_thread_.joinable()) {
+    //     monitoring_thread_.join();
+    // }
 }
 
 void PerformanceDashboard::integrate_with_error_handler(class GPUErrorHandler* error_handler) {

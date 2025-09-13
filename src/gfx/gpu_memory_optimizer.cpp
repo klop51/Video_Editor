@@ -8,6 +8,7 @@
 #include <future>
 #include <random>
 #include <cmath>
+#include <iostream>
 
 namespace video_editor::gfx {
 
@@ -31,10 +32,16 @@ IntelligentCache::IntelligentCache(const Config& config)
 }
 
 IntelligentCache::~IntelligentCache() {
+    std::cout << "IntelligentCache destructor starting..." << std::endl;
     should_optimize_ = false;
+    
+    // CRITICAL FIX: Detach thread to prevent hang/abort
+    // The thread might be stuck, so detach it instead of joining
     if (optimization_thread_.joinable()) {
-        optimization_thread_.join();
+        optimization_thread_.detach();
     }
+    
+    std::cout << "IntelligentCache destructor ending..." << std::endl;
 }
 
 TextureHandle IntelligentCache::get_texture(uint64_t hash) {
@@ -583,10 +590,28 @@ GPUMemoryOptimizer::GPUMemoryOptimizer(GraphicsDevice* device, const OptimizerCo
 }
 
 GPUMemoryOptimizer::~GPUMemoryOptimizer() {
+    std::cout << "GPUMemoryOptimizer destructor starting..." << std::endl;
     should_monitor_ = false;
+    
+    // Detach monitoring thread to prevent std::terminate on destruction
     if (monitoring_thread_.joinable()) {
-        monitoring_thread_.join();
+        monitoring_thread_.detach();
     }
+    
+    // DEBUGGING: Explicit cleanup of members to isolate which causes abort()
+    std::cout << "Destroying streaming..." << std::endl;
+    streaming_.reset();
+    std::cout << "streaming destroyed OK" << std::endl;
+    
+    std::cout << "Destroying compression..." << std::endl;
+    compression_.reset();
+    std::cout << "compression destroyed OK" << std::endl;
+    
+    std::cout << "Destroying cache..." << std::endl;
+    cache_.reset();
+    std::cout << "cache destroyed OK" << std::endl;
+    
+    std::cout << "GPUMemoryOptimizer destructor ending..." << std::endl;
 }
 
 TextureHandle GPUMemoryOptimizer::get_texture(uint64_t hash) {

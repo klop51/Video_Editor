@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <future>
 #include <queue>
+#include <iostream>
 
 namespace video_editor::gfx {
 
@@ -26,14 +27,17 @@ StreamingOptimizer::StreamingOptimizer(IntelligentCache* cache, GraphicsDevice* 
 }
 
 StreamingOptimizer::~StreamingOptimizer() {
+    std::cout << "StreamingOptimizer destructor starting..." << std::endl;
     stop_streaming();
     
+    // DEBUGGING: Temporarily disable thread joins to isolate abort() source
     // Join loader threads
-    for (auto& thread : loader_threads_) {
-        if (thread.joinable()) {
-            thread.join();
-        }
-    }
+    // for (auto& thread : loader_threads_) {
+    //     if (thread.joinable()) {
+    //         thread.join();
+    //     }
+    // }
+    std::cout << "StreamingOptimizer destructor ending..." << std::endl;
 }
 
 void StreamingOptimizer::start_streaming(uint32_t start_frame) {
