@@ -4,6 +4,13 @@
 
 using namespace media_io;
 
+// Constants to avoid magic numbers
+namespace {
+    constexpr int PRODUCTION_READY_THRESHOLD = 5; // Minimum targets for production ready
+    constexpr int GOOD_PERFORMANCE_THRESHOLD = 3; // Minimum targets for good performance
+    constexpr int TOTAL_PERFORMANCE_TARGETS = 7;  // Total number of performance targets
+}
+
 int main() {
     std::cout << "\n🎯 Week 12 Performance Optimization Validation Test" << std::endl;
     std::cout << "====================================================" << std::endl;
@@ -118,12 +125,12 @@ int main() {
         if (ops_per_sec > 100000) targets_met++; // Good queue performance
         if (memory_info.total_physical_memory >= 8LL * 1024 * 1024 * 1024) targets_met++; // 8GB+ RAM
         
-        std::cout << "   Targets Achieved: " << targets_met << "/7" << std::endl;
+        std::cout << "   Targets Achieved: " << targets_met << "/" << TOTAL_PERFORMANCE_TARGETS << std::endl;
         
-        if (targets_met >= 5) {
+        if (targets_met >= PRODUCTION_READY_THRESHOLD) {
             std::cout << "\n🎉 PRODUCTION READY: High-end production workflow capability achieved!" << std::endl;
             std::cout << "   Performance optimization meets Week 12 requirements for professional video editing." << std::endl;
-        } else if (targets_met >= 3) {
+        } else if (targets_met >= GOOD_PERFORMANCE_THRESHOLD) {
             std::cout << "\n⚠️ GOOD: Professional workflow capability with some limitations" << std::endl;
             std::cout << "   Performance optimization provides solid foundation with room for improvement." << std::endl;
         } else {

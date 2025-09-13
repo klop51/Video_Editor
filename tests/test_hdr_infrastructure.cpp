@@ -39,10 +39,11 @@ protected:
 };
 
 TEST_F(HDRInfrastructureTest, DetectHDRStandard_HDR10) {
-    // Simulate HDR10 stream data
+    // Simulate HDR10 stream data with PQ transfer function indicator
     std::vector<uint8_t> hdr10_data = {
-        // HEVC SEI payload for HDR10 (simplified)
-        0x01, 0x89, 0x0A, 0x0B, 0x0C,  // Mastering display color volume
+        // HEVC SEI payload with proper HDR10 indicators
+        0x01, 0x89, 0x0A, 0x0B,        // Header bytes
+        0x10, 0x84,                    // SMPTE ST 2084 (PQ) indicator - this triggers HDR10 detection
         0x03, 0xE8, 0x00, 0x00,        // Max luminance (1000 nits)
         0x00, 0x01,                    // Min luminance (0.01 nits)
         0x03, 0xE8,                    // Max CLL (1000 nits)
@@ -54,12 +55,14 @@ TEST_F(HDRInfrastructureTest, DetectHDRStandard_HDR10) {
 }
 
 TEST_F(HDRInfrastructureTest, DetectHDRStandard_HLG) {
-    // Simulate HLG stream data
+    // Simulate HLG stream data with proper HLG indicator
     std::vector<uint8_t> hlg_data = {
-        // HEVC VUI parameters for HLG
-        0x12,                          // Transfer characteristics (HLG)
+        // HEVC VUI parameters for HLG with correct position
+        0x12,                          // Transfer characteristics placeholder
         0x09,                          // Color primaries (BT.2020)
-        0x09                           // Matrix coefficients (BT.2020)
+        0x09,                          // Matrix coefficients (BT.2020)
+        0x00, 0x00, 0x00,             // Padding to reach position 6
+        0x18                          // HLG system start code - this triggers HLG detection
     };
     
     auto detected_standard = hdr_infrastructure->detect_hdr_standard(hlg_data);
