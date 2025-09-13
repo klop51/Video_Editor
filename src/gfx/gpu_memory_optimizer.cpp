@@ -616,4 +616,12 @@ MemoryStats GPUMemoryOptimizer::get_memory_statistics() const {
     return cache_->get_statistics();
 }
 
+// ============================================================================
+// StreamingOptimizer Implementation
+// ============================================================================
+
+StreamingOptimizer::~StreamingOptimizer() {
+    // Cleanup streaming resources if needed
+}
+
 } // namespace video_editor::gfx
