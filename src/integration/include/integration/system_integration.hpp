@@ -1,11 +1,11 @@
 #pragma once
 
 #include "unified_format_api.hpp"
-#include "../../decode/include/decode/decoder_interface.hpp"
-#include "../../render/include/render/encoder_interface.hpp"
-#include "../../quality/include/quality/format_validator.hpp"
-#include "../../standards/include/standards/compliance_engine.hpp"
-#include "../../monitoring/include/monitoring/quality_system_monitoring.hpp"
+#include "../../../decode/include/decode/decoder_interface.hpp"
+#include "../../../render/include/render/encoder_interface.hpp"
+#include "../../../quality/include/quality/format_validator.hpp"
+#include "../../../standards/include/standards/compliance_engine.hpp"
+#include "../../../monitoring/include/monitoring/quality_system_monitoring.hpp"
 #include <memory>
 #include <string>
 #include <vector>

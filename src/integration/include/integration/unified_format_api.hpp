@@ -1,12 +1,12 @@
 #pragma once
 
-#include "../../media_io/include/media_io/format_detector.hpp"
-#include "../../decode/include/decode/decoder_interface.hpp" 
-#include "../../render/include/render/encoder_interface.hpp"
-#include "../../quality/include/quality/format_validator.hpp"
-#include "../../quality/include/quality/quality_metrics.hpp"
-#include "../../standards/include/standards/compliance_engine.hpp"
-#include "../../monitoring/include/monitoring/quality_system_monitoring.hpp"
+#include "../../../media_io/include/media_io/format_detector.hpp"
+#include "../../../decode/include/decode/decoder_interface.hpp" 
+#include "../../../render/include/render/encoder_interface.hpp"
+#include "../../../quality/include/quality/format_validator.hpp"
+#include "../../../quality/include/quality/quality_metrics.hpp"
+#include "../../../standards/include/standards/compliance_engine.hpp"
+#include "../../../monitoring/include/monitoring/quality_system_monitoring.hpp"
 #include <memory>
 #include <string>
 #include <vector>
