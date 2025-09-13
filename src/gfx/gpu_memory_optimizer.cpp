@@ -286,9 +286,13 @@ bool IntelligentCache::ensure_free_memory(size_t required_bytes) {
         return true; // Already have enough space
     }
     
-    size_t target_size = config_.max_cache_size - required_bytes;
-    if (target_size < 0) {
-        target_size = static_cast<size_t>(static_cast<double>(config_.max_cache_size) * 0.7); // Target 70% usage
+    size_t bytes_to_free = required_bytes > config_.max_cache_size ? 
+                          config_.max_cache_size : required_bytes;
+    size_t target_size = config_.max_cache_size - bytes_to_free;
+    
+    // If required_bytes is larger than max_cache_size, target 70% usage
+    if (required_bytes >= config_.max_cache_size) {
+        target_size = static_cast<size_t>(static_cast<double>(config_.max_cache_size) * 0.7);
     }
     
     evict_by_size(current_size - target_size);
