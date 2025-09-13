@@ -179,7 +179,7 @@ int main() {
     std::cout << "  Successful Recoveries: " << error_stats.successful_recoveries << std::endl;
     std::cout << "  Recovery Rate: " << std::fixed << std::setprecision(1) 
               << (error_stats.total_errors > 0 ? 
-                  (float(error_stats.successful_recoveries) / error_stats.total_errors * 100) : 100.0f) 
+                  (static_cast<float>(error_stats.successful_recoveries) / static_cast<float>(error_stats.total_errors) * 100.0f) : 100.0f) 
               << "%" << std::endl;
     
     // Step 8: Performance summary

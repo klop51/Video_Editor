@@ -5,8 +5,12 @@
 
 #include "../core/include/core/result.hpp"
 #include "include/gfx/graphics_device.hpp"
+
+#ifdef _WIN32
 #include <d3d11.h>
 #include <wrl/client.h>
+#endif
+
 #include <vector>
 #include <memory>
 #include <string>
