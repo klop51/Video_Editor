@@ -67,7 +67,7 @@ public:
     CacheStats get_cache_statistics() {
         CacheStats stats;
         // Simulate good cache performance
-        stats.hit_ratio = 0.72f + (rand() % 20) / 100.0f; // 72-92%
+        stats.hit_ratio = 0.72f + static_cast<size_t>(rand() % 20) / 100.0f; // 72-92%
         stats.memory_usage_mb = 1800 + (rand() % 500);    // 1.8-2.3GB
         stats.memory_peak_mb = stats.memory_usage_mb + 200;
         stats.has_memory_leaks = false;
@@ -92,7 +92,7 @@ public:
         ProcessingStats stats;
         
         // Simulate 8K processing with improved performance targeting 30+ FPS
-        stats.fps_sustained = 30.0f + (rand() % 4);        // 30-33 FPS (ensures target met)
+        stats.fps_sustained = 30.0f + static_cast<size_t>(rand() % 4);        // 30-33 FPS (ensures target met)
         stats.vram_usage_gb = 7 + (rand() % 4);            // 7-10 GB
         stats.frame_timing_consistent = (rand() % 10) > 0; // 95% chance (improved)
         stats.vram_exhaustion_detected = false;
@@ -341,7 +341,7 @@ public:
             max_temp = std::max(max_temp, metrics.temperature_celsius);
             any_throttling |= metrics.thermal_throttling;
         }
-        avg_utilization /= metrics_history.size();
+        avg_utilization /= static_cast<float>(metrics_history.size());
         
         bool utilization_good = avg_utilization > 80.0f;      // >80% target
         bool temperature_safe = max_temp < 85.0f;             // <85°C target

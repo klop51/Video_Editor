@@ -124,7 +124,7 @@ std::optional<AudioFrame> AudioResampler::resample(const AudioFrame& input) {
 namespace ve::decode {
 struct AudioResampler::Impl {};
 AudioResampler::AudioResampler() : impl_(nullptr) {}
-AudioResampler::~AudioResampler() = default;
+AudioResampler::~AudioResampler() { (void)impl_; } // Mark as used to avoid warning
 bool AudioResampler::init(const ResampleParams& params) { (void)params; return false; }
 std::optional<AudioFrame> AudioResampler::resample(const AudioFrame& input) { (void)input; return std::nullopt; }
 } // namespace ve::decode
