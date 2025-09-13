@@ -1,5 +1,5 @@
 #pragma once
-#include "media_io/legacy_formats.hpp"
+#include "legacy_formats.hpp"
 #include <cstdint>
 #include <vector>
 #include <string>

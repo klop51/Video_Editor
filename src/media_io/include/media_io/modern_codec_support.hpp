@@ -1,7 +1,7 @@
 #pragma once
 
 #include "decode/frame.hpp"
-#include "media_io/format_detector.hpp"
+#include "format_detector.hpp"
 #include <string>
 #include <vector>
 #include <unordered_map>

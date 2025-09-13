@@ -6,7 +6,7 @@
 #include <optional>
 #include <functional>
 #include "decode/frame.hpp"
-#include "media_io/hdr_infrastructure.hpp"  // Phase 2 Week 5: HDR integration
+#include "hdr_infrastructure.hpp"  // Phase 2 Week 5: HDR integration
 
 namespace ve::media_io {
 
