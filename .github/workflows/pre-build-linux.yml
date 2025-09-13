@@ -50,6 +50,38 @@ jobs:
           # Also install libstdc++ as fallback
           sudo apt-get install -y libstdc++-12-dev
           
+          # Install testing and development libraries
+          sudo apt-get install -y catch2 libcatch2-dev || echo "Catch2 not available in repos"
+          sudo apt-get install -y libgtest-dev googletest || echo "GTest not available in repos"
+          
+          # If Catch2 v3 is not available, build from source
+          if ! pkg-config --exists catch2-with-main; then
+            echo "Building Catch2 v3 from source..."
+            cd /tmp
+            git clone https://github.com/catchorg/Catch2.git
+            cd Catch2
+            git checkout v3.4.0
+            cmake -B build -S . -DBUILD_TESTING=OFF -DCMAKE_INSTALL_PREFIX=/usr/local
+            sudo cmake --build build --target install
+            cd /
+          fi
+          
+          # Build GTest if needed
+          if [ ! -f "/usr/lib/x86_64-linux-gnu/libgtest.a" ]; then
+            echo "Building GTest from source..."
+            cd /usr/src/googletest
+            sudo cmake . -B build
+            sudo cmake --build build
+            sudo cp build/lib/*.a /usr/lib/x86_64-linux-gnu/
+            cd /
+          fi
+          # Install additional C++ development packages
+          sudo apt-get install -y libfmt-dev libspdlog-dev
+          # Install OpenGL development packages
+          sudo apt-get install -y libgl1-mesa-dev libglu1-mesa-dev
+          # Install additional system libraries
+          sudo apt-get install -y libpthread-stubs0-dev
+          
           # Verify make and ninja are installed
           which make || echo "Make not found in PATH"
           make --version || echo "Make version check failed"
