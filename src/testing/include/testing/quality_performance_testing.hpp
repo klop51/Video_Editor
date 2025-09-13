@@ -1,8 +1,8 @@
 #pragma once
 
-#include "quality/format_validator.hpp"
-#include "quality/quality_metrics.hpp"
-#include "standards/compliance_engine.hpp"
+#include "../../quality/include/quality/format_validator.hpp"
+#include "../../quality/include/quality/quality_metrics.hpp"
+#include "../../standards/include/standards/compliance_engine.hpp"
 #include <chrono>
 #include <memory>
 #include <vector>

@@ -11,7 +11,7 @@
 #include <mutex>
 #include <chrono>
 #include "cache/frame_cache.hpp"
-#include "timeline/timeline.hpp" // Need snapshot definition for timeline-based FPS
+#include "../../timeline/include/timeline/timeline.hpp" // Need snapshot definition for timeline-based FPS
 
 namespace ve::playback {
 
