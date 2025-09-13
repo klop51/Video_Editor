@@ -11,8 +11,8 @@ concurrency:
 
 jobs:
   build-linux:
-    name: ubuntu-latest ${{ matrix.config }} build
-    runs-on: ubuntu-latest
+    name: self-hosted ${{ matrix.config }} build
+    runs-on: self-hosted
     strategy:
       fail-fast: false
       matrix:
