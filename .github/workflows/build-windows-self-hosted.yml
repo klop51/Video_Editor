@@ -48,11 +48,15 @@ jobs:
         run: |
           echo Setting up build environment...
           
-          REM Verify vcpkg installation
+          REM Check and install vcpkg if not found
           if not exist "C:\vcpkg\vcpkg.exe" (
-            echo ERROR: vcpkg not found at C:\vcpkg
-            echo Please ensure vcpkg is installed per VM setup guide
-            exit /b 1
+            echo vcpkg not found, installing...
+            if exist "C:\vcpkg" rmdir /s /q "C:\vcpkg"
+            git clone https://github.com/Microsoft/vcpkg.git C:\vcpkg
+            cd /d C:\vcpkg
+            call bootstrap-vcpkg.bat
+            vcpkg integrate install
+            cd /d %GITHUB_WORKSPACE%
           )
           echo vcpkg found at C:\vcpkg
           
@@ -229,34 +233,35 @@ jobs:
 
       - name: Collect Artifacts
         if: always()
-        shell: powershell
+        shell: cmd
         run: |
-          # Collect build logs and profiling data
-          $artifactDir = "artifacts-${{ matrix.config }}"
-          New-Item -ItemType Directory -Path $artifactDir -Force
+          REM Collect build logs and profiling data
+          echo Creating artifacts directory...
+          mkdir artifacts-${{ matrix.config }} 2>nul
           
-          # Copy profiling data
-          Get-ChildItem -Path . -Filter "profiling*.json" -Recurse | ForEach-Object {
-            Copy-Item $_.FullName -Destination $artifactDir
-          }
+          REM Copy profiling data
+          if exist profiling*.json (
+            for %%f in (profiling*.json) do copy "%%f" artifacts-${{ matrix.config }}\
+          )
           
-          # Copy test results
-          Get-ChildItem -Path . -Filter "*test*.xml" | ForEach-Object {
-            Copy-Item $_.FullName -Destination $artifactDir
-          }
+          REM Copy test results  
+          if exist *test*.xml (
+            for %%f in (*test*.xml) do copy "%%f" artifacts-${{ matrix.config }}\
+          )
           
-          # Copy validation logs
-          Get-ChildItem -Path . -Filter "*validation*.log" | ForEach-Object {
-            Copy-Item $_.FullName -Destination $artifactDir
-          }
+          REM Copy validation logs
+          if exist *validation*.log (
+            for %%f in (*validation*.log) do copy "%%f" artifacts-${{ matrix.config }}\
+          )
           
-          # Copy CMake logs on failure
-          if ($env:BUILD_FAILED -eq "true") {
-            $cmakeLog = "build/*/CMakeFiles/CMakeOutput.log"
-            Get-ChildItem -Path $cmakeLog -ErrorAction SilentlyContinue | ForEach-Object {
-              Copy-Item $_.FullName -Destination $artifactDir
-            }
-          }
+          REM Copy CMake logs on failure
+          if "%BUILD_FAILED%"=="true" (
+            if exist build\*\CMakeFiles\CMakeOutput.log (
+              for %%f in (build\*\CMakeFiles\CMakeOutput.log) do copy "%%f" artifacts-${{ matrix.config }}\
+            )
+          )
+          
+          echo Artifacts collected
 
       - name: Upload Build Artifacts
         if: always()
@@ -301,24 +306,28 @@ jobs:
 
       - name: Cleanup Build Directory
         if: always()
-        shell: powershell
+        shell: cmd
         run: |
-          # Clean up large build files to save runner disk space
-          # Keep only essential artifacts that were already uploaded
+          REM Clean up large build files to save runner disk space
+          REM Keep only essential artifacts that were already uploaded
           
-          Write-Host "Cleaning up build directory..." -ForegroundColor Yellow
+          echo Cleaning up build directory...
           
-          # Remove intermediate build files but keep packaged artifacts
-          if (Test-Path "build") {
-            Get-ChildItem -Path "build" -Recurse -Directory -Name "CMakeFiles" | ForEach-Object {
-              Remove-Item -Path "build/$_" -Recurse -Force -ErrorAction SilentlyContinue
-            }
+          REM Remove intermediate build files but keep packaged artifacts
+          if exist build (
+            echo Removing CMake intermediate files...
+            for /d /r build %%d in (CMakeFiles) do (
+              if exist "%%d" rmdir /s /q "%%d" 2>nul
+            )
             
-            # Remove object files and temporary build artifacts
-            Get-ChildItem -Path "build" -Recurse -Include "*.obj", "*.pdb", "*.exp", "*.lib" | Remove-Item -Force -ErrorAction SilentlyContinue
-          }
+            echo Removing object files and temporary build artifacts...
+            del /s /q build\*.obj 2>nul
+            del /s /q build\*.pdb 2>nul  
+            del /s /q build\*.exp 2>nul
+            del /s /q build\*.lib 2>nul
+          )
           
-          Write-Host "✅ Cleanup completed"
+          echo Cleanup completed
 
   notify-status:
     name: Build Status Notification
@@ -327,19 +336,20 @@ jobs:
     if: always()
     steps:
       - name: Report Build Status
-        shell: powershell
+        shell: cmd
         run: |
-          $status = "${{ needs.build-windows-self-hosted.result }}"
-          $runUrl = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          set status=${{ needs.build-windows-self-hosted.result }}
+          set runUrl=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           
-          Write-Host "=== Build Complete ===" -ForegroundColor Cyan
-          Write-Host "Status: $status" -ForegroundColor $(if ($status -eq 'success') { 'Green' } else { 'Red' })
-          Write-Host "Run URL: $runUrl"
-          Write-Host "Commit: ${{ github.sha }}"
-          Write-Host "Branch: ${{ github.ref_name }}"
+          echo === Build Complete ===
+          echo Status: %status%
+          echo Run URL: %runUrl%
+          echo Commit: ${{ github.sha }}
+          echo Branch: ${{ github.ref_name }}
+          echo.
           
-          if ($status -eq 'success') {
-            Write-Host "✅ All builds completed successfully!" -ForegroundColor Green
-          } else {
-            Write-Host "❌ Build failed - check artifacts for details" -ForegroundColor Red
-          }
+          if "%status%"=="success" (
+            echo All builds completed successfully!
+          ) else (
+            echo Build failed - check artifacts for details
+          )
