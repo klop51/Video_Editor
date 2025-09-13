@@ -12,6 +12,10 @@ ErrorContext::ErrorContext(GPUErrorHandler* error_handler, const std::string& co
     // Initialize error context
 }
 
+ErrorContext::~ErrorContext() {
+    // Cleanup error context
+}
+
 // ============================================================================
 // GPUErrorHandler Implementation
 // ============================================================================
@@ -24,6 +28,17 @@ void GPUErrorHandler::report_error(GPUErrorType error_type, const std::string& m
     (void)message;     // Mark as used to avoid warning
     (void)source;      // Mark as used to avoid warning
     (void)line;        // Mark as used to avoid warning
+}
+
+ErrorStatistics GPUErrorHandler::get_error_statistics() const {
+    ErrorStatistics stats;
+    // Return basic error statistics
+    return stats;
+}
+
+bool GPUErrorHandler::is_system_healthy() const {
+    // Basic health check implementation
+    return true;
 }
 
 // ============================================================================

@@ -40,4 +40,22 @@ void PerformanceDashboard::integrate_with_memory_optimizer(class GPUMemoryOptimi
     // Setup integration logic here  
 }
 
+std::vector<PerformanceOptimizer::OptimizationRecommendation> PerformanceDashboard::get_recommendations() const {
+    // Return basic optimization recommendations
+    return std::vector<PerformanceOptimizer::OptimizationRecommendation>();
+}
+
+// ============================================================================
+// PerformanceProfiler::ProfileScope Implementation  
+// ============================================================================
+
+PerformanceProfiler::ProfileScope::ProfileScope(PerformanceProfiler* profiler, const std::string& name)
+    : profiler_(profiler), scope_name_(name), start_time_(std::chrono::high_resolution_clock::now()) {
+    // Start profiling scope
+}
+
+PerformanceProfiler::ProfileScope::~ProfileScope() {
+    // End profiling scope and record timing
+}
+
 } // namespace video_editor::gfx
