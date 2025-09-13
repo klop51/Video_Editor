@@ -169,10 +169,8 @@ public:
             if (it == effects_.end()) continue;
             
             // Simulate effect processing
-            auto start_time = std::chrono::high_resolution_clock::now();
             context->apply_effect(it->second.get());
             context->process_frame();
-            auto end_time = std::chrono::high_resolution_clock::now();
             
             float processing_time = context->get_processing_time_ms();
             bool passed = processing_time < target_time;

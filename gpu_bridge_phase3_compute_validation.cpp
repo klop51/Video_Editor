@@ -143,7 +143,7 @@ public:
         std::vector<std::future<bool>> futures;
         
         for (int i = 0; i < 4; ++i) {
-            futures.push_back(std::async(std::launch::async, [this, i]() {
+            futures.push_back(std::async(std::launch::async, [this]() {
                 const char* parallel_shader = R"(
                     RWBuffer<float> OutputBuffer : register(u0);
                     
@@ -228,7 +228,7 @@ public:
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
         
-        float avg_time_ms = duration.count() / 1000.0f / 100.0f;
+        float avg_time_ms = static_cast<float>(duration.count()) / 1000.0f / 100.0f;
         std::cout << "   📈 Average compute dispatch time: " << avg_time_ms << "ms" << std::endl;
         std::cout << "   🎯 Target: <5.0ms (✅ " << (avg_time_ms < 5.0f ? "PASSED" : "NEEDS_OPTIMIZATION") << ")" << std::endl;
     }
