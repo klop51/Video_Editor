@@ -31,33 +31,45 @@ jobs:
     
     steps:
       - name: Cleanup workspace
-        shell: powershell
+        shell: cmd
         run: |
-          # Clean up any previous build artifacts
-          Get-ChildItem -Path "." -Recurse -Force | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+          REM Clean up any previous build artifacts
+          echo Cleaning workspace...
+          if exist build rmdir /s /q build
+          for /f %%i in ('dir /b /a-d *.log 2^>nul') do del /q "%%i"
+          echo Workspace cleaned
           
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Full history for proper versioning
 
       - name: Setup build environment
-        shell: powershell
+        shell: cmd
         run: |
-          # Ensure vcpkg is available and integrated
-          if (!(Test-Path "C:\vcpkg\vcpkg.exe")) {
-            Write-Error "vcpkg not found at C:\vcpkg - please ensure it's installed per VM setup guide"
-            exit 1
-          }
+          echo Setting up build environment...
           
-          # Verify Visual Studio installation
-          $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          if (Test-Path $vsWhere) {
-            & $vsWhere -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64
-          }
+          REM Verify vcpkg installation
+          if not exist "C:\vcpkg\vcpkg.exe" (
+            echo ERROR: vcpkg not found at C:\vcpkg
+            echo Please ensure vcpkg is installed per VM setup guide
+            exit /b 1
+          )
+          echo vcpkg found at C:\vcpkg
           
-          # Set up environment variables
-          echo "CMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" >> $env:GITHUB_ENV
-          echo "VCPKG_INSTALLED_DIR=${{ github.workspace }}/build/vcpkg_installed" >> $env:GITHUB_ENV
+          REM Set environment variables for GitHub Actions
+          echo CMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake>> %GITHUB_ENV%
+          echo VCPKG_INSTALLED_DIR=%GITHUB_WORKSPACE%/build/vcpkg_installed>> %GITHUB_ENV%
+          
+          REM Verify Visual Studio
+          if exist "%ProgramFiles%\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe" (
+            echo Visual Studio 2022 Community found
+          ) else if exist "%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" (
+            echo Visual Studio installer found
+          ) else (
+            echo WARNING: Visual Studio 2022 not found
+          )
+          
+          echo Build environment setup complete
 
       - name: Cache vcpkg dependencies
         uses: actions/cache@v4
@@ -71,30 +83,30 @@ jobs:
             vcpkg-self-hosted-
 
       - name: Configure CMake
-        shell: powershell
+        shell: cmd
         run: |
-          Write-Host "Configuring for ${{ matrix.config }} build..." -ForegroundColor Green
+          echo Configuring for ${{ matrix.config }} build...
           
-          if ("${{ matrix.config }}" -eq "Debug") {
+          if "${{ matrix.config }}"=="Debug" (
             cmake --preset qt-debug
-          } else {
-            cmake --preset qt-release  # Assuming you have this preset
-          }
+          ) else (
+            cmake --preset qt-release
+          )
 
       - name: Build Video Editor
-        shell: powershell
+        shell: cmd
         run: |
-          Write-Host "Building Video Editor (${{ matrix.config }})..." -ForegroundColor Green
+          echo Building Video Editor (${{ matrix.config }})...
           
-          # Use all available cores on self-hosted runner
-          $cores = (Get-CimInstance Win32_ComputerSystem).NumberOfLogicalProcessors
-          Write-Host "Using $cores parallel jobs"
+          REM Use maximum parallel jobs for self-hosted runner
+          set CORES=%NUMBER_OF_PROCESSORS%
+          echo Using %CORES% parallel jobs
           
-          if ("${{ matrix.config }}" -eq "Debug") {
-            cmake --build build/qt-debug --config Debug --parallel $cores
-          } else {
-            cmake --build build/qt-release --config Release --parallel $cores
-          }
+          if "${{ matrix.config }}"=="Debug" (
+            cmake --build build/qt-debug --config Debug --parallel %CORES%
+          ) else (
+            cmake --build build/qt-release --config Release --parallel %CORES%
+          )
 
       - name: Run Unit Tests
         shell: powershell
