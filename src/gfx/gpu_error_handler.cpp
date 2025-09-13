@@ -3,6 +3,29 @@
 
 namespace video_editor::gfx {
 
+// ============================================================================
+// ErrorContext Implementation
+// ============================================================================
+
+ErrorContext::ErrorContext(GPUErrorHandler* error_handler, const std::string& context_name)
+    : handler_(error_handler), operation_name_(context_name), start_time_(std::chrono::steady_clock::now()) {
+    // Initialize error context
+}
+
+// ============================================================================
+// GPUErrorHandler Implementation
+// ============================================================================
+
+void GPUErrorHandler::report_error(GPUErrorType error_type, const std::string& message, 
+                                  const std::string& source, unsigned int line) {
+    // Basic error reporting implementation
+    // In a real implementation, this would log errors, handle recovery, etc.
+}
+
+// ============================================================================
+// ErrorHandlerFactory Implementation
+// ============================================================================
+
 ErrorHandlerConfig ErrorHandlerFactory::get_production_config() {
     ErrorHandlerConfig config;
     // Production settings optimized for stability

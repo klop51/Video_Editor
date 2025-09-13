@@ -376,9 +376,14 @@ private:
     
     // Monitoring
     std::atomic<bool> monitoring_active_;
+    std::atomic<bool> monitoring_enabled_;
     std::thread monitoring_thread_;
     std::chrono::milliseconds monitoring_frequency_;
     std::chrono::milliseconds ui_update_frequency_;
+    
+    // Integration with other components
+    class GPUErrorHandler* error_handler_;
+    class GPUMemoryOptimizer* memory_optimizer_;
     
     // UI management
     std::vector<std::weak_ptr<IPerformanceDashboardUI>> ui_instances_;
