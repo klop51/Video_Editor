@@ -349,7 +349,7 @@ private:
         
         for (const auto& [format, width, height, name] : test_cases) {
             size_t memory = support.calculateMemoryRequirement(format, width, height);
-            double memory_mb = memory / (1024.0 * 1024.0);
+            double memory_mb = static_cast<double>(memory) / (1024.0 * 1024.0);
             
             std::cout << "  " << name << ": " << std::fixed << std::setprecision(1) << 
                 memory_mb << " MB" << std::endl;

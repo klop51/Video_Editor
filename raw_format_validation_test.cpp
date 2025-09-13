@@ -398,7 +398,7 @@ private:
         for (const auto& res : resolutions) {
             uint32_t processing_time = raw_utils::estimateDebayerProcessingTime(
                 res.width, res.height, DebayerQuality::FAST);
-            float fps_estimate = 1000000.0f / processing_time; // Convert μs to FPS
+            float fps_estimate = 1000000.0f / static_cast<float>(processing_time); // Convert μs to FPS
             
             std::cout << "  - " << res.name << " (" << res.width << "x" << res.height << "): ";
             std::cout << processing_time << "μs → " << std::fixed << std::setprecision(1) 
