@@ -78,7 +78,7 @@ int main() {
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
         
-        double ops_per_sec = (operations * 2.0 * 1000000.0) / duration.count(); // 2 ops per iteration
+        double ops_per_sec = (operations * 2.0 * 1000000.0) / static_cast<double>(duration.count()); // 2 ops per iteration
         std::cout << "   Queue Performance: " << ops_per_sec << " ops/sec" << std::endl;
         std::cout << "   Total Time: " << duration.count() << " μs for " << (operations * 2) << " operations" << std::endl;
         
@@ -87,8 +87,8 @@ int main() {
         auto memory_info = performance_utils::get_system_memory_info();
         auto cpu_features = performance_utils::detect_cpu_features();
         
-        std::cout << "   Total Memory: " << (memory_info.total_physical_memory / 1024.0 / 1024.0 / 1024.0) << " GB" << std::endl;
-        std::cout << "   Available Memory: " << (memory_info.available_physical_memory / 1024.0 / 1024.0 / 1024.0) << " GB" << std::endl;
+        std::cout << "   Total Memory: " << (static_cast<double>(memory_info.total_physical_memory) / 1024.0 / 1024.0 / 1024.0) << " GB" << std::endl;
+        std::cout << "   Available Memory: " << (static_cast<double>(memory_info.available_physical_memory) / 1024.0 / 1024.0 / 1024.0) << " GB" << std::endl;
         std::cout << "   CPU Features:" << std::endl;
         std::cout << "     - AVX2: " << (cpu_features.has_avx2 ? "✅" : "❌") << std::endl;
         std::cout << "     - SSE4.1: " << (cpu_features.has_sse4_1 ? "✅" : "❌") << std::endl;
