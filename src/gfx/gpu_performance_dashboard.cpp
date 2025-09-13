@@ -13,7 +13,7 @@ PerformanceProfiler::~PerformanceProfiler() {
 // ============================================================================
 
 PerformanceDashboard::PerformanceDashboard(GraphicsDevice* device, const PerformanceTargets& targets)
-    : device_(device), targets_(targets), monitoring_active_(false), monitoring_enabled_(false),
+    : device_(device), targets_(targets), optimizer_(targets), monitoring_active_(false), monitoring_enabled_(false),
       error_handler_(nullptr), memory_optimizer_(nullptr) {
     // Initialize dashboard
 }
