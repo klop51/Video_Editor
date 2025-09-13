@@ -30,6 +30,8 @@ jobs:
           sudo apt-get update
           # Install basic build tools first
           sudo apt-get install -y build-essential pkg-config curl zip unzip tar cmake ninja-build
+          # Install Clang compiler
+          sudo apt-get install -y clang clang-tidy
           # Install autotools chain
           sudo apt-get install -y autoconf automake libtool libtool-bin libltdl-dev autotools-dev m4 autoconf-archive gperf
           # Install X11/OpenGL development packages for Qt
@@ -52,7 +54,7 @@ jobs:
             libglvnd-dev libgl1-mesa-dev libgles2-mesa-dev \
             libxcb-cursor-dev
           # Install additional tools
-          sudo apt-get install -y nasm clang-tidy
+          sudo apt-get install -y nasm
 
       - name: Verify toolchain
         run: |
