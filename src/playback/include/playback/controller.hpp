@@ -1,8 +1,8 @@
 // NOTE: File renamed from controller.hpp to playback_controller.hpp to clarify responsibility.
 #pragma once
-#include "decode/decoder.hpp"
-#include "decode/frame.hpp"
-#include "core/time.hpp"
+#include "../../decode/include/decode/decoder.hpp"
+#include "../../decode/include/decode/frame.hpp"
+#include "../../core/include/core/time.hpp"
 #include <functional>
 #include <thread>
 #include <atomic>

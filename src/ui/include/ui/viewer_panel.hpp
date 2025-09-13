@@ -1,5 +1,5 @@
 #pragma once
-#include "decode/frame.hpp"
+#include "../../decode/include/decode/frame.hpp"
 #include <QWidget>
 #include <QLabel>
 #include <QPushButton>

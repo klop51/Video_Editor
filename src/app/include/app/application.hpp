@@ -1,6 +1,6 @@
 #pragma once
-#include "timeline/timeline.hpp"
-#include "playback/controller.hpp"
+#include "../../timeline/include/timeline/timeline.hpp"
+#include "../../playback/include/playback/controller.hpp"
 #include <QApplication>
 #include <memory>
 

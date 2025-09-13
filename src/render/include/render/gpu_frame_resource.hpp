@@ -1,6 +1,6 @@
 #pragma once
-#include "decode/decoder.hpp"
-#include "gfx/vk_device.hpp"
+#include "../../decode/include/decode/decoder.hpp"
+#include "../../gfx/include/gfx/vk_device.hpp"
 #include <memory>
 #include <cstdint>
 

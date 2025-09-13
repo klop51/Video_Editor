@@ -1,6 +1,6 @@
 #pragma once
-#include "commands/command.hpp"
-#include "timeline/timeline.hpp"
+#include "command.hpp"
+#include "../../timeline/include/timeline/timeline.hpp"
 
 namespace ve::commands {
 
