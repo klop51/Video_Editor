@@ -1,8 +1,31 @@
 // Quick test for Week 2 Memory Management implementation
-#include "gfx/vk_device.hpp"
-#include "core/log.hpp"
+#include "src/gfx/include/gfx/vk_device.hpp"
+#include "src/core/include/core/log.hpp"
 #include <iostream>
 #include <memory>
+
+// Constants to avoid magic numbers
+namespace {
+    constexpr unsigned int HD_WIDTH = 1920;
+    constexpr unsigned int HD_HEIGHT = 1080;
+    constexpr unsigned int UHD_WIDTH = 3840;
+    constexpr unsigned int UHD_HEIGHT = 2160;
+    constexpr unsigned int MEGABYTE = 1024 * 1024;
+    
+    // Helper function to reduce code duplication for resource creation checks
+    bool check_resource_creation(unsigned int resource_id, const std::string& resource_type, const std::string& details = "") {
+        if (resource_id == 0) {
+            std::cout << "✗ Failed to create " << resource_type << std::endl;
+            return false;
+        }
+        std::cout << "✓ Created " << resource_type;
+        if (!details.empty()) {
+            std::cout << " (" << details << ")";
+        }
+        std::cout << " (ID: " << resource_id << ")" << std::endl;
+        return true;
+    }
+}
 
 int main() {
     std::cout << "=== GPU Memory Management Test (Week 2) ===" << std::endl;
@@ -29,29 +52,17 @@ int main() {
     std::cout << "\n2. Testing texture memory management..." << std::endl;
     
     // Create some textures to test memory tracking
-    unsigned int texture1 = device->create_texture(1920, 1080, 0); // 4K RGBA8 = ~8MB
-    if (texture1 == 0) {
-        std::cout << "✗ Failed to create texture 1" << std::endl;
-    } else {
-        std::cout << "✓ Created 1920x1080 RGBA8 texture (ID: " << texture1 << ")" << std::endl;
-    }
+    unsigned int texture1 = device->create_texture(HD_WIDTH, HD_HEIGHT, 0); // HD RGBA8 = ~8MB
+    check_resource_creation(texture1, "HD RGBA8 texture", std::to_string(HD_WIDTH) + "x" + std::to_string(HD_HEIGHT));
     
-    unsigned int texture2 = device->create_texture(3840, 2160, 0); // 4K RGBA8 = ~33MB  
-    if (texture2 == 0) {
-        std::cout << "✗ Failed to create texture 2" << std::endl;
-    } else {
-        std::cout << "✓ Created 3840x2160 RGBA8 texture (ID: " << texture2 << ")" << std::endl;
-    }
+    unsigned int texture2 = device->create_texture(UHD_WIDTH, UHD_HEIGHT, 0); // 4K RGBA8 = ~33MB  
+    check_resource_creation(texture2, "UHD RGBA8 texture", std::to_string(UHD_WIDTH) + "x" + std::to_string(UHD_HEIGHT));
     
     std::cout << "\n3. Testing buffer management..." << std::endl;
     
     // Create vertex buffer (1MB)
-    unsigned int buffer1 = device->create_buffer(1024 * 1024, 1); // Vertex buffer
-    if (buffer1 == 0) {
-        std::cout << "✗ Failed to create vertex buffer" << std::endl;
-    } else {
-        std::cout << "✓ Created 1MB vertex buffer (ID: " << buffer1 << ")" << std::endl;
-    }
+    unsigned int buffer1 = device->create_buffer(MEGABYTE, 1); // Vertex buffer
+    check_resource_creation(buffer1, "vertex buffer", "1MB");
     
     // Test upload to texture
     std::vector<uint32_t> test_data(1920 * 1080, 0xFF0000FF); // Red pixels

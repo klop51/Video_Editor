@@ -1,5 +1,5 @@
-#include "media_io/hdr_infrastructure.hpp"
-#include "media_io/hdr_utilities.hpp" // Include header for utilities
+#include "src/media_io/include/media_io/hdr_infrastructure.hpp"
+#include "src/media_io/include/media_io/hdr_utilities.hpp" // Include header for utilities
 #include <iostream>
 #include <vector>
 
@@ -115,10 +115,10 @@ int main() {
             std::cout << "🎉 All HDR Infrastructure tests PASSED!" << std::endl;
             std::cout << "Phase 2 Week 5 HDR Infrastructure implementation is working correctly." << std::endl;
             return 0;
-        } else {
-            std::cout << "❌ Some tests FAILED!" << std::endl;
-            return 1;
         }
+        
+        std::cout << "❌ Some tests FAILED!" << std::endl;
+        return 1;
         
     } catch (const std::exception& e) {
         std::cout << "❌ Exception occurred: " << e.what() << std::endl;
