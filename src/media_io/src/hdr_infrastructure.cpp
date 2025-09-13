@@ -552,8 +552,8 @@ HDRMetadata HDRInfrastructure::parse_hdr_metadata(const std::vector<uint8_t>& st
         
         // Parse content light level info if present (SEI type 0x90)
         if (size >= 32 && data[26] == 0x90 && data[27] == 0x04) { // Content light level SEI at byte 26
-            uint16_t max_cll = (static_cast<uint16_t>(data[28]) << 8) | data[29];
-            uint16_t max_fall = (static_cast<uint16_t>(data[30]) << 8) | data[31];
+            uint16_t max_cll = static_cast<uint16_t>((static_cast<uint16_t>(data[28]) << 8) | data[29]);
+            uint16_t max_fall = static_cast<uint16_t>((static_cast<uint16_t>(data[30]) << 8) | data[31]);
             
             metadata.content_light_level.max_content_light_level = max_cll;
             metadata.content_light_level.max_frame_average_light_level = max_fall;
