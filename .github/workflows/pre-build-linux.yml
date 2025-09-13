@@ -22,6 +22,7 @@ jobs:
       VCPKG_MAX_CONCURRENCY: 2
       VCPKG_ROOT: /home/klop51/vcpkg
       VCPKG_DEFAULT_TRIPLET: x64-linux
+      CMAKE_MAKE_PROGRAM: /usr/bin/make
     steps:
       - uses: actions/checkout@v4
 
@@ -39,10 +40,12 @@ jobs:
           
           # Install latest versions
           sudo apt-get remove cmake -y || true
-          sudo apt-get install -y cmake ninja-build
+          sudo apt-get install -y cmake ninja-build make
           sudo apt-get install -y clang-18 clang-tidy-18 clang-format-18
           
-          # Verify ninja installation
+          # Verify make and ninja are installed
+          which make || echo "Make not found in PATH"
+          make --version || echo "Make version check failed"
           which ninja || echo "Ninja not found in PATH"
           ninja --version || echo "Ninja version check failed"
           
@@ -83,6 +86,7 @@ jobs:
           echo "=== Verifying installed tools ==="
           which cmake && cmake --version
           which ninja && ninja --version
+          which make && make --version
           which clang && clang --version
           which clang++ && clang++ --version
           which clang-tidy && clang-tidy --version
@@ -91,7 +95,7 @@ jobs:
           libtool --version
           pkg-config --version
           echo "=== CMAKE_MAKE_PROGRAM check ==="
-          export CMAKE_MAKE_PROGRAM=$(which ninja)
+          export CMAKE_MAKE_PROGRAM=$(which make)
           echo "CMAKE_MAKE_PROGRAM=$CMAKE_MAKE_PROGRAM"
           echo "=== Environment ==="
           echo "CC=$CC"
@@ -110,6 +114,7 @@ jobs:
 
       - name: Setup vcpkg
         run: |
+          export CMAKE_MAKE_PROGRAM=/usr/bin/make
           if [ ! -d "$HOME/vcpkg" ]; then
             git clone https://github.com/Microsoft/vcpkg.git $HOME/vcpkg
           else
@@ -135,11 +140,14 @@ jobs:
         run: |
           export CC=clang
           export CXX=clang++
+          export CMAKE_MAKE_PROGRAM=/usr/bin/make
+          echo "CMAKE_MAKE_PROGRAM=$CMAKE_MAKE_PROGRAM"
           # Use Linux-specific preset with Unix Makefiles
           cmake --preset linux-debug \
             -DVCPKG_TARGET_TRIPLET=x64-linux \
             -DCMAKE_C_COMPILER=clang \
             -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_MAKE_PROGRAM="$CMAKE_MAKE_PROGRAM" \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
