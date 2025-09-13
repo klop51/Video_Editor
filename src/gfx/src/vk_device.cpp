@@ -279,25 +279,41 @@ public:
         };
 
         D3D_FEATURE_LEVEL feature_level;
-        HRESULT hr = D3D11CreateDevice(
-            nullptr,                    // Adapter (nullptr = default)
-            D3D_DRIVER_TYPE_HARDWARE,   // Driver Type
-            nullptr,                    // Software
-            create_device_flags,        // Flags
-            feature_levels,             // Feature Levels
-            ARRAYSIZE(feature_levels),  // Number of feature levels
-            D3D11_SDK_VERSION,          // SDK version
-            &device,                    // Returns the Direct3D device
-            &feature_level,             // Returns feature level
-            &context                    // Returns the device immediate context
-        );
         
-        if (FAILED(hr)) {
-            ve::log::error("Failed to create D3D11 device: 0x" + std::to_string(static_cast<unsigned int>(hr)));
-            return false;
+        // Try hardware first, then fallback to WARP (software) for CI environments
+        D3D_DRIVER_TYPE driver_types[] = {
+            D3D_DRIVER_TYPE_HARDWARE,
+            D3D_DRIVER_TYPE_WARP,
+            D3D_DRIVER_TYPE_REFERENCE
+        };
+        
+        HRESULT hr = E_FAIL;
+        for (int i = 0; i < 3; ++i) {
+            hr = D3D11CreateDevice(
+                nullptr,                    // Adapter (nullptr = default)
+                driver_types[i],           // Driver Type
+                nullptr,                    // Software
+                create_device_flags,        // Flags
+                feature_levels,             // Feature Levels
+                ARRAYSIZE(feature_levels),  // Number of feature levels
+                D3D11_SDK_VERSION,          // SDK version
+                &device,                    // Returns the Direct3D device
+                &feature_level,             // Returns feature level
+                &context                    // Returns the device immediate context
+            );
+            
+            if (SUCCEEDED(hr)) {
+                const char* driver_type_names[] = {"Hardware", "WARP", "Reference"};
+                ve::log::info("D3D11 device created successfully using " + std::string(driver_type_names[i]) + 
+                             " driver with feature level: 0x" + std::to_string(static_cast<unsigned int>(feature_level)));
+                break;
+            }
         }
         
-        ve::log::info("D3D11 device created successfully with feature level: 0x" + std::to_string(static_cast<unsigned int>(feature_level)));
+        if (FAILED(hr)) {
+            ve::log::error("Failed to create D3D11 device with any driver type: 0x" + std::to_string(static_cast<unsigned int>(hr)));
+            return false;
+        }
         
         // Query GPU memory information
         IDXGIDevice* dxgi_device = nullptr;
