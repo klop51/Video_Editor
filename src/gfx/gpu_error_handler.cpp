@@ -20,8 +20,10 @@ ErrorContext::~ErrorContext() {
 // GPUErrorHandler Implementation
 // ============================================================================
 
-GPUErrorHandler::GPUErrorHandler() {
-    // Initialize error handler
+GPUErrorHandler::GPUErrorHandler(GraphicsDevice* device, const ErrorHandlerConfig& config) {
+    // Initialize error handler with device and config
+    (void)device; // Mark as used to avoid warning
+    (void)config; // Mark as used to avoid warning
 }
 
 GPUErrorHandler::~GPUErrorHandler() {
