@@ -42,6 +42,10 @@ jobs:
           sudo apt-get install -y cmake ninja-build
           sudo apt-get install -y clang-18 clang-tidy-18 clang-format-18
           
+          # Verify ninja installation
+          which ninja || echo "Ninja not found in PATH"
+          ninja --version || echo "Ninja version check failed"
+          
           # Set up clang alternatives
           sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100
           sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 100
@@ -76,12 +80,22 @@ jobs:
       - name: Verify toolchain
         run: |
           set -x
+          echo "=== Verifying installed tools ==="
+          which cmake && cmake --version
+          which ninja && ninja --version
+          which clang && clang --version
+          which clang++ && clang++ --version
+          which clang-tidy && clang-tidy --version
           autoconf --version
           automake --version
           libtool --version
           pkg-config --version
-          clang --version
-          clang++ --version
+          echo "=== CMAKE_MAKE_PROGRAM check ==="
+          export CMAKE_MAKE_PROGRAM=$(which ninja)
+          echo "CMAKE_MAKE_PROGRAM=$CMAKE_MAKE_PROGRAM"
+          echo "=== Environment ==="
+          echo "CC=$CC"
+          echo "CXX=$CXX"
 
       - name: Cache vcpkg
         uses: actions/cache@v4
@@ -121,10 +135,16 @@ jobs:
         run: |
           export CC=clang
           export CXX=clang++
+          # Ensure ninja is in PATH and set CMAKE_MAKE_PROGRAM
+          export CMAKE_MAKE_PROGRAM=$(which ninja)
+          echo "CMAKE_MAKE_PROGRAM=$CMAKE_MAKE_PROGRAM"
+          echo "Ninja location: $(which ninja)"
+          ninja --version
           cmake --preset dev-debug -G Ninja \
             -DVCPKG_TARGET_TRIPLET=x64-linux \
             -DCMAKE_C_COMPILER=clang \
             -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_MAKE_PROGRAM="$CMAKE_MAKE_PROGRAM" \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
