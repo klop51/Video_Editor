@@ -867,7 +867,7 @@ void VRAMMonitor::update_from_device(GraphicsDevice* device) {
     // Simulate VRAM information since we don't have actual device implementation
     // In real implementation, this would query the graphics device
     total_vram = 4ULL * 1024 * 1024 * 1024; // 4GB simulated
-    used_vram = static_cast<size_t>(total_vram * 0.6f); // 60% used
+    used_vram = static_cast<size_t>(static_cast<float>(total_vram) * 0.6f); // 60% used
     available_vram = total_vram - used_vram;
     
     // Calculate memory pressure
