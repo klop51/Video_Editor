@@ -620,8 +620,165 @@ MemoryStats GPUMemoryOptimizer::get_memory_statistics() const {
 // StreamingOptimizer Implementation
 // ============================================================================
 
+StreamingOptimizer::StreamingOptimizer(IntelligentCache* cache, GraphicsDevice* device, 
+                                      const StreamingConfig& config)
+    : config_(config), cache_(cache), device_(device) {
+    // Initialize streaming state
+    is_streaming_.store(false);
+    current_playhead_.store(0);
+    stats_ = {};
+    last_stats_update_ = std::chrono::steady_clock::now();
+}
+
 StreamingOptimizer::~StreamingOptimizer() {
-    // Cleanup streaming resources if needed
+    stop_streaming();
+}
+
+void StreamingOptimizer::start_streaming(uint32_t start_frame) {
+    std::lock_guard<std::mutex> lock(streaming_mutex_);
+    
+    if (is_streaming_.load()) {
+        return; // Already streaming
+    }
+    
+    current_playhead_.store(start_frame);
+    is_streaming_.store(true);
+    
+    // Start loader threads
+    for (uint32_t i = 0; i < config_.max_concurrent_loads; ++i) {
+        loader_threads_.emplace_back(&StreamingOptimizer::loader_thread_func, this);
+    }
+}
+
+void StreamingOptimizer::stop_streaming() {
+    is_streaming_.store(false);
+    
+    // Wait for all loader threads to finish
+    for (auto& thread : loader_threads_) {
+        if (thread.joinable()) {
+            thread.join();
+        }
+    }
+    loader_threads_.clear();
+    
+    // Clear loading queue
+    std::lock_guard<std::mutex> lock(streaming_mutex_);
+    while (!loading_queue_.empty()) {
+        loading_queue_.pop();
+    }
+}
+
+void StreamingOptimizer::seek_to_frame(uint32_t frame) {
+    current_playhead_.store(frame);
+    // Clear existing queue and prioritize new frame
+    std::lock_guard<std::mutex> lock(streaming_mutex_);
+    while (!loading_queue_.empty()) {
+        loading_queue_.pop();
+    }
+    // Add immediate frames to queue
+    for (uint32_t i = 0; i < config_.read_ahead_frames; ++i) {
+        loading_queue_.push(frame + i);
+    }
+}
+
+void StreamingOptimizer::set_playback_speed(float speed) {
+    // Adjust read-ahead based on playback speed
+    std::lock_guard<std::mutex> lock(streaming_mutex_);
+    // Higher speeds need more read-ahead
+    config_.read_ahead_frames = static_cast<uint32_t>(30 * speed);
+}
+
+void StreamingOptimizer::analyze_access_patterns() {
+    // Implementation for pattern analysis
+    // This would analyze recent frame access patterns
+}
+
+void StreamingOptimizer::adjust_cache_size_dynamically() {
+    // Implementation for dynamic cache adjustment
+    // This would adjust cache size based on usage patterns
+}
+
+void StreamingOptimizer::prioritize_critical_textures() {
+    // Implementation for texture prioritization
+    // This would mark important textures as critical
+}
+
+void StreamingOptimizer::optimize_for_playback_mode(bool is_realtime) {
+    if (is_realtime) {
+        // Optimize for real-time playback
+        config_.read_ahead_frames = 60; // More aggressive read-ahead
+        config_.load_threshold = 0.5f;  // Start loading earlier
+    } else {
+        // Optimize for scrubbing/editing
+        config_.read_ahead_frames = 10; // Less read-ahead
+        config_.load_threshold = 0.8f;  // Start loading later
+    }
+}
+
+void StreamingOptimizer::update_config(const StreamingConfig& new_config) {
+    std::lock_guard<std::mutex> lock(streaming_mutex_);
+    config_ = new_config;
+}
+
+StreamingOptimizer::StreamingStats StreamingOptimizer::get_statistics() const {
+    std::lock_guard<std::mutex> lock(streaming_mutex_);
+    return stats_;
+}
+
+bool StreamingOptimizer::is_buffer_healthy() const {
+    return stats_.buffer_utilization > 0.3f && !stats_.is_underrun;
+}
+
+void StreamingOptimizer::loader_thread_func() {
+    while (is_streaming_.load()) {
+        uint32_t frame_to_load = 0;
+        bool has_work = false;
+        
+        {
+            std::lock_guard<std::mutex> lock(streaming_mutex_);
+            if (!loading_queue_.empty()) {
+                frame_to_load = loading_queue_.front();
+                loading_queue_.pop();
+                has_work = true;
+            }
+        }
+        
+        if (has_work) {
+            load_frame_async(frame_to_load);
+        } else {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    }
+}
+
+void StreamingOptimizer::load_frame_async(uint32_t frame) {
+    // Implementation for asynchronous frame loading
+    // This would load the texture for the specified frame
+    
+    // Generate hash for the frame
+    std::hash<uint32_t> hasher;
+    uint64_t hash = hasher(frame);
+    
+    // Check if already cached
+    if (cache_->get_texture(hash).is_valid()) {
+        ++stats_.cache_hits;
+        return;
+    }
+    
+    ++stats_.cache_misses;
+    // In real implementation, would load the actual texture
+    // For now, just update statistics
+    ++stats_.frames_streamed;
+}
+
+void StreamingOptimizer::update_loading_priorities() {
+    // Implementation for priority updates
+    // This would reorder the loading queue based on playhead position
+}
+
+void StreamingOptimizer::adjust_quality_based_on_performance() {
+    // Implementation for quality adjustment
+    // This would lower quality if performance is poor
 }
 
 } // namespace video_editor::gfx
