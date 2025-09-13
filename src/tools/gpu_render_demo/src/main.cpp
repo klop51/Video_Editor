@@ -8,6 +8,7 @@
 #include <memory>
 #include <thread>
 #include <chrono>
+#include <cmath>
 
 int main(int argc, char** argv) {
     if(argc < 2) {
@@ -96,7 +97,7 @@ int main(int argc, char** argv) {
             frame_count++;
             if (frame_count % 30 == 0) {
                 std::cout << "Rendered frame " << frame_count
-                          << " | PTS: " << (frame->pts / 1000000.0) << "s"
+                          << " | PTS: " << (static_cast<double>(frame->pts) / 1000000.0) << "s"
                           << " | Size: " << frame->width << "x" << frame->height
                           << " | Brightness: " << brightness
                           << std::endl;
@@ -113,7 +114,7 @@ int main(int argc, char** argv) {
     std::cout << "GPU RENDER DEMO COMPLETE\n";
     std::cout << "Total frames rendered: " << frame_count << "\n";
     std::cout << "Duration: " << duration_seconds << " seconds\n";
-    std::cout << "Average FPS: " << (frame_count / static_cast<float>(duration_seconds)) << "\n";
+    std::cout << "Average FPS: " << (static_cast<float>(frame_count) / static_cast<float>(duration_seconds)) << "\n";
 
     if (frame_count > 0) {
         std::cout << "✅ GPU rendering pipeline working successfully!\n";
