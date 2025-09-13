@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iomanip>
 #include <chrono>
+#include <algorithm>
 
 // Include our container format support
 #include "media_io/container_formats.hpp"
@@ -425,7 +426,7 @@ private:
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
         
-        double avg_time = duration.count() / 1000.0;
+        double avg_time = static_cast<double>(duration.count()) / 1000.0;
         test("Format detection performance", avg_time < 100.0); // Less than 100μs per operation
         
         // Test metadata extraction estimation
@@ -441,14 +442,14 @@ private:
         end = std::chrono::high_resolution_clock::now();
         duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
         
-        double metadata_time = duration.count() / 100.0;
+        double metadata_time = static_cast<double>(duration.count()) / 100.0;
         test("Metadata processing performance", metadata_time < 50.0); // Less than 50μs per operation
         
         // Test timecode conversion performance
         start = std::chrono::high_resolution_clock::now();
         
         for (int i = 0; i < 10000; ++i) {
-            std::string tc = container_utils::timecodeToString(1, 0, 0, i % 25);
+            std::string tc = container_utils::timecodeToString(1, 0, 0, static_cast<uint32_t>(i % 25));
             uint32_t h, m, s, f;
             container_utils::parseTimecodeString(tc, h, m, s, f);
         }
@@ -456,7 +457,7 @@ private:
         end = std::chrono::high_resolution_clock::now();
         duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
         
-        double timecode_time = duration.count() / 10000.0;
+        double timecode_time = static_cast<double>(duration.count()) / 10000.0;
         test("Timecode conversion performance", timecode_time < 10.0); // Less than 10μs per operation
         
         std::cout << "🎯 Performance Metrics:" << std::endl;
