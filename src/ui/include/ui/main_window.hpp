@@ -1,7 +1,7 @@
 #pragma once
-#include "core/time.hpp"
-#include "media_io/media_probe.hpp"
-#include "timeline/timeline.hpp"
+#include "../../core/include/core/time.hpp"
+#include "../../media_io/include/media_io/media_probe.hpp"
+#include "../../timeline/include/timeline/timeline.hpp"
 #include <QMainWindow>
 #include <QDockWidget>
 #include <QTimer>

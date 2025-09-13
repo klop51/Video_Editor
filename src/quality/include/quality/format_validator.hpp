@@ -1,7 +1,7 @@
 #pragma once
 
-#include "core/frame.hpp"
-#include "media_io/format_types.hpp"
+#include "../../core/include/core/frame.hpp"
+#include "../../media_io/include/media_io/format_types.hpp"
 #include <memory>
 #include <string>
 #include <vector>

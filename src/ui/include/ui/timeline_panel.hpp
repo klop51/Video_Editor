@@ -1,6 +1,6 @@
 #pragma once
-#include "timeline/timeline.hpp"
-#include "core/time.hpp"
+#include "../../timeline/include/timeline/timeline.hpp"
+#include "../../core/include/core/time.hpp"
 #include <QWidget>
 #include <QPainter>
 #include <QScrollArea>

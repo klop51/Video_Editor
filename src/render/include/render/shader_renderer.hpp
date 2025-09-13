@@ -1,6 +1,6 @@
 #pragma once
 #include "render/gpu_frame_resource.hpp"
-#include "gfx/vk_device.hpp"
+#include "../../gfx/include/gfx/vk_device.hpp"
 #include <memory>
 #include <string>
 
