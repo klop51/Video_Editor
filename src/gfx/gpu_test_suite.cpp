@@ -764,4 +764,35 @@ void GPUTestSuite::cleanup_test_environment() {
     test_device_.reset();
 }
 
+std::string GPUTestSuite::generate_test_report() const {
+    std::stringstream report;
+    report << "=== GPU Test Suite Report ===" << std::endl;
+    report << "Total tests: " << test_results_.size() << std::endl;
+    
+    int passed = 0, failed = 0;
+    for (const auto& result : test_results_) {
+        if (result.passed) passed++;
+        else failed++;
+    }
+    
+    report << "Passed: " << passed << std::endl;
+    report << "Failed: " << failed << std::endl;
+    report << "Success rate: " << (test_results_.empty() ? 0.0 : (100.0 * passed / test_results_.size())) << "%" << std::endl;
+    
+    if (failed > 0) {
+        report << "\nFailed tests:" << std::endl;
+        for (const auto& result : test_results_) {
+            if (!result.passed) {
+                report << "- " << result.name << ": " << result.details << std::endl;
+            }
+        }
+    }
+    
+    return report.str();
+}
+
+GPUTestSuite::~GPUTestSuite() {
+    cleanup_test_environment();
+}
+
 } // namespace video_editor::gfx::test

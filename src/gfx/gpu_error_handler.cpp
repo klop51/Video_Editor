@@ -20,6 +20,14 @@ ErrorContext::~ErrorContext() {
 // GPUErrorHandler Implementation
 // ============================================================================
 
+GPUErrorHandler::GPUErrorHandler() {
+    // Initialize error handler
+}
+
+GPUErrorHandler::~GPUErrorHandler() {
+    // Cleanup error handler
+}
+
 void GPUErrorHandler::report_error(GPUErrorType error_type, const std::string& message, 
                                   const std::string& source, unsigned int line) {
     // Basic error reporting implementation
@@ -39,6 +47,12 @@ GPUErrorHandler::ErrorStatistics GPUErrorHandler::get_error_statistics() const {
 bool GPUErrorHandler::is_system_healthy() const {
     // Basic health check implementation
     return true;
+}
+
+float GPUErrorHandler::get_system_stability_score() const {
+    // Return a basic stability score (0.0 to 1.0)
+    // In a real implementation, this would analyze error rates, recovery success, etc.
+    return 1.0f; // Perfect stability for basic implementation
 }
 
 // ============================================================================
