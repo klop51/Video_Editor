@@ -857,4 +857,71 @@ void StreamingOptimizer::adjust_quality_based_on_performance() {
     // This would lower quality if performance is poor
 }
 
+// ============================================================================
+// VRAMMonitor Implementation
+// ============================================================================
+
+void VRAMMonitor::update_from_device(GraphicsDevice* device) {
+    if (!device) return;
+    
+    // Simulate VRAM information since we don't have actual device implementation
+    // In real implementation, this would query the graphics device
+    total_vram = 4ULL * 1024 * 1024 * 1024; // 4GB simulated
+    used_vram = static_cast<size_t>(total_vram * 0.6f); // 60% used
+    available_vram = total_vram - used_vram;
+    
+    // Calculate memory pressure
+    float old_pressure = memory_pressure;
+    memory_pressure = static_cast<float>(used_vram) / static_cast<float>(total_vram);
+    
+    // Calculate fragmentation (simplified estimation)
+    calculate_fragmentation();
+    
+    // Trigger callbacks if pressure changed significantly
+    if (std::abs(memory_pressure - old_pressure) > 0.05f && on_memory_pressure_changed) {
+        on_memory_pressure_changed(memory_pressure);
+    }
+    
+    // Trigger warning/critical callbacks
+    if (memory_pressure > thresholds.critical_threshold && on_memory_critical) {
+        on_memory_critical();
+    } else if (memory_pressure > thresholds.warning_threshold && on_memory_warning) {
+        on_memory_warning();
+    }
+}
+
+void VRAMMonitor::trigger_cleanup_if_needed(IntelligentCache* cache) {
+    if (!cache) return;
+    
+    if (memory_pressure > thresholds.cleanup_threshold) {
+        // Calculate how much memory to free
+        size_t target_usage = static_cast<size_t>(static_cast<float>(total_vram) * (thresholds.cleanup_threshold - 0.1f));
+        size_t memory_to_free = used_vram > target_usage ? used_vram - target_usage : 0;
+        
+        if (memory_to_free > 0) {
+            cache->ensure_free_memory(memory_to_free);
+        }
+    }
+    
+    // Always ensure minimum free memory
+    if (available_vram < thresholds.min_free_bytes) {
+        size_t additional_free_needed = thresholds.min_free_bytes - available_vram;
+        cache->ensure_free_memory(additional_free_needed);
+    }
+}
+
+void VRAMMonitor::calculate_fragmentation() {
+    // Simple fragmentation estimation
+    // In real implementation, this would analyze memory layout
+    fragmentation_ratio = memory_pressure * 0.1f; // Simplified calculation
+}
+
+bool VRAMMonitor::is_memory_available(size_t required_bytes) const {
+    return available_vram >= required_bytes;
+}
+
+float VRAMMonitor::get_usage_ratio() const {
+    return memory_pressure;
+}
+
 } // namespace video_editor::gfx

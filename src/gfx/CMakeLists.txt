@@ -6,7 +6,6 @@ add_library(ve_gfx STATIC
     gpu_performance_dashboard.cpp
     gpu_memory_optimizer.cpp
     gpu_test_suite.cpp
-    streaming_optimizer.cpp
 )
 
 # Consumers include this for GPU rendering abstraction
