@@ -4,7 +4,9 @@
 #include "gpu_test_suite.hpp"
 #include "advanced_shader_effects.hpp"
 #include "graphics_device_bridge.hpp"
+#ifdef _WIN32
 #include "compute_shader_system.hpp"
+#endif
 #include <iostream>
 #include <fstream>
 #include <algorithm>
@@ -35,6 +37,11 @@ using ::gfx::HSLQualifierParams;
 // ============================================================================
 // GPUTestSuite Implementation
 // ============================================================================
+
+GPUTestSuite::GPUTestSuite() : config_({}) {
+    setup_test_environment();
+    suite_start_time_ = std::chrono::steady_clock::now();
+}
 
 GPUTestSuite::GPUTestSuite(const TestConfig& config) : config_(config) {
     setup_test_environment();

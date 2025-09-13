@@ -73,7 +73,8 @@ private:
     size_t tests_skipped_ = 0;
 
 public:
-    explicit GPUTestSuite(const TestConfig& config = {});
+    GPUTestSuite();
+    explicit GPUTestSuite(const TestConfig& config);
     ~GPUTestSuite();
 
     // Main test execution

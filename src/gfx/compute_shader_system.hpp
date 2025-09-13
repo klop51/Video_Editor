@@ -3,13 +3,13 @@
 
 #pragma once
 
+#ifdef _WIN32
+
 #include "../core/include/core/result.hpp"
 #include "include/gfx/graphics_device.hpp"
 
-#ifdef _WIN32
 #include <d3d11.h>
 #include <wrl/client.h>
-#endif
 
 #include <vector>
 #include <memory>
@@ -124,10 +124,12 @@ public:
     ve::core::Result<bool> download_data(void* data, size_t size);
     void release();
 
-    // Resource views
+#ifdef _WIN32
+    // Resource views (Windows-specific DirectX methods)
     ID3D11ShaderResourceView* get_srv() const { return srv_.Get(); }
     ID3D11UnorderedAccessView* get_uav() const { return uav_.Get(); }
     ID3D11Buffer* get_buffer() const { return buffer_.Get(); }
+#endif
 
     // Properties
     size_t get_element_size() const { return desc_.element_size; }
@@ -136,11 +138,13 @@ public:
     ComputeDataType get_data_type() const { return desc_.data_type; }
 
 private:
+#ifdef _WIN32
     Microsoft::WRL::ComPtr<ID3D11Buffer> buffer_;
     Microsoft::WRL::ComPtr<ID3D11Buffer> staging_buffer_;
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv_;
     Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> uav_;
     Microsoft::WRL::ComPtr<ID3D11DeviceContext> context_;
+#endif
     ComputeBufferDesc desc_;
     GraphicsDevice* device_ = nullptr;
 };
@@ -154,35 +158,45 @@ public:
     ComputeTexture() = default;
     ~ComputeTexture() = default;
 
-    // Texture management
+#ifdef _WIN32
+    // Texture management (Windows-specific DirectX methods)
     ve::core::Result<bool> create_2d(GraphicsDevice* device, uint32_t width, uint32_t height, 
                                  DXGI_FORMAT format, bool allow_uav = true);
     ve::core::Result<bool> create_3d(GraphicsDevice* device, uint32_t width, uint32_t height, 
                                  uint32_t depth, DXGI_FORMAT format, bool allow_uav = true);
+#endif
     void release();
 
-    // Resource views
+#ifdef _WIN32
+    // Resource views (Windows-specific DirectX methods)
     ID3D11ShaderResourceView* get_srv() const { return srv_.Get(); }
     ID3D11UnorderedAccessView* get_uav() const { return uav_.Get(); }
     ID3D11Texture2D* get_texture_2d() const { return texture_2d_.Get(); }
     ID3D11Texture3D* get_texture_3d() const { return texture_3d_.Get(); }
+#endif
 
     // Properties
     uint32_t get_width() const { return width_; }
     uint32_t get_height() const { return height_; }
     uint32_t get_depth() const { return depth_; }
+#ifdef _WIN32
     DXGI_FORMAT get_format() const { return format_; }
+#endif
     bool is_3d() const { return is_3d_; }
 
 private:
+#ifdef _WIN32
     Microsoft::WRL::ComPtr<ID3D11Texture2D> texture_2d_;
     Microsoft::WRL::ComPtr<ID3D11Texture3D> texture_3d_;
     Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> srv_;
     Microsoft::WRL::ComPtr<ID3D11UnorderedAccessView> uav_;
+#endif
     uint32_t width_ = 0;
     uint32_t height_ = 0;
     uint32_t depth_ = 0;
+#ifdef _WIN32
     DXGI_FORMAT format_ = DXGI_FORMAT_UNKNOWN;
+#endif
     bool is_3d_ = false;
 };
 
@@ -390,3 +404,5 @@ namespace ComputeUtils {
 }
 
 } // namespace video_editor::gfx
+
+#endif // _WIN32
