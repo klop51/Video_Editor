@@ -45,6 +45,10 @@ jobs:
           sudo apt-get remove cmake -y || true
           sudo apt-get install -y cmake ninja-build make
           sudo apt-get install -y clang-18 clang-tidy-18 clang-format-18
+          # Install C++ standard library for clang
+          sudo apt-get install -y libc++-18-dev libc++abi-18-dev
+          # Also install libstdc++ as fallback
+          sudo apt-get install -y libstdc++-12-dev
           
           # Verify make and ninja are installed
           which make || echo "Make not found in PATH"
@@ -160,7 +164,12 @@ jobs:
           export CC=clang
           export CXX=clang++
           export CMAKE_MAKE_PROGRAM=/usr/bin/make
+          # Set standard library for clang
+          export CXXFLAGS="-stdlib=libstdc++"
+          export LDFLAGS="-stdlib=libstdc++"
           echo "CMAKE_MAKE_PROGRAM=$CMAKE_MAKE_PROGRAM"
+          echo "CXXFLAGS=$CXXFLAGS"
+          echo "LDFLAGS=$LDFLAGS"
           # Try without vcpkg first to isolate the issue
           cmake -B build/dev-debug -G "Unix Makefiles" \
             -DCMAKE_BUILD_TYPE=Debug \
@@ -172,6 +181,8 @@ jobs:
             -DCMAKE_C_COMPILER=clang \
             -DCMAKE_CXX_COMPILER=clang++ \
             -DCMAKE_MAKE_PROGRAM="$CMAKE_MAKE_PROGRAM" \
+            -DCMAKE_CXX_FLAGS="-stdlib=libstdc++" \
+            -DCMAKE_EXE_LINKER_FLAGS="-stdlib=libstdc++" \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
