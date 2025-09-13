@@ -1,6 +1,6 @@
 #pragma once
 
-#include "integration/unified_format_api.hpp"
+#include "unified_format_api.hpp"
 #include "../../decode/include/decode/decoder_interface.hpp"
 #include "../../render/include/render/encoder_interface.hpp"
 #include "../../quality/include/quality/format_validator.hpp"
