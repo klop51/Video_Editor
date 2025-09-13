@@ -18,6 +18,21 @@
       "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
     },
     {
+      "name": "linux-debug",
+      "displayName": "Linux Debug (Unix Makefiles + vcpkg)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/linux-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_STANDARD": "20",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "ENABLE_TESTS": "ON",
+        "ENABLE_TOOLS": "ON",
+        "ENABLE_FFMPEG": "ON"
+      },
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+    },
+    {
       "name": "dev-release",
       "displayName": "Dev Release (Ninja + vcpkg)",
       "generator": "Ninja",
@@ -115,6 +130,7 @@
   ],
   "buildPresets": [
     { "name": "dev-debug", "configurePreset": "dev-debug" },
+    { "name": "linux-debug", "configurePreset": "linux-debug" },
     { "name": "dev-release", "configurePreset": "dev-release" },
     { "name": "no-ffmpeg", "configurePreset": "no-ffmpeg" },
     { "name": "vs-debug", "configurePreset": "vs-debug" },

@@ -135,28 +135,23 @@ jobs:
         run: |
           export CC=clang
           export CXX=clang++
-          # Ensure ninja is in PATH and set CMAKE_MAKE_PROGRAM
-          export CMAKE_MAKE_PROGRAM=$(which ninja)
-          echo "CMAKE_MAKE_PROGRAM=$CMAKE_MAKE_PROGRAM"
-          echo "Ninja location: $(which ninja)"
-          ninja --version
-          cmake --preset dev-debug -G Ninja \
+          # Use Linux-specific preset with Unix Makefiles
+          cmake --preset linux-debug \
             -DVCPKG_TARGET_TRIPLET=x64-linux \
             -DCMAKE_C_COMPILER=clang \
             -DCMAKE_CXX_COMPILER=clang++ \
-            -DCMAKE_MAKE_PROGRAM="$CMAKE_MAKE_PROGRAM" \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
       - name: Build
         run: |
-          cmake --build build/dev-debug --parallel 2
+          cmake --build build/linux-debug --parallel 2
 
       - name: Run clang-tidy
         if: matrix.config == 'Debug'
         run: |
           echo "Running clang-tidy with full compilation database..."
-          if [ -f "build/dev-debug/compile_commands.json" ]; then
+          if [ -f "build/linux-debug/compile_commands.json" ]; then
             echo "Found compile_commands.json, running clang-tidy..."
             python3 scripts/clang_tidy_check.py || echo "clang-tidy completed with warnings"
           else
@@ -170,19 +165,19 @@ jobs:
           echo "=== VCPKG BUILD LOGS ==="
           find build -path '*/buildtrees/*/*.log' -print -exec echo "=== {} ===" \; -exec tail -n 100 {} \; 2>/dev/null || true
           echo "=== VCPKG MANIFEST INSTALL LOG ==="
-          if [ -f "build/dev-debug/vcpkg-manifest-install.log" ]; then
-            tail -n 200 "build/dev-debug/vcpkg-manifest-install.log"
+          if [ -f "build/linux-debug/vcpkg-manifest-install.log" ]; then
+            tail -n 200 "build/linux-debug/vcpkg-manifest-install.log"
           fi
 
       - name: Test (if enabled)
         run: |
-          cd build/dev-debug && ctest --output-on-failure || echo "Tests not available or failed"
+          cd build/linux-debug && ctest --output-on-failure || echo "Tests not available or failed"
 
       - name: Package artifacts
         if: always()
         run: |
           mkdir -p dist
-          if [ -d "build/dev-debug" ]; then cp -r build/dev-debug/* dist/ 2>/dev/null || true; fi
+          if [ -d "build/linux-debug" ]; then cp -r build/linux-debug/* dist/ 2>/dev/null || true; fi
 
       - name: Upload artifacts
         if: always()
