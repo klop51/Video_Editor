@@ -67,8 +67,8 @@ public:
     CacheStats get_cache_statistics() {
         CacheStats stats;
         // Simulate good cache performance
-        stats.hit_ratio = 0.72f + static_cast<size_t>(rand() % 20) / 100.0f; // 72-92%
-        stats.memory_usage_mb = 1800 + (rand() % 500);    // 1.8-2.3GB
+        stats.hit_ratio = 0.72f + static_cast<float>(rand() % 20) / 100.0f; // 72-92%
+        stats.memory_usage_mb = 1800 + static_cast<size_t>(rand() % 500);    // 1.8-2.3GB
         stats.memory_peak_mb = stats.memory_usage_mb + 200;
         stats.has_memory_leaks = false;
         return stats;
@@ -92,8 +92,8 @@ public:
         ProcessingStats stats;
         
         // Simulate 8K processing with improved performance targeting 30+ FPS
-        stats.fps_sustained = 30.0f + static_cast<size_t>(rand() % 4);        // 30-33 FPS (ensures target met)
-        stats.vram_usage_gb = 7 + (rand() % 4);            // 7-10 GB
+        stats.fps_sustained = 30.0f + static_cast<float>(rand() % 4);        // 30-33 FPS (ensures target met)
+        stats.vram_usage_gb = 7 + static_cast<size_t>(rand() % 4);            // 7-10 GB
         stats.frame_timing_consistent = (rand() % 10) > 0; // 95% chance (improved)
         stats.vram_exhaustion_detected = false;
         
