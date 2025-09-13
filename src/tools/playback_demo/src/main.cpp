@@ -55,11 +55,11 @@ int main(int argc, char** argv) {
         if(frames_displayed % 30 == 0) {
             auto now = std::chrono::steady_clock::now();
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_fps_time).count();
-            double fps = 30.0 / (elapsed / 1000.0);
+            double fps = 30.0 / (static_cast<double>(elapsed) / 1000.0);
 
             std::cout << std::fixed << std::setprecision(1)
                       << "Frame " << frames_displayed.load()
-                      << " | PTS: " << (vf.pts / 1000000.0) << "s"
+                      << " | PTS: " << (static_cast<double>(vf.pts) / 1000000.0) << "s"
                       << " | Size: " << vf.width << "x" << vf.height
                       << " | Format: " << static_cast<int>(vf.format)
                       << " | FPS: " << fps
@@ -84,7 +84,7 @@ int main(int argc, char** argv) {
     // Final performance summary
     auto end_time = std::chrono::steady_clock::now();
     auto total_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
-    double avg_fps = (frames_displayed.load() * 1000.0) / total_elapsed;
+    double avg_fps = (frames_displayed.load() * 1000.0) / static_cast<double>(total_elapsed);
 
     std::cout << "\n----------------------------------------\n";
     std::cout << "PERFORMANCE SUMMARY:\n";
@@ -92,7 +92,7 @@ int main(int argc, char** argv) {
     std::cout << "Total frames converted: " << frames_decoded.load() << "\n";
     std::cout << "Total frame drops: " << frame_drops.load() << "\n";
     std::cout << "Average FPS: " << std::fixed << std::setprecision(2) << avg_fps << "\n";
-    std::cout << "Playback duration: " << (total_elapsed / 1000.0) << " seconds\n";
+    std::cout << "Playback duration: " << (static_cast<double>(total_elapsed) / 1000.0) << " seconds\n";
 
     if (avg_fps >= 28.0) {
         std::cout << "✅ EXCELLENT: Achieved target 28+ FPS for software decoding!\n";
