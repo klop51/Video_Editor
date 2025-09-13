@@ -30,8 +30,8 @@ void GPUErrorHandler::report_error(GPUErrorType error_type, const std::string& m
     (void)line;        // Mark as used to avoid warning
 }
 
-ErrorStatistics GPUErrorHandler::get_error_statistics() const {
-    ErrorStatistics stats;
+GPUErrorHandler::ErrorStatistics GPUErrorHandler::get_error_statistics() const {
+    GPUErrorHandler::ErrorStatistics stats;
     // Return basic error statistics
     return stats;
 }
