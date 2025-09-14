@@ -22,8 +22,10 @@ set_target_properties(qt_preview PROPERTIES VCPKG_APPLOCAL_DEPS OFF)
 # Deploy Qt6 DLLs using our custom robust script (Windows only)
 if(WIN32)
     # Use our custom PowerShell script that handles file locking properly
+    # Use explicit PowerShell path for CI environment compatibility
     add_custom_command(TARGET qt_preview POST_BUILD
-        COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass 
+        COMMAND "$ENV{SystemRoot}/System32/WindowsPowerShell/v1.0/powershell.exe" 
+            -NoProfile -ExecutionPolicy Bypass 
             -File "${CMAKE_SOURCE_DIR}/scripts/deploy-dlls-simple.ps1"
             -TargetBinary "$<TARGET_FILE:qt_preview>"
             -VcpkgInstalledDir "${CMAKE_SOURCE_DIR}/vcpkg_installed"
