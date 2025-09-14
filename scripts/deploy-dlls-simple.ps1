@@ -83,16 +83,82 @@ if (-not (Test-Path $platformsDir)) {
     Write-Host "Created platforms directory" -ForegroundColor Cyan
 }
 
-$platformSourceDir = Join-Path $vcpkgPluginsDir "platforms"
-if (Test-Path $platformSourceDir) {
-    $platformFiles = Get-ChildItem -Path $platformSourceDir -Name "qwindows*.dll" -ErrorAction SilentlyContinue
-    foreach ($file in $platformFiles) {
-        $sourcePath = Join-Path $platformSourceDir $file
-        Copy-DllBasic -Source $sourcePath -Destination $platformsDir -Description "Platform Plugin"
+# Try multiple possible locations for Qt platform plugins
+$possiblePluginPaths = @(
+    (Join-Path $VcpkgInstalledDir "x64-windows\Qt6\plugins\platforms"),
+    (Join-Path $VcpkgInstalledDir "x64-windows\plugins\platforms"),
+    (Join-Path $VcpkgInstalledDir "x64-windows\Qt\plugins\platforms"),
+    (Join-Path $VcpkgInstalledDir "x64-windows\tools\Qt6\bin\platforms")
+)
+
+$platformFound = $false
+foreach ($platformSourceDir in $possiblePluginPaths) {
+    Write-Host "Checking platform path: $platformSourceDir" -ForegroundColor Yellow
+    if (Test-Path $platformSourceDir) {
+        Write-Host "Found platform plugins at: $platformSourceDir" -ForegroundColor Green
+        $platformFiles = Get-ChildItem -Path $platformSourceDir -Name "qwindows*.dll" -ErrorAction SilentlyContinue
+        foreach ($file in $platformFiles) {
+            $sourcePath = Join-Path $platformSourceDir $file
+            Copy-DllBasic -Source $sourcePath -Destination $platformsDir -Description "Platform Plugin"
+            $platformFound = $true
+        }
+        break
     }
-} else {
-    Write-Warning "Platform plugins directory not found: $platformSourceDir"
 }
+
+if (-not $platformFound) {
+    Write-Warning "Platform plugins not found in any expected location. Searching vcpkg directory..."
+    $allDlls = Get-ChildItem -Path $VcpkgInstalledDir -Recurse -Name "qwindows*.dll" -ErrorAction SilentlyContinue
+    if ($allDlls) {
+        Write-Host "Found qwindows.dll files at:" -ForegroundColor Yellow
+        foreach ($dll in $allDlls) {
+            $fullPath = (Get-ChildItem -Path $VcpkgInstalledDir -Recurse -Name $dll -ErrorAction SilentlyContinue)[0].FullName
+            Write-Host "  $fullPath" -ForegroundColor Cyan
+            Copy-DllBasic -Source $fullPath -Destination $platformsDir -Description "Platform Plugin"
+            $platformFound = $true
+            break  # Just copy the first one found
+        }
+    }
+}
+
+# Deploy additional Qt plugins that may be needed
+Write-Host "`n=== Deploying Additional Qt Plugins ===" -ForegroundColor Magenta
+
+$additionalPluginDirs = @("imageformats", "styles", "iconengines")
+foreach ($pluginType in $additionalPluginDirs) {
+    $targetPluginDir = Join-Path $targetDir $pluginType
+    
+    foreach ($possiblePath in $possiblePluginPaths) {
+        $basePluginDir = Split-Path $possiblePath -Parent
+        $pluginSourceDir = Join-Path $basePluginDir $pluginType
+        
+        if (Test-Path $pluginSourceDir) {
+            Write-Host "Found $pluginType plugins at: $pluginSourceDir" -ForegroundColor Green
+            if (-not (Test-Path $targetPluginDir)) {
+                New-Item -ItemType Directory -Path $targetPluginDir -Force | Out-Null
+            }
+            
+            $pluginFiles = Get-ChildItem -Path $pluginSourceDir -Name "*.dll" -ErrorAction SilentlyContinue
+            foreach ($file in $pluginFiles) {
+                $sourcePath = Join-Path $pluginSourceDir $file
+                Copy-DllBasic -Source $sourcePath -Destination $targetPluginDir -Description "$pluginType Plugin"
+            }
+            break
+        }
+    }
+}
+
+# Create qt.conf file to help Qt find plugins
+Write-Host "`n=== Creating qt.conf ===" -ForegroundColor Magenta
+
+$qtConfPath = Join-Path $targetDir "qt.conf"
+$qtConfContent = @"
+[Paths]
+Plugins = .
+"@
+
+Set-Content -Path $qtConfPath -Value $qtConfContent -Encoding UTF8
+Write-Host "✅ Created qt.conf file to help Qt locate plugins" -ForegroundColor Green
 
 # Summary check
 Write-Host "`n=== Deployment Summary ===" -ForegroundColor Green
@@ -103,17 +169,27 @@ $allPresent = $true
 foreach ($pattern in $criticalDlls) {
     $found = Get-ChildItem -Path $targetDir -Name $pattern -ErrorAction SilentlyContinue
     if ($found) {
-        Write-Host "Critical DLL present: $($found.Name)" -ForegroundColor Green
+        Write-Host "✅ Critical DLL present: $($found.Name)" -ForegroundColor Green
     } else {
-        Write-Host "Critical DLL missing: $pattern" -ForegroundColor Red
+        Write-Host "❌ Critical DLL missing: $pattern" -ForegroundColor Red
         $allPresent = $false
     }
 }
 
+# Check for platform plugin
+$platformPlugin = Get-ChildItem -Path $platformsDir -Name "qwindows*.dll" -ErrorAction SilentlyContinue
+if ($platformPlugin) {
+    Write-Host "✅ Platform plugin present: $($platformPlugin.Name)" -ForegroundColor Green
+} else {
+    Write-Host "❌ Platform plugin missing: qwindows.dll" -ForegroundColor Red
+    $allPresent = $false
+}
+
 if ($allPresent) {
-    Write-Host "`nDLL deployment completed successfully!" -ForegroundColor Green
+    Write-Host "`n✅ DLL deployment completed successfully!" -ForegroundColor Green
     exit 0
 } else {
-    Write-Host "`nDLL deployment incomplete!" -ForegroundColor Red
+    Write-Host "`n❌ DLL deployment incomplete - missing critical components!" -ForegroundColor Red
+    Write-Host "This may cause 'qt.qpa.plugin' errors when running Qt applications." -ForegroundColor Yellow
     exit 1
 }
