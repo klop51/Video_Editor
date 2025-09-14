@@ -236,145 +236,146 @@ jobs:
           echo Build completed successfully
 
       - name: Run Unit Tests
-        shell: powershell
+        shell: cmd
         run: |
-          Write-Host "Running unit tests..." -ForegroundColor Green
+          echo Running unit tests...
           
-          if ("${{ matrix.config }}" -eq "Debug") {
-            $testPath = "build/qt-debug/tests/Debug"
-          } else {
-            $testPath = "build/vs-release/tests/Release"
-          }
+          if "${{ matrix.config }}"=="Debug" (
+            set "testPath=build\qt-debug\tests\Debug"
+          ) else (
+            set "testPath=build\vs-release\tests\Release"
+          )
           
-          if (Test-Path "$testPath/unit_tests.exe") {
-            & "$testPath/unit_tests.exe" --reporter=xml --out=test-results-${{ matrix.config }}.xml
-          } else {
-            Write-Warning "Unit tests executable not found at $testPath"
-          }
+          if exist "%testPath%\unit_tests.exe" (
+            "%testPath%\unit_tests.exe" --reporter=xml --out=test-results-${{ matrix.config }}.xml
+          ) else (
+            echo WARNING: Unit tests executable not found at %testPath%
+          )
 
       - name: Run GPU Validation Tests (Optional)
         continue-on-error: true
-        shell: powershell
+        shell: cmd
         run: |
-          Write-Host "Running GPU system validation..." -ForegroundColor Green
-          Write-Host "Note: GPU tests may fail in CI environments without graphics hardware" -ForegroundColor Yellow
+          echo Running GPU system validation...
+          echo Note: GPU tests may fail in CI environments without graphics hardware
           
-          if ("${{ matrix.config }}" -eq "Debug") {
-            $testPath = "build/qt-debug/tests/Debug"
-          } else {
-            $testPath = "build/vs-release/tests/Release"
-          }
+          if "${{ matrix.config }}"=="Debug" (
+            set "testPath=build\qt-debug\tests\Debug"
+          ) else (
+            set "testPath=build\vs-release\tests\Release"
+          )
           
-          if (Test-Path "$testPath/gpu_system_validation.exe") {
-            & "$testPath/gpu_system_validation.exe" | Tee-Object -FilePath "gpu-validation-${{ matrix.config }}.log"
+          if exist "%testPath%\gpu_system_validation.exe" (
+            "%testPath%\gpu_system_validation.exe" > gpu-validation-${{ matrix.config }}.log 2>&1
             
-            # Check if GPU validation passed
-            $lastExitCode = $LASTEXITCODE
-            if ($lastExitCode -eq 0) {
-              Write-Host "✅ GPU validation passed - graphics hardware available" -ForegroundColor Green
-            } elseif ($lastExitCode -eq -1) {
-              Write-Host "⚠️ GPU validation skipped - no graphics hardware detected (expected in CI)" -ForegroundColor Yellow
-            } else {
-              Write-Warning "⚠️ GPU validation failed with unexpected exit code $lastExitCode"
-            }
-          } else {
-            Write-Host "GPU validation executable not found - skipping" -ForegroundColor Yellow
-          }
+            REM Check exit code
+            if %errorlevel% equ 0 (
+              echo GPU validation passed - graphics hardware available
+            ) else if %errorlevel% equ -1 (
+              echo GPU validation skipped - no graphics hardware detected ^(expected in CI^)
+            ) else (
+              echo WARNING: GPU validation failed with unexpected exit code %errorlevel%
+            )
+          ) else (
+            echo GPU validation executable not found - skipping
+          )
 
       - name: Performance Validation
         if: matrix.config == 'Release'
-        shell: powershell
+        shell: cmd
         run: |
-          Write-Host "Running performance validation..." -ForegroundColor Green
+          echo Running performance validation...
           
-          $perfTest = "build/vs-release/tests/Release/performance_optimizer_validation.exe"
-          if (Test-Path $perfTest) {
-            & $perfTest | Tee-Object -FilePath "performance-validation.log"
-          }
+          set "perfTest=build\vs-release\tests\Release\performance_optimizer_validation.exe"
+          if exist "%perfTest%" (
+            "%perfTest%" > performance-validation.log 2>&1
+          )
 
       - name: Package Application
-        shell: powershell
+        shell: cmd
         run: |
-          Write-Host "Packaging Video Editor application..." -ForegroundColor Green
+          echo Packaging Video Editor application...
           
-          $config = "${{ matrix.config }}"
-          $buildDir = if ($config -eq "Debug") { "build/qt-debug" } else { "build/vs-release" }
-          $packageDir = "VideoEditor-Windows-$config"
+          set "config=${{ matrix.config }}"
+          if "%config%"=="Debug" (
+            set "buildDir=build\qt-debug"
+          ) else (
+            set "buildDir=build\vs-release"
+          )
+          set "packageDir=VideoEditor-Windows-%config%"
           
-          # Create package directory
-          New-Item -ItemType Directory -Path $packageDir -Force
+          REM Create package directory
+          mkdir "%packageDir%" 2>nul
           
-          # Copy main executable and dependencies
-          $exePath = "$buildDir/src/tools/video_editor/$config"
-          if (Test-Path $exePath) {
-            Copy-Item -Path "$exePath/*" -Destination $packageDir -Recurse -Force
-          }
+          REM Copy main executable and dependencies
+          set "exePath=%buildDir%\src\tools\video_editor\%config%"
+          if exist "%exePath%" (
+            xcopy "%exePath%\*" "%packageDir%\" /E /I /Y >nul
+          )
           
-          # Copy tools
-          $toolsPath = "$buildDir/src/tools"
-          Get-ChildItem $toolsPath -Directory | ForEach-Object {
-            $toolExe = Join-Path $_.FullName "$config"
-            if (Test-Path $toolExe) {
-              $toolName = $_.Name
-              New-Item -ItemType Directory -Path "$packageDir/tools/$toolName" -Force
-              Copy-Item -Path "$toolExe/*" -Destination "$packageDir/tools/$toolName" -Recurse -Force
-            }
-          }
+          REM Copy tools
+          for /d %%d in ("%buildDir%\src\tools\*") do (
+            set "toolExe=%%d\%config%"
+            if exist "!toolExe!" (
+              set "toolName=%%~nd"
+              mkdir "%packageDir%\tools\!toolName!" 2>nul
+              xcopy "!toolExe!\*" "%packageDir%\tools\!toolName!\" /E /I /Y >nul
+            )
+          )
           
-          # Copy documentation
-          Copy-Item -Path "README.md", "*.md" -Destination $packageDir -Force -ErrorAction SilentlyContinue
+          REM Copy documentation
+          if exist "README.md" copy "README.md" "%packageDir%\" >nul
+          for %%f in (*.md) do copy "%%f" "%packageDir%\" >nul 2>&1
           
-          # Create archive
-          Compress-Archive -Path $packageDir -DestinationPath "$packageDir.zip" -Force
+          REM Create archive using PowerShell compress (minimal usage)
+          powershell -NoProfile -Command "Compress-Archive -Path '%packageDir%' -DestinationPath '%packageDir%.zip' -Force"
           
-          Write-Host "✅ Package created: $packageDir.zip"
+          echo Package created: %packageDir%.zip
 
       - name: Validate Package
         continue-on-error: true
-        shell: powershell
+        shell: cmd
         run: |
-          Write-Host "Validating packaged application..." -ForegroundColor Green
+          setlocal EnableDelayedExpansion
+          echo Validating packaged application...
           
-          $config = "${{ matrix.config }}"
-          $packageDir = "VideoEditor-Windows-$config"
+          set "config=${{ matrix.config }}"
+          set "packageDir=VideoEditor-Windows-!config!"
           
-          # Test that main executable runs
-          $mainExe = "$packageDir/video_editor.exe"
-          if (Test-Path $mainExe) {
-            Write-Host "Testing main executable..."
-            # Run with --version flag if supported, or just test it loads
-            & $mainExe --help 2>$null | Out-Null
-            if ($LASTEXITCODE -eq 0) {
-              Write-Host "✅ Main executable validated"
-            } else {
-              Write-Host "⚠️ Main executable test inconclusive (exit code $LASTEXITCODE)"
-              Write-Host "Note: This may be due to missing Qt plugins in CI environment" -ForegroundColor Yellow
-            }
-          }
+          REM Test that main executable runs
+          set "mainExe=!packageDir!\video_editor.exe"
+          if exist "!mainExe!" (
+            echo Testing main executable...
+            "!mainExe!" --help >nul 2>&1
+            if !errorlevel! equ 0 (
+              echo Main executable validated
+            ) else (
+              echo WARNING: Main executable test inconclusive ^(exit code !errorlevel!^)
+              echo Note: This may be due to missing Qt plugins in CI environment
+            )
+          )
           
-          # Check for required DLLs (with Debug/Release naming)
-          if ($config -eq "Debug") {
-            $requiredDlls = @("Qt6Cored.dll", "Qt6Guid.dll", "Qt6Widgetsd.dll", "avcodec-61.dll")
-          } else {
-            $requiredDlls = @("Qt6Core.dll", "Qt6Gui.dll", "Qt6Widgets.dll", "avcodec-61.dll")
-          }
+          REM Check for required DLLs
+          if "!config!"=="Debug" (
+            set "requiredDlls=Qt6Cored.dll Qt6Guid.dll Qt6Widgetsd.dll avcodec-61.dll"
+          ) else (
+            set "requiredDlls=Qt6Core.dll Qt6Gui.dll Qt6Widgets.dll avcodec-61.dll"
+          )
           
-          foreach ($dll in $requiredDlls) {
-            if (Test-Path "$packageDir/$dll") {
-              Write-Host "✅ Found required DLL: $dll"
-            } else {
-              Write-Warning "❌ Missing required DLL: $dll"
-            }
-          }
+          for %%d in (!requiredDlls!) do (
+            if exist "!packageDir!\%%d" (
+              echo Found required DLL: %%d
+            ) else (
+              echo WARNING: Missing required DLL: %%d
+            )
+          )
           
-          # Check for platform plugins
-          $platformsPath = "$packageDir/platforms/qwindows*.dll"
-          $platformPlugins = Get-ChildItem -Path $platformsPath -ErrorAction SilentlyContinue
-          if ($platformPlugins) {
-            Write-Host "✅ Platform plugins found: $($platformPlugins.Count) files"
-          } else {
-            Write-Warning "❌ Platform plugins missing - this will cause Qt initialization errors"
-          }
+          REM Check for platform plugins
+          if exist "!packageDir!\platforms\qwindows*.dll" (
+            echo Platform plugins found
+          ) else (
+            echo WARNING: Platform plugins missing - this will cause Qt initialization errors
+          )
 
       - name: Collect Artifacts
         if: always()
@@ -430,24 +431,22 @@ jobs:
 
       - name: Performance Report
         if: matrix.config == 'Release'
-        shell: powershell
+        shell: cmd
         run: |
-          Write-Host "=== Performance Summary ===" -ForegroundColor Cyan
+          echo === Performance Summary ===
           
-          # Check if profiling data exists
-          if (Test-Path "profiling.json") {
-            $profiling = Get-Content "profiling.json" | ConvertFrom-Json
-            Write-Host "Build completed with performance data available"
+          REM Check if profiling data exists
+          if exist "profiling.json" (
+            echo Build completed with performance data available
             
-            # Extract key metrics if available
-            if ($profiling.frame_time_ms) {
-              Write-Host "Average frame time: $($profiling.frame_time_ms) ms"
-            }
-          }
+            REM Extract key metrics if available using findstr
+            findstr "frame_time_ms" profiling.json >nul 2>&1
+            if %errorlevel% equ 0 (
+              echo Performance metrics available in profiling.json
+            )
+          )
           
-          # Check build time (approximate)
-          $buildTime = (Get-Date) - (Get-Date $env:GITHUB_RUN_STARTED_AT)
-          Write-Host "Total build time: $($buildTime.ToString('mm\:ss'))"
+          echo Build completed successfully
 
       - name: Cleanup Build Directory
         if: always()
