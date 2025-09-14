@@ -148,7 +148,9 @@ jobs:
               )
             )
             :sdk_found
-          )          echo Build environment setup complete
+          )
+          
+          echo Build environment setup complete
 
       - name: Cache vcpkg dependencies
         uses: actions/cache@v4
