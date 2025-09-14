@@ -243,7 +243,7 @@ jobs:
           if ("${{ matrix.config }}" -eq "Debug") {
             $testPath = "build/qt-debug/tests/Debug"
           } else {
-            $testPath = "build/qt-release/tests/Release"
+            $testPath = "build/vs-release/tests/Release"
           }
           
           if (Test-Path "$testPath/unit_tests.exe") {
@@ -261,7 +261,7 @@ jobs:
           if ("${{ matrix.config }}" -eq "Debug") {
             $testPath = "build/qt-debug/tests/Debug"
           } else {
-            $testPath = "build/qt-release/tests/Release"
+            $testPath = "build/vs-release/tests/Release"
           }
           
           if (Test-Path "$testPath/gpu_system_validation.exe") {
@@ -286,7 +286,7 @@ jobs:
         run: |
           Write-Host "Running performance validation..." -ForegroundColor Green
           
-          $perfTest = "build/qt-release/tests/Release/performance_optimizer_validation.exe"
+          $perfTest = "build/vs-release/tests/Release/performance_optimizer_validation.exe"
           if (Test-Path $perfTest) {
             & $perfTest | Tee-Object -FilePath "performance-validation.log"
           }
@@ -297,7 +297,7 @@ jobs:
           Write-Host "Packaging Video Editor application..." -ForegroundColor Green
           
           $config = "${{ matrix.config }}"
-          $buildDir = if ($config -eq "Debug") { "build/qt-debug" } else { "build/qt-release" }
+          $buildDir = if ($config -eq "Debug") { "build/qt-debug" } else { "build/vs-release" }
           $packageDir = "VideoEditor-Windows-$config"
           
           # Create package directory
