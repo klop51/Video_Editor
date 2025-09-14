@@ -78,6 +78,7 @@ jobs:
           
           :skip_sdk_install
           echo Windows SDK check complete
+          exit /b 0
 
       - name: Setup build environment
         shell: cmd
