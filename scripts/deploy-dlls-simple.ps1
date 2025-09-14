@@ -83,27 +83,39 @@ if (-not (Test-Path $platformsDir)) {
     Write-Host "Created platforms directory" -ForegroundColor Cyan
 }
 
-# Try multiple possible locations for Qt platform plugins (Debug and Release)
-$possiblePluginPaths = @(
-    (Join-Path $VcpkgInstalledDir "x64-windows\Qt6\plugins\platforms"),           # Release
-    (Join-Path $VcpkgInstalledDir "x64-windows\debug\Qt6\plugins\platforms"),    # Debug
-    (Join-Path $VcpkgInstalledDir "x64-windows\plugins\platforms"),              # Fallback 1
-    (Join-Path $VcpkgInstalledDir "x64-windows\Qt\plugins\platforms"),           # Fallback 2
-    (Join-Path $VcpkgInstalledDir "x64-windows\tools\Qt6\bin\platforms")         # Fallback 3
-)
+# Try configuration-specific plugin paths first, then fallbacks
+if ($Configuration -eq "Debug") {
+    $possiblePluginPaths = @(
+        (Join-Path $VcpkgInstalledDir "x64-windows\debug\Qt6\plugins\platforms"),    # Debug first
+        (Join-Path $VcpkgInstalledDir "x64-windows\Qt6\plugins\platforms"),          # Release fallback
+        (Join-Path $VcpkgInstalledDir "x64-windows\plugins\platforms"),              # Fallback 1
+        (Join-Path $VcpkgInstalledDir "x64-windows\Qt\plugins\platforms"),           # Fallback 2
+        (Join-Path $VcpkgInstalledDir "x64-windows\tools\Qt6\bin\platforms")         # Fallback 3
+    )
+    $targetPattern = "qwindows*d.dll"  # Debug plugins end with 'd'
+} else {
+    $possiblePluginPaths = @(
+        (Join-Path $VcpkgInstalledDir "x64-windows\Qt6\plugins\platforms"),          # Release first
+        (Join-Path $VcpkgInstalledDir "x64-windows\debug\Qt6\plugins\platforms"),    # Debug fallback
+        (Join-Path $VcpkgInstalledDir "x64-windows\plugins\platforms"),              # Fallback 1
+        (Join-Path $VcpkgInstalledDir "x64-windows\Qt\plugins\platforms"),           # Fallback 2
+        (Join-Path $VcpkgInstalledDir "x64-windows\tools\Qt6\bin\platforms")         # Fallback 3
+    )
+    $targetPattern = "qwindows.dll"   # Release plugins without 'd'
+}
 
 $platformFound = $false
 foreach ($platformSourceDir in $possiblePluginPaths) {
     Write-Host "Checking platform path: $platformSourceDir" -ForegroundColor Yellow
     if (Test-Path $platformSourceDir) {
         Write-Host "Found platform plugins at: $platformSourceDir" -ForegroundColor Green
-        $platformFiles = Get-ChildItem -Path $platformSourceDir -Name "qwindows*.dll" -ErrorAction SilentlyContinue
+        $platformFiles = Get-ChildItem -Path $platformSourceDir -Name $targetPattern -ErrorAction SilentlyContinue
         foreach ($file in $platformFiles) {
             $sourcePath = Join-Path $platformSourceDir $file
             Copy-DllBasic -Source $sourcePath -Destination $platformsDir -Description "Platform Plugin"
             $platformFound = $true
         }
-        break
+        if ($platformFound) { break }  # Stop after finding matching plugins
     }
 }
 
@@ -122,12 +134,13 @@ if (-not $platformFound) {
     }
 }
 
-# Deploy additional Qt plugins that may be needed
+# Deploy additional Qt plugins that may be needed (configuration-aware)
 Write-Host "`n=== Deploying Additional Qt Plugins ===" -ForegroundColor Magenta
 
 $additionalPluginDirs = @("imageformats", "styles", "iconengines")
 foreach ($pluginType in $additionalPluginDirs) {
     $targetPluginDir = Join-Path $targetDir $pluginType
+    $pluginFound = $false
     
     foreach ($possiblePath in $possiblePluginPaths) {
         $basePluginDir = Split-Path $possiblePath -Parent
@@ -139,12 +152,20 @@ foreach ($pluginType in $additionalPluginDirs) {
                 New-Item -ItemType Directory -Path $targetPluginDir -Force | Out-Null
             }
             
-            $pluginFiles = Get-ChildItem -Path $pluginSourceDir -Name "*.dll" -ErrorAction SilentlyContinue
+            # Deploy only configuration-matching plugins
+            if ($Configuration -eq "Debug") {
+                $pluginFiles = Get-ChildItem -Path $pluginSourceDir -Name "*d.dll" -ErrorAction SilentlyContinue
+            } else {
+                $pluginFiles = Get-ChildItem -Path $pluginSourceDir -Name "*.dll" -ErrorAction SilentlyContinue | 
+                              Where-Object { $_ -notlike "*d.dll" }
+            }
+            
             foreach ($file in $pluginFiles) {
                 $sourcePath = Join-Path $pluginSourceDir $file
                 Copy-DllBasic -Source $sourcePath -Destination $targetPluginDir -Description "$pluginType Plugin"
+                $pluginFound = $true
             }
-            break
+            if ($pluginFound) { break }
         }
     }
 }
@@ -153,12 +174,10 @@ foreach ($pluginType in $additionalPluginDirs) {
 Write-Host "`n=== Creating qt.conf ===" -ForegroundColor Magenta
 
 $qtConfPath = Join-Path $targetDir "qt.conf"
-$qtConfContent = @"
-[Paths]
-Plugins = .
-"@
+$qtConfContent = "[Paths]`r`nPlugins = .`r`n"
 
-Set-Content -Path $qtConfPath -Value $qtConfContent -Encoding UTF8
+# Use more reliable file creation method
+[System.IO.File]::WriteAllText($qtConfPath, $qtConfContent, [System.Text.Encoding]::UTF8)
 Write-Host "✅ Created qt.conf file to help Qt locate plugins" -ForegroundColor Green
 
 # Summary check
