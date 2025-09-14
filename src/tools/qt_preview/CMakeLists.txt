@@ -24,11 +24,11 @@ if(WIN32)
     # Use our custom PowerShell script that handles file locking properly
     add_custom_command(TARGET qt_preview POST_BUILD
         COMMAND powershell.exe -NoProfile -ExecutionPolicy Bypass 
-            -File "${CMAKE_SOURCE_DIR}/scripts/deploy-dlls.ps1"
+            -File "${CMAKE_SOURCE_DIR}/scripts/deploy-dlls-simple.ps1"
             -TargetBinary "$<TARGET_FILE:qt_preview>"
             -VcpkgInstalledDir "${CMAKE_SOURCE_DIR}/vcpkg_installed"
             -Configuration "$<CONFIG>"
-        COMMENT "Deploying DLLs with custom script (bypassing vcpkg applocal.ps1)"
+        COMMENT "Deploying DLLs with simple robust script (bypassing vcpkg applocal.ps1)"
         VERBATIM
     )
 endif()
