@@ -121,7 +121,7 @@ jobs:
             echo WARNING: Visual Studio 2022 not found in standard locations
             echo Attempting to use Build Tools or Windows SDK...
             REM Try to find Windows SDK or fallback options
-            if exist "%ProgramFiles(x86)%\Windows Kits\10" (
+            if exist "C:\Program Files (x86)\Windows Kits\10" (
               echo Windows 10 SDK found - may work for basic builds
             ) else (
               echo ERROR: No suitable build tools found
@@ -132,16 +132,16 @@ jobs:
           
           REM Set up Windows SDK environment
           echo Setting up Windows SDK environment...
-          if exist "%ProgramFiles(x86)%\Windows Kits\10\bin\10.0.26100.0\x64" (
+          if exist "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64" (
             echo Adding Windows SDK 10.0.26100.0 to PATH...
             echo PATH="C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64;%PATH%">> %GITHUB_ENV%
-          ) else if exist "%ProgramFiles(x86)%\Windows Kits\10\bin\10.0.22621.0\x64" (
+          ) else if exist "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64" (
             echo Adding Windows SDK 10.0.22621.0 to PATH...
             echo PATH="C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64;%PATH%">> %GITHUB_ENV%
           ) else (
             echo Checking for other Windows SDK versions...
-            for /f %%i in ('dir "%ProgramFiles(x86)%\Windows Kits\10\bin" /B /AD 2^>nul ^| findstr "10.0"') do (
-              if exist "%ProgramFiles(x86)%\Windows Kits\10\bin\%%i\x64\rc.exe" (
+            for /f %%i in ('dir "C:\Program Files (x86)\Windows Kits\10\bin" /B /AD 2^>nul ^| findstr "10.0"') do (
+              if exist "C:\Program Files (x86)\Windows Kits\10\bin\%%i\x64\rc.exe" (
                 echo Found Windows SDK %%i
                 echo PATH="C:\Program Files (x86)\Windows Kits\10\bin\%%i\x64;%PATH%">> %GITHUB_ENV%
                 goto :sdk_found
