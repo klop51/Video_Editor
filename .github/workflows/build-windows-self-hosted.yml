@@ -134,23 +134,21 @@ jobs:
           echo Setting up Windows SDK environment...
           if exist "%ProgramFiles(x86)%\Windows Kits\10\bin\10.0.26100.0\x64" (
             echo Adding Windows SDK 10.0.26100.0 to PATH...
-            echo PATH=C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64;%PATH%>> %GITHUB_ENV%
+            echo PATH="C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64;%PATH%">> %GITHUB_ENV%
           ) else if exist "%ProgramFiles(x86)%\Windows Kits\10\bin\10.0.22621.0\x64" (
             echo Adding Windows SDK 10.0.22621.0 to PATH...
-            echo PATH=C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64;%PATH%>> %GITHUB_ENV%
+            echo PATH="C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64;%PATH%">> %GITHUB_ENV%
           ) else (
             echo Checking for other Windows SDK versions...
             for /f %%i in ('dir "%ProgramFiles(x86)%\Windows Kits\10\bin" /B /AD 2^>nul ^| findstr "10.0"') do (
               if exist "%ProgramFiles(x86)%\Windows Kits\10\bin\%%i\x64\rc.exe" (
                 echo Found Windows SDK %%i
-                echo PATH=C:\Program Files (x86)\Windows Kits\10\bin\%%i\x64;%PATH%>> %GITHUB_ENV%
+                echo PATH="C:\Program Files (x86)\Windows Kits\10\bin\%%i\x64;%PATH%">> %GITHUB_ENV%
                 goto :sdk_found
               )
             )
             :sdk_found
-          )
-          
-          echo Build environment setup complete
+          )          echo Build environment setup complete
 
       - name: Cache vcpkg dependencies
         uses: actions/cache@v4
