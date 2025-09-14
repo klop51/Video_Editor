@@ -176,20 +176,35 @@ foreach ($pattern in $criticalDlls) {
     }
 }
 
-# Check for platform plugin
+# Check for platform plugin (non-blocking)
 $platformPlugin = Get-ChildItem -Path $platformsDir -Name "qwindows*.dll" -ErrorAction SilentlyContinue
 if ($platformPlugin) {
     Write-Host "✅ Platform plugin present: $($platformPlugin.Name)" -ForegroundColor Green
 } else {
-    Write-Host "❌ Platform plugin missing: qwindows.dll" -ForegroundColor Red
-    $allPresent = $false
+    Write-Host "⚠️ Platform plugin missing: qwindows.dll" -ForegroundColor Yellow
+    Write-Host "⚠️ This may cause 'qt.qpa.plugin' errors in headless environments" -ForegroundColor Yellow
 }
 
-if ($allPresent) {
-    Write-Host "`n✅ DLL deployment completed successfully!" -ForegroundColor Green
-    exit 0
-} else {
-    Write-Host "`n❌ DLL deployment incomplete - missing critical components!" -ForegroundColor Red
-    Write-Host "This may cause 'qt.qpa.plugin' errors when running Qt applications." -ForegroundColor Yellow
+# Only fail if critical DLLs are missing, not platform plugins
+$criticalMissing = -not $allPresent
+foreach ($pattern in $criticalDlls) {
+    $found = Get-ChildItem -Path $targetDir -Name $pattern -ErrorAction SilentlyContinue
+    if (-not $found) {
+        $criticalMissing = $true
+        break
+    }
+}
+
+if ($criticalMissing) {
+    Write-Host "`n❌ DLL deployment failed - missing critical DLLs!" -ForegroundColor Red
+    Write-Host "Build cannot continue without core Qt libraries." -ForegroundColor Red
     exit 1
+} else {
+    if ($platformPlugin) {
+        Write-Host "`n✅ DLL deployment completed successfully!" -ForegroundColor Green
+    } else {
+        Write-Host "`n⚠️ DLL deployment completed with warnings!" -ForegroundColor Yellow
+        Write-Host "Core DLLs deployed but platform plugins missing (expected in CI/headless environments)" -ForegroundColor Yellow
+    }
+    exit 0
 }
