@@ -165,38 +165,91 @@ jobs:
         run: |
           echo Building Video Editor (${{ matrix.config }})...
           
-          REM Clear any file locks and ensure clean build environment
-          echo Cleaning up previous build artifacts...
+          REM Aggressive file lock cleanup for DLL deployment issues
+          echo Performing comprehensive cleanup for DLL file locks...
           
-          REM Kill any processes that might be holding file locks
+          REM Kill all potential file-locking processes
           taskkill /F /IM video_editor.exe 2>nul || echo No video_editor processes to kill
           taskkill /F /IM ve_qt_preview.exe 2>nul || echo No preview processes to kill
+          taskkill /F /IM cmake.exe 2>nul || echo No cmake processes to kill
+          taskkill /F /IM msbuild.exe 2>nul || echo No msbuild processes to kill
+          taskkill /F /IM powershell.exe 2>nul || echo No powershell processes to kill
           
-          REM Remove output directories with simple approach
+          REM Force unlock any handles to the output directory and vcpkg DLLs
           if "${{ matrix.config }}"=="Debug" (
-            if exist "build\qt-debug\src\tools\video_editor\Debug" (
-              echo Removing Debug output directory...
-              rmdir /s /q "build\qt-debug\src\tools\video_editor\Debug" 2>nul || echo Debug directory cleanup attempted
-            )
+            set "OUTPUT_DIR=build\qt-debug\src\tools\video_editor\Debug"
+            set "VCPKG_BIN_DIR=vcpkg_installed\x64-windows\debug\bin"
           ) else (
-            if exist "build\vs-release\src\tools\video_editor\Release" (
-              echo Removing Release output directory...
-              rmdir /s /q "build\vs-release\src\tools\video_editor\Release" 2>nul || echo Release directory cleanup attempted
-            )
+            set "OUTPUT_DIR=build\vs-release\src\tools\video_editor\Release"
+            set "VCPKG_BIN_DIR=vcpkg_installed\x64-windows\bin"
           )
           
-          REM Wait for filesystem to settle
-          ping 127.0.0.1 -n 3 >nul
+          REM Use Windows Resource Kit handle tool if available, otherwise use system tools
+          where handle.exe >nul 2>nul && (
+            echo Using handle.exe to close file handles...
+            handle.exe -a -p -u %OUTPUT_DIR% 2>nul | findstr /C:"video_editor" | for /f "tokens=3 delims= " %%a in ('findstr /C:":"') do handle.exe -c %%a -y >nul 2>nul
+          ) || (
+            echo Using openfiles to display locked files...
+            openfiles /query /fo table | findstr /i qt6 2>nul || echo No Qt6 file locks detected via openfiles
+          )
+          
+          REM Aggressive output directory cleanup with retry
+          if exist "%OUTPUT_DIR%" (
+            echo Aggressively removing output directory: %OUTPUT_DIR%
+            for /L %%i in (1,1,3) do (
+              rmdir /s /q "%OUTPUT_DIR%" 2>nul && (
+                echo Output directory removed on attempt %%i
+                goto :dir_removed
+              ) || (
+                echo Directory removal attempt %%i failed, waiting...
+                ping 127.0.0.1 -n 2 >nul
+              )
+            )
+            :dir_removed
+          )
+          
+          REM Clean any locked DLLs from previous failed builds
+          if exist "%VCPKG_BIN_DIR%\Qt6Cored.dll" (
+            echo Checking for locked Qt6 DLLs in vcpkg directory...
+            attrib -r "%VCPKG_BIN_DIR%\Qt6*.dll" 2>nul || echo No Qt6 DLLs to unlock
+            attrib -r "%VCPKG_BIN_DIR%\icu*.dll" 2>nul || echo No ICU DLLs to unlock
+          )
+          
+          REM Extended filesystem settling time for Windows file handles
+          echo Waiting for filesystem and handles to settle...
+          ping 127.0.0.1 -n 5 >nul
           
           REM Use maximum parallel jobs for self-hosted runner
           set CORES=%NUMBER_OF_PROCESSORS%
           echo Using %CORES% parallel jobs
           
-          if "${{ matrix.config }}"=="Debug" (
-            "C:\Program Files\CMake\bin\cmake.exe" --build build/qt-debug --config Debug --parallel %CORES%
-          ) else (
-            "C:\Program Files\CMake\bin\cmake.exe" --build build/vs-release --config Release --parallel %CORES%
+          REM Build with retry logic for DLL deployment failures
+          echo Starting build process with retry capability...
+          for /L %%attempt in (1,1,2) do (
+            echo Build attempt %%attempt of 2...
+            if "${{ matrix.config }}"=="Debug" (
+              "C:\Program Files\CMake\bin\cmake.exe" --build build/qt-debug --config Debug --parallel %CORES%
+            ) else (
+              "C:\Program Files\CMake\bin\cmake.exe" --build build/vs-release --config Release --parallel %CORES%
+            )
+            if !errorlevel! == 0 (
+              echo Build succeeded on attempt %%attempt
+              goto :build_success
+            ) else (
+              echo Build attempt %%attempt failed with error !errorlevel!
+              if %%attempt == 1 (
+                echo Performing additional cleanup before retry...
+                taskkill /F /IM cmake.exe 2>nul || echo No cmake processes to kill
+                ping 127.0.0.1 -n 3 >nul
+              )
+            )
           )
+          
+          echo All build attempts failed
+          exit /b 1
+          
+          :build_success
+          echo Build completed successfully
 
       - name: Run Unit Tests
         shell: powershell
