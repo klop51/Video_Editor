@@ -167,24 +167,42 @@ jobs:
           
           REM Clear any file locks and ensure clean build environment
           echo Cleaning up previous build artifacts...
+          
+          REM Kill any processes that might be holding file locks (multiple attempts)
+          taskkill /F /IM video_editor.exe 2>nul || echo No video_editor processes to kill
+          taskkill /F /IM ve_qt_preview.exe 2>nul || echo No preview processes to kill
+          taskkill /F /IM *.exe /FI "PID gt 0" 2>nul || echo Process cleanup attempted
+          
+          REM Force close any handles to our DLLs (using handle.exe if available)
+          if exist "C:\SysInternals\handle.exe" (
+            echo Closing file handles...
+            C:\SysInternals\handle.exe -p video_editor -y 2>nul || echo No handles for video_editor
+            C:\SysInternals\handle.exe -p ve_qt_preview -y 2>nul || echo No handles for ve_qt_preview
+          )
+          
+          REM Remove output directories with retry
           if "${{ matrix.config }}"=="Debug" (
             if exist "build\qt-debug\src\tools\video_editor\Debug" (
               echo Removing Debug output directory...
-              rmdir /s /q "build\qt-debug\src\tools\video_editor\Debug" 2>nul || echo Directory cleanup attempted
+              for /L %%i in (1,1,3) do (
+                rmdir /s /q "build\qt-debug\src\tools\video_editor\Debug" 2>nul && goto :debug_cleaned
+                ping 127.0.0.1 -n 2 >nul
+              )
+              :debug_cleaned
             )
           ) else (
             if exist "build\vs-release\src\tools\video_editor\Release" (
               echo Removing Release output directory...
-              rmdir /s /q "build\vs-release\src\tools\video_editor\Release" 2>nul || echo Directory cleanup attempted
+              for /L %%i in (1,1,3) do (
+                rmdir /s /q "build\vs-release\src\tools\video_editor\Release" 2>nul && goto :release_cleaned
+                ping 127.0.0.1 -n 2 >nul
+              )
+              :release_cleaned
             )
           )
           
-          REM Kill any processes that might be holding file locks
-          taskkill /F /IM video_editor.exe 2>nul || echo No video_editor processes to kill
-          taskkill /F /IM ve_qt_preview.exe 2>nul || echo No preview processes to kill
-          
-          REM Wait a moment for files to be released
-          timeout /t 2 /nobreak >nul
+          REM Wait for filesystem to settle
+          ping 127.0.0.1 -n 3 >nul
           
           REM Use maximum parallel jobs for self-hosted runner
           set CORES=%NUMBER_OF_PROCESSORS%
