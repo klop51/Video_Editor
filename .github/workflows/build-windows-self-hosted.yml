@@ -252,10 +252,11 @@ jobs:
             Write-Warning "Unit tests executable not found at $testPath"
           }
 
-      - name: Run GPU Validation Tests
+      - name: Run GPU Validation Tests (Optional)
         shell: powershell
         run: |
           Write-Host "Running GPU system validation..." -ForegroundColor Green
+          Write-Host "Note: GPU tests may fail in CI environments without graphics hardware" -ForegroundColor Yellow
           
           if ("${{ matrix.config }}" -eq "Debug") {
             $testPath = "build/qt-debug/tests/Debug"
@@ -269,10 +270,14 @@ jobs:
             # Check if GPU validation passed
             $lastExitCode = $LASTEXITCODE
             if ($lastExitCode -eq 0) {
-              Write-Host "✅ GPU validation passed" -ForegroundColor Green
+              Write-Host "✅ GPU validation passed - graphics hardware available" -ForegroundColor Green
+            } elseif ($lastExitCode -eq -1) {
+              Write-Host "⚠️ GPU validation skipped - no graphics hardware detected (expected in CI)" -ForegroundColor Yellow
             } else {
-              Write-Warning "⚠️ GPU validation failed with exit code $lastExitCode"
+              Write-Warning "⚠️ GPU validation failed with unexpected exit code $lastExitCode"
             }
+          } else {
+            Write-Host "GPU validation executable not found - skipping" -ForegroundColor Yellow
           }
 
       - name: Performance Validation
