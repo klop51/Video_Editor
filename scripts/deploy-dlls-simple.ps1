@@ -83,12 +83,13 @@ if (-not (Test-Path $platformsDir)) {
     Write-Host "Created platforms directory" -ForegroundColor Cyan
 }
 
-# Try multiple possible locations for Qt platform plugins
+# Try multiple possible locations for Qt platform plugins (Debug and Release)
 $possiblePluginPaths = @(
-    (Join-Path $VcpkgInstalledDir "x64-windows\Qt6\plugins\platforms"),
-    (Join-Path $VcpkgInstalledDir "x64-windows\plugins\platforms"),
-    (Join-Path $VcpkgInstalledDir "x64-windows\Qt\plugins\platforms"),
-    (Join-Path $VcpkgInstalledDir "x64-windows\tools\Qt6\bin\platforms")
+    (Join-Path $VcpkgInstalledDir "x64-windows\Qt6\plugins\platforms"),           # Release
+    (Join-Path $VcpkgInstalledDir "x64-windows\debug\Qt6\plugins\platforms"),    # Debug
+    (Join-Path $VcpkgInstalledDir "x64-windows\plugins\platforms"),              # Fallback 1
+    (Join-Path $VcpkgInstalledDir "x64-windows\Qt\plugins\platforms"),           # Fallback 2
+    (Join-Path $VcpkgInstalledDir "x64-windows\tools\Qt6\bin\platforms")         # Fallback 3
 )
 
 $platformFound = $false
