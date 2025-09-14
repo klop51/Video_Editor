@@ -168,17 +168,9 @@ jobs:
           REM Clear any file locks and ensure clean build environment
           echo Cleaning up previous build artifacts...
           
-          REM Kill any processes that might be holding file locks (multiple attempts)
+          REM Kill any processes that might be holding file locks
           taskkill /F /IM video_editor.exe 2>nul || echo No video_editor processes to kill
           taskkill /F /IM ve_qt_preview.exe 2>nul || echo No preview processes to kill
-          taskkill /F /IM *.exe /FI "PID gt 0" 2>nul || echo Process cleanup attempted
-          
-          REM Force close any handles to our DLLs (using handle.exe if available)
-          if exist "C:\SysInternals\handle.exe" (
-            echo Closing file handles...
-            C:\SysInternals\handle.exe -p video_editor -y 2>nul || echo No handles for video_editor
-            C:\SysInternals\handle.exe -p ve_qt_preview -y 2>nul || echo No handles for ve_qt_preview
-          )
           
           REM Remove output directories with retry
           if "${{ matrix.config }}"=="Debug" (
