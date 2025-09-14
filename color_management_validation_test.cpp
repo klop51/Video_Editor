@@ -387,7 +387,7 @@ private:
         bool accurate = cm.validateColorAccuracy(reference, processed, 5.0);
         assert(accurate);  // Should be within acceptable range
         
-        std::cout << "  Color accuracy validation: SUCCESS" << std::endl;
+        std::cout << "  Color accuracy validation: " << (accurate ? "SUCCESS" : "FAILED") << std::endl;
         
         std::cout << std::endl;
     }
@@ -418,6 +418,10 @@ private:
         ColorSpace h264_space = detectFromCodecInfo("H.264", "bt709");
         
         assert(hevc_space == ColorSpace::BT2020);
+        assert(h264_space == ColorSpace::BT709);
+        
+        std::cout << "  HEVC color space detection: " << (hevc_space == ColorSpace::BT2020 ? "SUCCESS" : "FAILED") << std::endl;
+        std::cout << "  H.264 color space detection: " << (h264_space == ColorSpace::BT709 ? "SUCCESS" : "FAILED") << std::endl;
         assert(h264_space == ColorSpace::BT709);
         
         std::cout << "  Codec-based detection: SUCCESS" << std::endl;

@@ -136,7 +136,7 @@ private:
         
         // HD should use standard strategy
         assert(hd_strategy == MemoryStrategy::STANDARD);
-        std::cout << "  HD memory strategy: STANDARD" << std::endl;
+        std::cout << "  HD memory strategy: " << (hd_strategy == MemoryStrategy::STANDARD ? "STANDARD" : "OTHER") << std::endl;
         
         // 4K may use standard or streaming based on system
         assert(uhd_4k_strategy == MemoryStrategy::STANDARD || uhd_4k_strategy == MemoryStrategy::STREAMING);
