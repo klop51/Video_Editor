@@ -165,6 +165,27 @@ jobs:
         run: |
           echo Building Video Editor (${{ matrix.config }})...
           
+          REM Clear any file locks and ensure clean build environment
+          echo Cleaning up previous build artifacts...
+          if "${{ matrix.config }}"=="Debug" (
+            if exist "build\qt-debug\src\tools\video_editor\Debug" (
+              echo Removing Debug output directory...
+              rmdir /s /q "build\qt-debug\src\tools\video_editor\Debug" 2>nul || echo Directory cleanup attempted
+            )
+          ) else (
+            if exist "build\vs-release\src\tools\video_editor\Release" (
+              echo Removing Release output directory...
+              rmdir /s /q "build\vs-release\src\tools\video_editor\Release" 2>nul || echo Directory cleanup attempted
+            )
+          )
+          
+          REM Kill any processes that might be holding file locks
+          taskkill /F /IM video_editor.exe 2>nul || echo No video_editor processes to kill
+          taskkill /F /IM ve_qt_preview.exe 2>nul || echo No preview processes to kill
+          
+          REM Wait a moment for files to be released
+          timeout /t 2 /nobreak >nul
+          
           REM Use maximum parallel jobs for self-hosted runner
           set CORES=%NUMBER_OF_PROCESSORS%
           echo Using %CORES% parallel jobs
