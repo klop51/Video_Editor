@@ -55,9 +55,12 @@ jobs:
             goto :skip_sdk_install
           )
           
-          REM Check for RC in Windows SDK paths
-          if exist "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\rc.exe" (
-            echo Windows SDK RC found at standard location
+          REM Check for RC in Windows SDK paths - try latest version first
+          if exist "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\rc.exe" (
+            echo Windows SDK RC found at 10.0.26100.0
+            goto :skip_sdk_install
+          ) else if exist "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\rc.exe" (
+            echo Windows SDK RC found at 10.0.22621.0
             goto :skip_sdk_install
           )
           
@@ -128,8 +131,11 @@ jobs:
           
           REM Set up Windows SDK environment
           echo Setting up Windows SDK environment...
-          if exist "%ProgramFiles(x86)%\Windows Kits\10\bin\10.0.22621.0\x64" (
-            echo Adding Windows SDK to PATH...
+          if exist "%ProgramFiles(x86)%\Windows Kits\10\bin\10.0.26100.0\x64" (
+            echo Adding Windows SDK 10.0.26100.0 to PATH...
+            echo %ProgramFiles(x86)%\Windows Kits\10\bin\10.0.26100.0\x64;%PATH%>> %GITHUB_ENV%
+          ) else if exist "%ProgramFiles(x86)%\Windows Kits\10\bin\10.0.22621.0\x64" (
+            echo Adding Windows SDK 10.0.22621.0 to PATH...
             echo %ProgramFiles(x86)%\Windows Kits\10\bin\10.0.22621.0\x64;%PATH%>> %GITHUB_ENV%
           ) else (
             echo Checking for other Windows SDK versions...
