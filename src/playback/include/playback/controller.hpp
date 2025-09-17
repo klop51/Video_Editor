@@ -3,6 +3,7 @@
 #include "../../decode/include/decode/decoder.hpp"
 #include "../../decode/include/decode/frame.hpp"
 #include "../../core/include/core/time.hpp"
+#include "../../audio/include/audio/audio_pipeline.hpp"
 #include <functional>
 #include <thread>
 #include <atomic>
@@ -10,6 +11,7 @@
 #include <vector>
 #include <mutex>
 #include <chrono>
+#include <algorithm>
 #include "cache/frame_cache.hpp"
 #include "../../timeline/include/timeline/timeline.hpp" // Need snapshot definition for timeline-based FPS
 
@@ -58,6 +60,23 @@ public:
     void clear_state_callbacks() { std::scoped_lock lk(callbacks_mutex_); state_entries_.clear(); }
     // Attach a timeline for snapshot-based playback (read-only consumption)
     void set_timeline(ve::timeline::Timeline* tl) { timeline_ = tl; }
+
+    // Audio control methods
+    bool initialize_audio_pipeline();
+    bool is_master_muted() const { return master_muted_.load(); }
+    bool set_master_mute(bool muted) { master_muted_.store(muted); return true; }
+    float get_master_volume() const { return master_volume_.load(); }
+    bool set_master_volume(float volume) { master_volume_.store(std::clamp(volume, 0.0f, 1.0f)); return true; }
+    
+    struct AudioStats { 
+        uint32_t sample_rate = 0; 
+        uint32_t channels = 0; 
+        uint32_t buffer_size = 0; 
+        uint32_t frames_processed = 0;
+        uint32_t total_frames_processed = 0;
+        uint32_t buffer_underruns = 0;
+    };
+    AudioStats get_audio_stats() const { return audio_stats_; }
 
     struct Stats { int64_t frames_displayed = 0; int64_t frames_dropped = 0; double avg_frame_time_ms = 0.0; };
     Stats get_stats() const { return stats_; }
@@ -121,6 +140,13 @@ private:
         }
     };
     FrameStepAccum step_;
+    
+    // Audio control state
+    std::atomic<bool> master_muted_{false};
+    std::atomic<float> master_volume_{1.0f};
+    AudioStats audio_stats_;
+    std::unique_ptr<ve::audio::AudioPipeline> audio_pipeline_;
+    CallbackId audio_callback_id_{0};
 };
 
 } // namespace ve::playback

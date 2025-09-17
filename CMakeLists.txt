@@ -254,6 +254,206 @@ if(ENABLE_TOOLS)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
     )
 
+    # AUDIO ENGINE ROADMAP Phase 1 Week 1 validation executable
+    add_executable(audio_engine_phase1_week1_validation
+        src/audio/validation/audio_engine_phase1_week1_validation_simple.cpp
+    )
+    
+    target_link_libraries(audio_engine_phase1_week1_validation PRIVATE
+        ve_audio
+        ve_media_io
+        ve_core
+    )
+    
+    target_include_directories(audio_engine_phase1_week1_validation PRIVATE
+        src/audio/include
+        src/media_io/include
+        src/core/include
+    )
+
+    # AUDIO ENGINE ROADMAP Phase 2 Week 4 Advanced Mixing Graph validation executable
+    add_executable(audio_engine_phase2_week4_validation
+        audio_engine_phase2_week4_validation.cpp
+    )
+    
+    target_link_libraries(audio_engine_phase2_week4_validation PRIVATE
+        ve_audio
+        ve_media_io
+        ve_core
+    )
+    
+    target_include_directories(audio_engine_phase2_week4_validation PRIVATE
+        src/audio/include
+        src/media_io/include
+        src/core/include
+    )
+    
+    # Disable warnings for this test executable
+    if(MSVC)
+        target_compile_options(audio_engine_phase2_week4_validation PRIVATE /W0)
+    endif()
+
+    # AUDIO ENGINE ROADMAP Phase 1B: Simple Mixer Core Validation
+    add_executable(simple_mixer_validation
+        simple_mixer_validation.cpp
+    )
+
+    target_link_libraries(simple_mixer_validation PRIVATE
+        ve_audio
+        ve_core
+    )
+
+    target_include_directories(simple_mixer_validation PRIVATE
+        src/audio/include
+        src/core/include
+    )
+
+    # Disable warnings for this test executable
+    if(MSVC)
+        target_compile_options(simple_mixer_validation PRIVATE /W0)
+    endif()
+
+    # AUDIO ENGINE ROADMAP Phase 1C: Audio Pipeline Integration Validation
+    add_executable(audio_pipeline_validation
+        audio_pipeline_validation.cpp
+    )
+
+    target_link_libraries(audio_pipeline_validation PRIVATE
+        ve_audio
+        ve_core
+    )
+
+    target_include_directories(audio_pipeline_validation PRIVATE
+        src/audio/include
+        src/core/include
+    )
+
+    # Disable warnings for this test executable
+    if(MSVC)
+        target_compile_options(audio_pipeline_validation PRIVATE /W0)
+    endif()
+
+    # Phase 2 Week 1: Basic Audio Pipeline Validation
+    add_executable(test_phase2_week1_audio_pipeline
+        test_phase2_week1_audio_pipeline.cpp
+    )
+    
+    target_link_libraries(test_phase2_week1_audio_pipeline PRIVATE
+        ve_audio
+        ve_core
+    )
+    
+    target_include_directories(test_phase2_week1_audio_pipeline PRIVATE
+        src/audio/include
+        src/core/include
+    )
+    
+    # Disable warnings for this test executable
+    if(MSVC)
+        target_compile_options(test_phase2_week1_audio_pipeline PRIVATE /W0)
+    endif()
+
+    # Phase 2 Week 2: Audio Synchronization Validation
+    add_executable(test_phase2_week2_audio_sync
+        test_phase2_week2_audio_sync.cpp
+    )
+    
+    target_link_libraries(test_phase2_week2_audio_sync PRIVATE
+        ve_audio
+        ve_core
+    )
+    
+    target_include_directories(test_phase2_week2_audio_sync PRIVATE
+        src/audio/include
+        src/core/include
+    )
+    
+    # Disable warnings for this test executable
+    if(MSVC)
+        target_compile_options(test_phase2_week2_audio_sync PRIVATE /W0)
+    endif()
+
+    # Phase 2 Week 3: Audio Rendering Engine Validation
+    add_executable(test_phase2_week3_audio_render
+        test_phase2_week3_audio_render.cpp
+    )
+    
+    target_link_libraries(test_phase2_week3_audio_render PRIVATE
+        ve_audio
+        ve_core
+    )
+    
+    target_include_directories(test_phase2_week3_audio_render PRIVATE
+        src/audio/include
+        src/core/include
+    )
+    
+    # Disable warnings for this test executable
+    if(MSVC)
+        target_compile_options(test_phase2_week3_audio_render PRIVATE /W0)
+    endif()
+
+    # Simple header test for audio render engine
+    add_executable(test_audio_render_include
+        test_audio_render_include.cpp
+    )
+    
+    target_link_libraries(test_audio_render_include PRIVATE
+        ve_audio
+        ve_core
+    )
+    
+    target_include_directories(test_audio_render_include PRIVATE
+        src/audio/include
+        src/core/include
+    )
+    
+    if(MSVC)
+        target_compile_options(test_audio_render_include PRIVATE /W0)
+    endif()
+
+    # Phase 2 Week 5: Audio Effects Suite Validation
+    add_executable(audio_effects_phase2_week5_validation
+        audio_effects_phase2_week5_validation.cpp
+    )
+
+    target_link_libraries(audio_effects_phase2_week5_validation PRIVATE
+        ve_audio
+        ve_core
+    )
+
+    target_include_directories(audio_effects_phase2_week5_validation PRIVATE
+        src/core/include
+        src/audio/include
+    )
+
+    set_target_properties(audio_effects_phase2_week5_validation PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
+    )
+
+    # Disable warnings for this test executable
+    if(MSVC)
+        target_compile_options(audio_effects_phase2_week5_validation PRIVATE /W0)
+    endif()
+
+    # AUDIO ENGINE ROADMAP Phase 1 Week 3 FFmpeg Integration Test
+    add_executable(phase1_week3_ffmpeg_integration_test
+        phase1_week3_ffmpeg_integration_test_simple.cpp
+    )
+    
+    target_link_libraries(phase1_week3_ffmpeg_integration_test PRIVATE
+        ve_audio
+        ve_media_io
+        ve_core
+    )
+    
+    target_include_directories(phase1_week3_ffmpeg_integration_test PRIVATE
+        src/audio/include
+        src/media_io/include
+        src/core/include
+    )
+
     # FORMAT_SUPPORT_ROADMAP.md Phase 1 Week 1 validation executable
     add_executable(format_support_phase1_week1_validation
         format_support_phase1_week1_validation.cpp
@@ -425,6 +625,21 @@ if(ENABLE_TOOLS)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
     )
 endif()
+
+# Debug tool for baby talk audio issue - sample rate analysis
+add_executable(debug_sample_rate_test debug_sample_rate_test.cpp)
+target_link_libraries(debug_sample_rate_test
+    PRIVATE
+    ve_media_io
+    ve_core
+    ${FFMPEG_LIBRARIES}
+)
+target_include_directories(debug_sample_rate_test
+    PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/media_io/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
+    ${FFMPEG_INCLUDE_DIRS}
+)
 
 set(CPACK_PACKAGE_NAME "VideoEditor")
 set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})

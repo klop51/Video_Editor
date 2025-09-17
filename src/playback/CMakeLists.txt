@@ -21,6 +21,7 @@ target_link_libraries(ve_playback
         ve_decode
         ve_timeline
     ve_cache
+    ve_audio
 )
 
 target_compile_features(ve_playback PUBLIC cxx_std_20)

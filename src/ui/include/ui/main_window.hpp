@@ -17,6 +17,9 @@ class QLabel;
 class QTreeWidget;
 class QTreeWidgetItem;
 class QThread;
+class QSlider;
+class QToolButton;
+class QProgressBar;
 QT_END_NAMESPACE
 
 namespace ve::timeline { class Timeline; }
@@ -97,6 +100,11 @@ private slots:
     void step_backward();
     void go_to_start();
     void go_to_end();
+    
+    // Audio controls
+    void toggle_audio_mute();
+    void set_master_volume(int volume_percent);
+    void update_audio_levels();
     
     // Position update
     void update_playback_position();
@@ -209,10 +217,21 @@ private:
     QAction* toggle_fps_overlay_action_{};
     QAction* toggle_preview_fit_action_{};
     
+    // Audio controls
+    QAction* mute_audio_action_;
+    QSlider* volume_slider_;
+    QToolButton* mute_button_;
+    QProgressBar* audio_level_meter_;
+    QLabel* volume_label_;
+    
     // Status bar
     QLabel* status_label_;
     QLabel* time_label_;
     QLabel* fps_label_;
+    QLabel* audio_status_label_;
+    
+    // Audio level update timer
+    QTimer* audio_level_timer_;
     
     // Data
     ve::timeline::Timeline* timeline_;

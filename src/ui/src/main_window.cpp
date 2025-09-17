@@ -1,3 +1,9 @@
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#endif
+
 #include "ui/main_window.hpp"
 #include "ui/timeline_panel.hpp"
 #include "ui/viewer_panel.hpp"
@@ -10,6 +16,7 @@
 #include "decode/decoder.hpp"
 #include "app/application.hpp"
 #include <limits>
+#include <algorithm>
 
 #include <QApplication>
 #include <QMenuBar>
@@ -21,6 +28,10 @@
 #include <QLabel>
 #include <QFileDialog>
 #include <QMessageBox>
+#include <QSlider>
+#include <QToolButton>
+#include <QProgressBar>
+#include <QStyle>
 
 // Convert TimeDuration -> microseconds (safe)
 static qint64 td_to_us(const ve::TimeDuration& d) {
@@ -55,6 +66,8 @@ static qint64 timeline_duration_us(const ve::timeline::Timeline* tl) {
 #include <QThread>
 #include <QFuture>
 #include <QElapsedTimer>
+#include <QTime>
+#include <cmath>
 
 // Quick micro-profiler for finding GUI thread hogs
 struct ScopeTimer {
@@ -387,6 +400,33 @@ void MainWindow::set_playback_controller(ve::playback::PlaybackController* contr
         viewer_panel_->set_playback_controller(controller);
     }
     
+    // Initialize audio pipeline when controller is set
+    if (controller) {
+        if (controller->initialize_audio_pipeline()) {
+            ve::log::info("Audio pipeline initialized successfully");
+            if (audio_status_label_) {
+                audio_status_label_->setText("Audio: Ready");
+            }
+        } else {
+            ve::log::warn("Failed to initialize audio pipeline");
+            if (audio_status_label_) {
+                audio_status_label_->setText("Audio: Error");
+            }
+        }
+        
+        // Sync UI controls with audio pipeline state
+        if (mute_button_) {
+            mute_button_->setChecked(controller->is_master_muted());
+        }
+        
+        if (volume_slider_) {
+            // Convert dB to percentage (approximate)
+            float db = controller->get_master_volume();
+            int percent = (db <= -60.0f) ? 0 : static_cast<int>(100 * std::pow(10, db / 20.0f));
+            volume_slider_->setValue(percent);
+        }
+    }
+    
     // Connect playback state changes to timer control
     if (controller) {
         controller->add_state_callback([this](ve::playback::PlaybackState state) {
@@ -536,6 +576,8 @@ void MainWindow::create_menus() {
     playback_menu->addSeparator();
     mk(playback_menu, go_to_start_action_, "Go to &Start", QKeySequence(QStringLiteral("Home")), &MainWindow::go_to_start);
     mk(playback_menu, go_to_end_action_, "Go to &End", QKeySequence(QStringLiteral("End")), &MainWindow::go_to_end);
+    playback_menu->addSeparator();
+    mk(playback_menu, mute_audio_action_, "&Mute Audio", QKeySequence(QStringLiteral("M")), &MainWindow::toggle_audio_mute);
 
     QMenu* view_menu = menuBar()->addMenu("&View");
     QAction* dummy=nullptr; // temporary holder for helper
@@ -618,6 +660,41 @@ void MainWindow::create_toolbars() {
     playback_toolbar->addAction(step_forward_action_);
     playback_toolbar->addAction(stop_action_);
     playback_toolbar->addAction(go_to_end_action_);
+    
+    // Audio controls toolbar
+    QToolBar* audio_toolbar = addToolBar("Audio");
+    audio_toolbar->setObjectName("AudioToolbar");
+    
+    // Mute button
+    mute_button_ = new QToolButton();
+    mute_button_->setIcon(style()->standardIcon(QStyle::SP_MediaVolume));
+    mute_button_->setToolTip("Mute/Unmute Audio");
+    mute_button_->setCheckable(true);
+    audio_toolbar->addWidget(mute_button_);
+    
+    // Volume label
+    volume_label_ = new QLabel("Vol:");
+    audio_toolbar->addWidget(volume_label_);
+    
+    // Volume slider
+    volume_slider_ = new QSlider(Qt::Horizontal);
+    volume_slider_->setMinimum(0);
+    volume_slider_->setMaximum(100);
+    volume_slider_->setValue(100);
+    volume_slider_->setMinimumWidth(100);
+    volume_slider_->setToolTip("Master Volume");
+    audio_toolbar->addWidget(volume_slider_);
+    
+    // Audio level meter
+    audio_level_meter_ = new QProgressBar();
+    audio_level_meter_->setOrientation(Qt::Horizontal);
+    audio_level_meter_->setMinimum(0);
+    audio_level_meter_->setMaximum(100);
+    audio_level_meter_->setValue(0);
+    audio_level_meter_->setMinimumWidth(80);
+    audio_level_meter_->setMaximumWidth(80);
+    audio_level_meter_->setToolTip("Audio Level");
+    audio_toolbar->addWidget(audio_level_meter_);
 }
 
 void MainWindow::create_status_bar() {
@@ -633,6 +710,11 @@ void MainWindow::create_status_bar() {
     
     fps_label_ = new QLabel("30 fps");
     statusBar()->addPermanentWidget(fps_label_);
+    
+    statusBar()->addPermanentWidget(new QLabel("|"));
+    
+    audio_status_label_ = new QLabel("Audio: Ready");
+    statusBar()->addPermanentWidget(audio_status_label_);
 }
 
 void MainWindow::create_dock_widgets() {
@@ -688,6 +770,20 @@ void MainWindow::setup_layout() {
 }
 
 void MainWindow::connect_signals() {
+    // Connect audio controls
+    if (mute_button_) {
+        connect(mute_button_, &QToolButton::clicked, this, &MainWindow::toggle_audio_mute);
+    }
+    
+    if (volume_slider_) {
+        connect(volume_slider_, &QSlider::valueChanged, this, &MainWindow::set_master_volume);
+    }
+    
+    // Set up audio level update timer
+    audio_level_timer_ = new QTimer(this);
+    connect(audio_level_timer_, &QTimer::timeout, this, &MainWindow::update_audio_levels);
+    audio_level_timer_->start(100); // Update every 100ms
+    
     // Connect media browser signals
     if (media_browser_) {
         qDebug() << "Setting up media browser signals and context menu";
@@ -1068,6 +1164,82 @@ void MainWindow::go_to_end() {
         } else {
             ve::log::warn("Cannot go to end: duration is 0 or unknown");
         }
+    }
+}
+
+// Audio control implementations
+void MainWindow::toggle_audio_mute() {
+    if (!playback_controller_) return;
+    
+    bool current_mute = playback_controller_->is_master_muted();
+    bool success = playback_controller_->set_master_mute(!current_mute);
+    
+    if (success) {
+        bool new_mute = playback_controller_->is_master_muted();
+        mute_button_->setChecked(new_mute);
+        mute_button_->setIcon(style()->standardIcon(
+            new_mute ? QStyle::SP_MediaVolumeMuted : QStyle::SP_MediaVolume));
+        mute_button_->setToolTip(new_mute ? "Unmute Audio" : "Mute Audio");
+        
+        // Update audio status
+        if (audio_status_label_) {
+            audio_status_label_->setText(new_mute ? "Audio: Muted" : "Audio: Enabled");
+        }
+        
+        ve::log::info(new_mute ? "Audio muted" : "Audio unmuted");
+    } else {
+        ve::log::warn("Failed to toggle audio mute");
+    }
+}
+
+void MainWindow::set_master_volume(int volume_percent) {
+    if (!playback_controller_) return;
+    
+    // Convert percentage to dB (rough approximation)
+    // 0% = -60dB (silent), 100% = 0dB (full volume)
+    float volume_db = (volume_percent == 0) ? -60.0f : 
+                     (20.0f * std::log10(volume_percent / 100.0f));
+    
+    bool success = playback_controller_->set_master_volume(volume_db);
+    
+    if (success) {
+        float actual_db = playback_controller_->get_master_volume();
+        
+        // Update volume label
+        if (volume_label_) {
+            volume_label_->setText(QString("Vol: %1%").arg(volume_percent));
+        }
+        
+        ve::log::debug("Master volume set to " + std::to_string(volume_percent) + 
+                      "% (" + std::to_string(actual_db) + " dB)");
+    } else {
+        ve::log::warn("Failed to set master volume");
+    }
+}
+
+void MainWindow::update_audio_levels() {
+    if (!playback_controller_ || !audio_level_meter_) return;
+    
+    // Get audio pipeline stats
+    auto stats = playback_controller_->get_audio_stats();
+    
+    // Simple audio level simulation based on whether audio is playing
+    int level = 0;
+    if (playback_controller_->state() == ve::playback::PlaybackState::Playing && 
+        !playback_controller_->is_master_muted()) {
+        // Simulate audio levels (in a real implementation, this would come from actual audio data)
+        level = 30 + (QTime::currentTime().msec() % 40); // Simple animation
+    }
+    
+    audio_level_meter_->setValue(level);
+    
+    // Update audio status with stats
+    if (audio_status_label_) {
+        QString status = QString("Audio: %1 frames").arg(stats.total_frames_processed);
+        if (stats.buffer_underruns > 0) {
+            status += QString(" (%1 underruns)").arg(stats.buffer_underruns);
+        }
+        audio_status_label_->setText(status);
     }
 }
 

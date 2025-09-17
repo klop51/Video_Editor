@@ -1,4 +1,10 @@
 // TOKEN:VIEWER_PANEL_2025_08_29_CLEAN
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#endif
+
 #include "ui/viewer_panel.hpp"
 #include "playback/controller.hpp"
 #include "decode/decoder.hpp"
@@ -9,6 +15,7 @@
 #include "ui/gl_video_widget.hpp"
 #include "core/profiling.hpp"
 #include "core/log.hpp"
+#include <algorithm>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QLabel>

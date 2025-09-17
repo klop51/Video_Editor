@@ -6,6 +6,24 @@
 #include <vector>
 #include <chrono>
 #include <thread>
+#include <algorithm>
+
+// Windows.h compatibility - undefine potential conflicting macros
+#ifdef Int16
+#undef Int16
+#endif
+#ifdef Int32
+#undef Int32
+#endif
+#ifdef Float32
+#undef Float32
+#endif
+#ifdef max
+#undef max
+#endif
+#ifdef min
+#undef min
+#endif
 
 // ChatGPT optimization: High-precision frame pacing helper
 // Sleep most of the interval, spin the final ~200µs for accuracy.
@@ -42,6 +60,15 @@ PlaybackController::~PlaybackController() {
     thread_should_exit_.store(true);
     if (playback_thread_.joinable()) {
         playback_thread_.join();
+    }
+    
+    // Clean up audio pipeline
+    if (audio_callback_id_ != 0) {
+        remove_audio_callback(audio_callback_id_);
+    }
+    if (audio_pipeline_) {
+        audio_pipeline_->shutdown();
+        audio_pipeline_.reset();
     }
 }
 
@@ -399,6 +426,10 @@ void PlaybackController::playback_thread_main() {
                 { // audio callback dispatch (profiling removed to avoid variable shadow warning on MSVC)
                     std::vector<CallbackEntry<AudioFrameCallback>> copy;
                     { std::scoped_lock lk(callbacks_mutex_); copy = audio_entries_; }
+                    if (copy.size() > 1) {
+                        ve::log::warn("WARNING_MULTIPLE_AUDIO_SINKS: " + std::to_string(copy.size()) +
+                                      " audio callbacks registered; this can cause echo.");
+                    }
                     VE_DEBUG_ONLY(ve::log::info("Dispatching " + std::to_string(copy.size()) + " audio callbacks for pts=" + std::to_string(audio_frame->pts)));
                     for(auto &entry : copy) if(entry.fn) entry.fn(*audio_frame);
                     VE_DEBUG_ONLY(ve::log::info("Dispatched audio callbacks for pts=" + std::to_string(audio_frame->pts)));
@@ -550,13 +581,123 @@ size_t PlaybackController::calculate_optimal_cache_size() const {
     }
     
     // Choose the smaller of memory limit or performance preference
-    size_t optimal_size = std::max(MIN_CACHE_FRAMES, 
-                                   std::min(max_frames_by_memory, target_cache_size));
+    size_t optimal_size = (std::max)(MIN_CACHE_FRAMES, 
+                                    (std::min)(max_frames_by_memory, target_cache_size));
     
     ve::log::info("Calculated optimal frame cache size: " + std::to_string(optimal_size) + 
                   " frames (max by memory: " + std::to_string(max_frames_by_memory) + ")");
     
     return optimal_size;
+}
+
+bool PlaybackController::initialize_audio_pipeline() {
+    // Guard against multiple initializations
+    if (audio_pipeline_) {
+        ve::log::info("Audio pipeline already initialized, skipping");
+        return true;
+    }
+    
+    ve::log::info("Initializing audio pipeline for playback controller");
+    
+    // Create audio pipeline configuration
+    ve::audio::AudioPipelineConfig pipeline_config;
+    pipeline_config.sample_rate = 48000;
+    pipeline_config.channel_count = 2;
+    pipeline_config.buffer_size = 32;  // Minimal buffer to eliminate echo
+    pipeline_config.format = ve::audio::SampleFormat::Float32;
+    
+    // Create the audio pipeline
+    audio_pipeline_ = ve::audio::AudioPipeline::create(pipeline_config);
+    if (!audio_pipeline_) {
+        ve::log::error("Failed to create audio pipeline");
+        return false;
+    }
+    
+    // Initialize the audio pipeline
+    if (!audio_pipeline_->initialize()) {
+        ve::log::error("Failed to initialize audio pipeline");
+        audio_pipeline_.reset();
+        return false;
+    }
+    
+    // Start audio output
+    if (!audio_pipeline_->start_output()) {
+        ve::log::error("Failed to start audio output");
+        audio_pipeline_.reset();
+        return false;
+    }
+    
+    // Remove any existing audio callback to prevent duplicates
+    if (audio_callback_id_ != 0) {
+        remove_audio_callback(audio_callback_id_);
+        ve::log::info("Removed existing audio callback to prevent echo");
+    }
+    
+    // Ensure only one audio sink at a time for echo prevention
+    {
+        std::scoped_lock lk(callbacks_mutex_);
+        audio_entries_.clear();  // Clear any existing callbacks
+    }
+    
+    // Register audio callback to receive frames from decoder
+    audio_callback_id_ = add_audio_callback([this](const decode::AudioFrame& frame) {
+        if (audio_pipeline_ && !master_muted_.load()) {
+            // Debug logging to check for duplicate frames
+            ve::log::info("Processing audio frame: pts=" + std::to_string(frame.pts) + 
+                         ", samples=" + std::to_string(frame.data.size()) +
+                         ", rate=" + std::to_string(frame.sample_rate) +
+                         ", channels=" + std::to_string(frame.channels));
+            
+            // Convert decode::AudioFrame to audio::AudioFrame for pipeline
+            
+            // Simple format conversion - default to Float32
+            ve::audio::SampleFormat audio_format = ve::audio::SampleFormat::Float32;
+            
+            // Calculate sample count assuming 4 bytes per sample (Float32)
+            size_t bytes_per_sample = 4;
+            uint32_t sample_count = static_cast<uint32_t>(frame.data.size() / (bytes_per_sample * frame.channels));
+            
+            // Create timestamp from pts (convert microseconds to rational)
+            ve::TimePoint timestamp(frame.pts, 1000000); // pts is in microseconds
+            
+            // Create audio frame with the converted parameters
+            auto audio_frame = ve::audio::AudioFrame::create_from_data(
+                static_cast<uint32_t>(frame.sample_rate),
+                static_cast<uint16_t>(frame.channels),
+                sample_count,
+                audio_format,
+                timestamp,
+                frame.data.data(),
+                frame.data.size()
+            );
+            
+            if (audio_frame) {
+                // Send to audio pipeline for processing and output
+                audio_pipeline_->process_audio_frame(audio_frame);
+                
+                // Update stats
+                audio_stats_.frames_processed++;
+                audio_stats_.total_frames_processed++;
+            }
+        }
+    });
+    
+    // Initialize audio stats with actual values
+    audio_stats_.sample_rate = pipeline_config.sample_rate;
+    audio_stats_.channels = pipeline_config.channel_count;
+    audio_stats_.buffer_size = pipeline_config.buffer_size;
+    audio_stats_.frames_processed = 0;
+    audio_stats_.total_frames_processed = 0;
+    audio_stats_.buffer_underruns = 0;
+    
+    // Reset audio control state
+    master_muted_.store(false);
+    master_volume_.store(1.0f);
+    
+    ve::log::info("Audio pipeline initialized - sample rate: " + std::to_string(audio_stats_.sample_rate) + 
+                  "Hz, channels: " + std::to_string(audio_stats_.channels));
+    
+    return true; // Success
 }
 
 } // namespace ve::playback

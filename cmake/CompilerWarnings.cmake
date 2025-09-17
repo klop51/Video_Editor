@@ -3,6 +3,8 @@ function(setup_project_warnings)
     if(MSVC)
         # Enable C++ exception handling (required for standard library usage)
         add_compile_options(/EHsc)
+        # Enable file system synchronization for PDB files to avoid conflicts
+        add_compile_options(/FS)
         # High warning level
         add_compile_options(/W4 /permissive-)
         # Stricter conformance checks (MSVC specific)

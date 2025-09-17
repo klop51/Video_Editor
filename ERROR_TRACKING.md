@@ -1,6 +1,67 @@
 # Error & Debug Tracking Log
 
-## Current Issue: PowerShell Interactive Menu Flashing (2025-09-06)
+# Error & Debug Tracking Log
+
+## Current Issue: "Baby Talk" Audio Investigation - Video with No Audio Stream (2025-09-16)
+**PROBLEM:** User reported "baby talk" audio issue where "voice are not clear is like blabbing most like baby would try to talk cant say word well" - audio sounds garbled and distorted during video playback.
+
+**CRITICAL DISCOVERY:** Sample rate analysis revealed that the test video file (`LOL.mp4`) **has NO audio stream** - it's video-only! This explains the "baby talk" sounds as the audio pipeline may be processing empty or placeholder audio data.
+
+**Investigation Results:**
+- ✅ **Video Analysis Complete**: `LOL.mp4` contains only H.264 video (1920x1080, 30fps) with no audio stream
+- ✅ **Debug Tool Created**: `debug_sample_rate_test.exe` successfully analyzes media files for audio characteristics  
+- ✅ **Root Cause Identified**: "Baby talk" audio is likely phantom audio processing on video-only content
+- ⚠️ **Need Actual Audio File**: Requires testing with video file containing real audio to reproduce sample rate mismatch issues
+
+**Technical Context:**
+- **Current Approach**: Created diagnostic tool to analyze sample rates and detect common "baby talk" causes (44.1kHz→48kHz mismatches)
+- **Issue**: Cannot reproduce real sample rate mismatch with audio-less video file
+- **Next Steps**: Need video file with actual audio stream to validate sample rate detection and WASAPI configuration
+
+**Files Requiring ChatGPT Analysis:**
+```
+PRIORITY FILES FOR CHATGPT REVIEW:
+1. src/playback/src/controller.cpp - Audio frame processing and sample rate handling
+2. src/audio/src/audio_output.cpp - WASAPI configuration and sample rate setup
+3. src/audio/src/audio_pipeline.cpp - Audio pipeline mixing and bypass logic
+4. src/audio/include/audio/audio_output.hpp - Audio output interface definitions
+5. debug_sample_rate_test.cpp - Sample rate diagnostic tool for validation
+
+CONFIGURATION FILES:
+6. CMakeLists.txt - Build configuration for audio components
+7. src/playback/include/playback/controller.hpp - Controller interface with audio methods
+```
+
+**Symptoms Analysis:**
+- ✅ **No Grinding Sound**: Previous grinding audio issue was resolved by bypassing problematic mixer
+- ❌ **"Baby Talk" Audio**: Garbled speech on video-only file indicates phantom audio processing
+- ⚠️ **Sample Rate Mismatch Risk**: Common cause is 44.1kHz audio played through 48kHz WASAPI output
+- ⚠️ **FLTP Conversion Issues**: Float planar to interleaved conversion may cause audio distortion
+
+**Requirements:**
+- Test with video file containing actual audio stream (44.1kHz or 48kHz)
+- Verify WASAPI sample rate configuration matches video audio exactly
+- Validate FLTP conversion integrity for clear speech reproduction
+- Implement proper sample rate detection and dynamic WASAPI reconfiguration
+
+**STATUS:** ✅ **PATCH APPLIED SUCCESSFULLY** - ChatGPT audio resampling patch successfully integrated and compiling! Infrastructure ready for sample rate mismatch diagnosis and resolution.
+
+**Latest Progress (2025-09-17):**
+- ✅ **Audio Resampling Patch Applied**: Comprehensive format normalization with sample rate conversion, channel mixing, and format conversion
+- ✅ **PlaybackController Audio Methods Added**: initialize_audio_pipeline(), set_master_mute(), get_master_volume(), get_audio_stats()
+- ✅ **Compilation Successful**: All audio pipeline components building correctly with new resampling infrastructure
+- ⏳ **Next Step**: Test with video file containing actual audio stream (44.1kHz or 48kHz) to validate "baby talk" audio fix
+
+**Technical Improvements:**
+- **Real-time Format Conversion**: Input audio (any rate/channels/format) → Float32 → Channel convert → Resample → WASAPI format
+- **Thread-local Buffers**: Efficient scratch buffers to avoid memory allocation overhead during playback
+- **Linear Resampling**: Fast sample rate conversion for preview playback (production can upgrade to libswresample)
+- **Format Support**: Int16, Int32, Float32 input formats with proper clamping and precision
+- **Channel Flexibility**: Mono↔Stereo conversion with intelligent fallback for multi-channel audio
+
+---
+
+## Previous Status: PowerShell Interactive Menu Flashing (2025-09-06)
 **PROBLEM:** GitHub automation tool (`scripts/github_automation_v2.ps1`) exhibits menu flashing/redrawing on every arrow key press in interactive log selection mode.
 
 **Symptoms:**
