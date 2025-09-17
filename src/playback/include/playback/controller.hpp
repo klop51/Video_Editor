@@ -147,6 +147,9 @@ private:
     AudioStats audio_stats_;
     std::unique_ptr<ve::audio::AudioPipeline> audio_pipeline_;
     CallbackId audio_callback_id_{0};
+    
+    // PTS-based deduplication for echo prevention
+    std::atomic<int64_t> last_audio_pts_{-1};
 };
 
 } // namespace ve::playback

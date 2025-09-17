@@ -14,6 +14,7 @@
 #include <atomic>
 #include <thread>
 #include <mutex>
+#include <unordered_set>
 #include <functional>
 #include <cstdint>
 
@@ -174,6 +175,10 @@ private:
     // Statistics
     mutable std::mutex stats_mutex_;
     AudioOutputStats stats_;
+
+    // PTS-based deduplication for echo prevention
+    std::unordered_set<int64_t> submitted_pts_;
+    std::mutex pts_mutex_;
 
     // Error handling
     mutable std::mutex error_mutex_;

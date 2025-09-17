@@ -591,6 +591,10 @@ size_t PlaybackController::calculate_optimal_cache_size() const {
 }
 
 bool PlaybackController::initialize_audio_pipeline() {
+    // Add mutex lock to prevent concurrent initialization
+    static std::mutex init_mutex;
+    std::lock_guard<std::mutex> init_lock(init_mutex);
+    
     // Guard against multiple initializations
     if (audio_pipeline_) {
         ve::log::info("Audio pipeline already initialized, skipping");
@@ -598,6 +602,16 @@ bool PlaybackController::initialize_audio_pipeline() {
     }
     
     ve::log::info("Initializing audio pipeline for playback controller");
+    
+    // Clear ALL audio callbacks before any new registration to prevent echo
+    {
+        std::scoped_lock lk(callbacks_mutex_);
+        audio_entries_.clear();
+        ve::log::info("Cleared all existing audio callbacks to prevent echo");
+    }
+    
+    // Add a small delay to ensure cleanup completes
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
     
     // Create audio pipeline configuration
     ve::audio::AudioPipelineConfig pipeline_config;
@@ -642,11 +656,21 @@ bool PlaybackController::initialize_audio_pipeline() {
     // Register audio callback to receive frames from decoder
     audio_callback_id_ = add_audio_callback([this](const decode::AudioFrame& frame) {
         if (audio_pipeline_ && !master_muted_.load()) {
-            // Debug logging to check for duplicate frames
-            ve::log::info("Processing audio frame: pts=" + std::to_string(frame.pts) + 
-                         ", samples=" + std::to_string(frame.data.size()) +
-                         ", rate=" + std::to_string(frame.sample_rate) +
-                         ", channels=" + std::to_string(frame.channels));
+            // PTS-based deduplication to prevent echo
+            int64_t last_pts = last_audio_pts_.exchange(frame.pts);
+            if (last_pts == frame.pts) {
+                ve::log::debug("Skipping duplicate audio frame with PTS: " + std::to_string(frame.pts));
+                return;
+            }
+            
+            // Debug logging to check for duplicate frames (reduced frequency)
+            static int log_counter = 0;
+            if (++log_counter % 100 == 0) { // Log every 100th frame to reduce spam
+                ve::log::info("Processing audio frame: pts=" + std::to_string(frame.pts) + 
+                             ", samples=" + std::to_string(frame.data.size()) +
+                             ", rate=" + std::to_string(frame.sample_rate) +
+                             ", channels=" + std::to_string(frame.channels));
+            }
             
             // Convert decode::AudioFrame to audio::AudioFrame for pipeline
             

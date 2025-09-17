@@ -352,6 +352,21 @@ AudioOutputError AudioOutput::submit_frame(std::shared_ptr<AudioFrame> frame) {
         return AudioOutputError::InvalidState;
     }
 
+    // PTS-based deduplication to prevent echo from duplicate submissions
+    {
+        std::lock_guard<std::mutex> lock(pts_mutex_);
+        int64_t pts = frame->timestamp().to_rational().num;
+        if (submitted_pts_.count(pts) > 0) {
+            return AudioOutputError::Success; // Skip duplicate - already submitted
+        }
+        submitted_pts_.insert(pts);
+        
+        // Clean up old PTS entries to prevent memory growth (keep last 1000)
+        if (submitted_pts_.size() > 1000) {
+            submitted_pts_.clear();
+        }
+    }
+
     // ---- NEW: Normalize incoming frame to WASAPI client format (rate/channels/sample fmt) ----
     const uint32_t in_rate = frame->sample_rate();
     const uint32_t in_ch   = frame->channel_count();
