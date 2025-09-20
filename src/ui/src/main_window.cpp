@@ -404,6 +404,14 @@ void MainWindow::set_playback_controller(ve::playback::PlaybackController* contr
     if (controller) {
         if (controller->initialize_audio_pipeline()) {
             ve::log::info("Audio pipeline initialized successfully");
+            
+            // Initialize timeline audio integration
+            if (controller->initialize_timeline_audio()) {
+                ve::log::info("Timeline audio integration initialized successfully");
+            } else {
+                ve::log::warn("Failed to initialize timeline audio integration");
+            }
+            
             if (audio_status_label_) {
                 audio_status_label_->setText("Audio: Ready");
             }

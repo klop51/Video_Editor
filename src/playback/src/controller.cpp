@@ -1,4 +1,5 @@
 #include "playback/controller.hpp" // renamed class PlaybackController
+#include "audio/timeline_audio_manager.hpp"
 #include "core/log.hpp"
 #include "core/profiling.hpp"
 #include "media_io/media_probe.hpp"
@@ -151,12 +152,24 @@ void PlaybackController::play() {
     }
     
     ve::log::info("Starting playback");
+    
+    // Start timeline audio if available
+    if (timeline_audio_manager_) {
+        timeline_audio_manager_->start_playback();
+    }
+    
     set_state(PlaybackState::Playing);
 }
 
 void PlaybackController::pause() {
     if (state_.load() == PlaybackState::Playing) {
         ve::log::info("Pausing playback");
+        
+        // Pause timeline audio if available
+        if (timeline_audio_manager_) {
+            timeline_audio_manager_->pause_playback();
+        }
+        
         set_state(PlaybackState::Paused);
     }
 }
@@ -164,6 +177,12 @@ void PlaybackController::pause() {
 void PlaybackController::stop() {
     if (state_.load() != PlaybackState::Stopped) {
         ve::log::info("Stopping playback");
+        
+        // Stop timeline audio if available
+        if (timeline_audio_manager_) {
+            timeline_audio_manager_->stop_playback();
+        }
+        
         set_state(PlaybackState::Stopped);
         current_time_us_.store(0);
     }
@@ -175,6 +194,12 @@ bool PlaybackController::seek(int64_t timestamp_us) {
     }
     
     ve::log::debug("Seeking to: " + std::to_string(timestamp_us) + " us");
+    
+    // Seek timeline audio if available
+    if (timeline_audio_manager_) {
+        ve::TimePoint seek_position{timestamp_us, 1000000};
+        timeline_audio_manager_->seek_to(seek_position);
+    }
     
     seek_target_us_.store(timestamp_us);
     seek_requested_.store(true);
@@ -434,6 +459,16 @@ void PlaybackController::playback_thread_main() {
                     for(auto &entry : copy) if(entry.fn) entry.fn(*audio_frame);
                     VE_DEBUG_ONLY(ve::log::info("Dispatched audio callbacks for pts=" + std::to_string(audio_frame->pts)));
                 }
+            }
+            
+            // Process timeline audio (mix multiple tracks)
+            if (timeline_audio_manager_ && timeline_) {
+                // Convert current time to TimePoint for timeline audio processing
+                ve::TimePoint current_pos{current_time_us_.load(), 1000000};
+                
+                // Process timeline audio tracks at current position
+                // This will mix audio from multiple timeline tracks and send to audio pipeline
+                timeline_audio_manager_->process_timeline_audio(current_pos, 1024);  // Standard frame size
             } else {
                 // Handle end-of-stream and avoid busy loop when decoder has no more frames
                 int64_t cur = current_time_us_.load();
@@ -715,14 +750,77 @@ bool PlaybackController::initialize_audio_pipeline() {
     audio_stats_.total_frames_processed = 0;
     audio_stats_.buffer_underruns = 0;
     
-    // Reset audio control state
+        // Reset audio control state
     master_muted_.store(false);
     master_volume_.store(1.0f);
     
-    ve::log::info("Audio pipeline initialized - sample rate: " + std::to_string(audio_stats_.sample_rate) + 
-                  "Hz, channels: " + std::to_string(audio_stats_.channels));
+    ve::log::info("Audio pipeline initialization complete");
+    return true;
+}
+
+bool PlaybackController::initialize_timeline_audio() {
+    if (!audio_pipeline_) {
+        ve::log::error("Cannot initialize timeline audio: audio pipeline not available");
+        return false;
+    }
     
-    return true; // Success
+    ve::log::info("Initializing timeline audio manager");
+    
+    // Create timeline audio manager
+    timeline_audio_manager_ = ve::audio::TimelineAudioManager::create(audio_pipeline_.get());
+    if (!timeline_audio_manager_) {
+        ve::log::error("Failed to create timeline audio manager");
+        return false;
+    }
+    
+    // Initialize the timeline audio manager
+    if (!timeline_audio_manager_->initialize()) {
+        ve::log::error("Failed to initialize timeline audio manager");
+        timeline_audio_manager_.reset();
+        return false;
+    }
+    
+    // Connect to timeline if available
+    if (timeline_) {
+        if (!timeline_audio_manager_->set_timeline(timeline_)) {
+            ve::log::warn("Failed to connect timeline to audio manager");
+        }
+    }
+    
+    ve::log::info("Timeline audio manager initialized successfully");
+    return true;
+}
+
+bool PlaybackController::set_timeline_track_mute(ve::timeline::TrackId track_id, bool muted) {
+    if (!timeline_audio_manager_) {
+        ve::log::warn("Timeline audio manager not available");
+        return false;
+    }
+    return timeline_audio_manager_->set_track_mute(track_id, muted);
+}
+
+bool PlaybackController::set_timeline_track_solo(ve::timeline::TrackId track_id, bool solo) {
+    if (!timeline_audio_manager_) {
+        ve::log::warn("Timeline audio manager not available");
+        return false;
+    }
+    return timeline_audio_manager_->set_track_solo(track_id, solo);
+}
+
+bool PlaybackController::set_timeline_track_gain(ve::timeline::TrackId track_id, float gain_db) {
+    if (!timeline_audio_manager_) {
+        ve::log::warn("Timeline audio manager not available");
+        return false;
+    }
+    return timeline_audio_manager_->set_track_gain(track_id, gain_db);
+}
+
+bool PlaybackController::set_timeline_track_pan(ve::timeline::TrackId track_id, float pan) {
+    if (!timeline_audio_manager_) {
+        ve::log::warn("Timeline audio manager not available");
+        return false;
+    }
+    return timeline_audio_manager_->set_track_pan(track_id, pan);
 }
 
 } // namespace ve::playback

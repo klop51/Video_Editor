@@ -18,6 +18,7 @@ add_library(ve_audio STATIC
     src/audio_output.cpp               # Phase 1A: WASAPI audio output backend
     src/simple_mixer.cpp               # Phase 1B: Simple mixer core
     src/audio_pipeline.cpp             # Phase 1C: Audio pipeline integration
+    src/timeline_audio_manager.cpp     # Phase 1D: Timeline audio integration for multi-track mixing
     src/master_clock.cpp               # Phase 2 Week 6: A/V synchronization master clock
     src/sync_validator.cpp             # Phase 2 Week 6: A/V synchronization validation framework
     src/latency_compensator.cpp        # Phase 2 Week 6: Automatic latency detection and compensation
@@ -40,6 +41,8 @@ target_link_libraries(ve_audio
     PUBLIC
         ve_core
         ve_media_io  # For FFmpeg integration and demuxer support
+        ve_timeline  # For timeline integration and audio track management
+        ve_decode    # For audio decoding from segments
 )
 
 # FFmpeg integration for audio decoder

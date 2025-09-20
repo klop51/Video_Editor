@@ -4,6 +4,7 @@
 #include "../../decode/include/decode/frame.hpp"
 #include "../../core/include/core/time.hpp"
 #include "../../audio/include/audio/audio_pipeline.hpp"
+#include "../../audio/include/audio/timeline_audio_manager.hpp"
 #include <functional>
 #include <thread>
 #include <atomic>
@@ -59,7 +60,13 @@ public:
     bool remove_state_callback(CallbackId id);
     void clear_state_callbacks() { std::scoped_lock lk(callbacks_mutex_); state_entries_.clear(); }
     // Attach a timeline for snapshot-based playback (read-only consumption)
-    void set_timeline(ve::timeline::Timeline* tl) { timeline_ = tl; }
+    void set_timeline(ve::timeline::Timeline* tl) { 
+        timeline_ = tl; 
+        // Connect timeline to audio manager if available
+        if (timeline_audio_manager_ && timeline_) {
+            timeline_audio_manager_->set_timeline(timeline_);
+        }
+    }
 
     // Audio control methods
     bool initialize_audio_pipeline();
@@ -67,6 +74,13 @@ public:
     bool set_master_mute(bool muted) { master_muted_.store(muted); return true; }
     float get_master_volume() const { return master_volume_.load(); }
     bool set_master_volume(float volume) { master_volume_.store(std::clamp(volume, 0.0f, 1.0f)); return true; }
+    
+    // Timeline audio control methods
+    bool initialize_timeline_audio();
+    bool set_timeline_track_mute(ve::timeline::TrackId track_id, bool muted);
+    bool set_timeline_track_solo(ve::timeline::TrackId track_id, bool solo);
+    bool set_timeline_track_gain(ve::timeline::TrackId track_id, float gain_db);
+    bool set_timeline_track_pan(ve::timeline::TrackId track_id, float pan);
     
     struct AudioStats { 
         uint32_t sample_rate = 0; 
@@ -146,6 +160,7 @@ private:
     std::atomic<float> master_volume_{1.0f};
     AudioStats audio_stats_;
     std::unique_ptr<ve::audio::AudioPipeline> audio_pipeline_;
+    std::unique_ptr<ve::audio::TimelineAudioManager> timeline_audio_manager_;
     CallbackId audio_callback_id_{0};
     
     // PTS-based deduplication for echo prevention
