@@ -1,6 +1,8 @@
 #pragma once
 #include "../../timeline/include/timeline/timeline.hpp"
 #include "../../core/include/core/time.hpp"
+#include "../../audio/include/audio/waveform_cache.h"
+#include "../../audio/include/audio/waveform_generator.h"
 #include <QWidget>
 #include <QPainter>
 #include <QScrollArea>
@@ -8,6 +10,7 @@
 #include <QMenu> // Ensure QMenu complete type available for context menu implementation
 #include <memory>
 #include <functional>
+#include <limits>
 
 // Forward declarations
 namespace ve::commands { class Command; }
@@ -45,6 +48,10 @@ public slots:
     void delete_selected_segments();
     void split_segment_at_playhead();
     
+    // Undo/Redo operations
+    void request_undo();
+    void request_redo();
+    
 signals:
     void time_changed(ve::TimePoint time);
     void selection_changed();
@@ -54,7 +61,12 @@ signals:
     // Editing signals
     void segments_cut();
     void segments_deleted();
+    void segments_added(); // For paste operations
     void segment_split(ve::timeline::SegmentId segment_id, ve::TimePoint split_time);
+    
+    // Command system signals
+    void undo_requested();
+    void redo_requested();
     
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -73,6 +85,14 @@ protected:
     void leaveEvent(QEvent* event) override;
     
 private:
+    // Clipboard for copy/paste operations
+    struct ClipboardSegment {
+        ve::timeline::Segment segment;
+        size_t original_track_index;
+        ve::TimePoint relative_start_time; // Relative to clipboard reference point
+    };
+    std::vector<ClipboardSegment> clipboard_segments_;
+    
     // Drawing methods
     void draw_background(QPainter& painter);
     void draw_timecode_ruler(QPainter& painter);
@@ -85,8 +105,14 @@ private:
     
     // Enhanced drawing methods
     void draw_audio_waveform(QPainter& painter, const QRect& rect, const ve::timeline::Segment& segment);
+    void draw_cached_waveform(QPainter& painter, const QRect& rect, const ve::timeline::Segment& segment);
     void draw_video_thumbnail(QPainter& painter, const QRect& rect, const ve::timeline::Segment& segment);
     void draw_segment_handles(QPainter& painter, const QRect& rect);
+    
+    // Segment rendering cache helpers
+    QPixmap* get_cached_segment(uint32_t segment_id, const QRect& rect) const;
+    void cache_segment(uint32_t segment_id, const QRect& rect, const QPixmap& pixmap) const;
+    void clear_segment_cache() const;
     
     // Coordinate conversion
     ve::TimePoint pixel_to_time(int x) const;
@@ -167,8 +193,31 @@ private:
     // Debug tools
     QTimer* heartbeat_timer_;
     
+    // Waveform caching and generation
+    std::unique_ptr<ve::audio::WaveformCache> waveform_cache_;
+    std::unique_ptr<ve::audio::WaveformGenerator> waveform_generator_;
+    
     // Update optimization
     QTimer* update_timer_;  // For batching timeline UI updates
+    QTimer* throttle_timer_; // Enhanced throttling for heavy operations
+    bool pending_heavy_update_; // Flag to prevent excessive heavy redraws
+    int segments_being_added_; // Track when multiple segments are being added
+    
+    // Simple segment rendering cache
+    struct SegmentCacheEntry {
+        uint32_t segment_id;
+        QRect rect;
+        QPixmap cached_pixmap;
+        int zoom_level; // Cache per zoom level
+    };
+    mutable std::vector<SegmentCacheEntry> segment_cache_;
+    mutable int cache_zoom_level_; // Current zoom level for cache validation
+
+    // Cached hit-test state to cut down repeated scans
+    mutable ve::timeline::SegmentId cached_hit_segment_id_;
+    mutable size_t cached_hit_segment_index_;
+    mutable size_t cached_hit_track_index_;
+    mutable uint64_t cached_hit_timeline_version_;
 };
 
 } // namespace ve::ui

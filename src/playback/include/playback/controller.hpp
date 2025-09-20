@@ -13,6 +13,7 @@
 #include <mutex>
 #include <chrono>
 #include <algorithm>
+#include <unordered_map>
 #include "cache/frame_cache.hpp"
 #include "../../timeline/include/timeline/timeline.hpp" // Need snapshot definition for timeline-based FPS
 
@@ -33,6 +34,7 @@ public:
     bool load_media(const std::string& path);
     void close_media();
     bool has_media() const { return decoder_ != nullptr; }
+    bool has_timeline_content() const;
 
     void play();
     void pause();
@@ -62,6 +64,8 @@ public:
     // Attach a timeline for snapshot-based playback (read-only consumption)
     void set_timeline(ve::timeline::Timeline* tl) { 
         timeline_ = tl; 
+        // Clear decoder cache when timeline changes
+        clear_timeline_decoder_cache();
         // Connect timeline to audio manager if available
         if (timeline_audio_manager_ && timeline_) {
             timeline_audio_manager_->set_timeline(timeline_);
@@ -102,6 +106,12 @@ private:
     void update_frame_stats(double frame_time_ms);
     void decode_one_frame_if_paused(int64_t seek_target_us);
     size_t calculate_optimal_cache_size() const;
+    
+    // Timeline-driven playback methods
+    bool decode_timeline_frame(int64_t timestamp_us);
+    decode::IDecoder* get_timeline_decoder_at_time(int64_t timestamp_us);
+    bool has_timeline_video_at_time(int64_t timestamp_us) const;
+    void clear_timeline_decoder_cache();
 
     std::unique_ptr<decode::IDecoder> decoder_;
     // Simple frame cache (CPU) for recently decoded frames
@@ -162,6 +172,10 @@ private:
     std::unique_ptr<ve::audio::AudioPipeline> audio_pipeline_;
     std::unique_ptr<ve::audio::TimelineAudioManager> timeline_audio_manager_;
     CallbackId audio_callback_id_{0};
+    
+    // Timeline playback state
+    std::unordered_map<std::string, std::unique_ptr<decode::IDecoder>> timeline_decoders_;  // Cache decoders by media path
+    mutable std::mutex timeline_decoders_mutex_;
     
     // PTS-based deduplication for echo prevention
     std::atomic<int64_t> last_audio_pts_{-1};

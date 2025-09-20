@@ -7,6 +7,7 @@
 #include <QTimer>
 #include <QQueue>
 #include <memory>
+#include <string>
 
 QT_BEGIN_NAMESPACE
 class QMenuBar;
@@ -56,10 +57,10 @@ struct TimelineInfo {
     // Context from the UI (drop location etc.)
     ve::TimePoint start_time{}; // Where to place the clip on the timeline
     int track_index = 0;        // Target track index (will auto-expand if needed)
-    
-    // NEW: Prepared data to minimize UI thread work
-    std::shared_ptr<ve::timeline::MediaSource> prepared_source;
-    ve::timeline::Segment prepared_segment;
+
+    // Prepared data to minimize UI-thread work
+    std::string clip_display_name;
+    ve::timeline::PreparedClip prepared_clip;
 };
 
 class MainWindow : public QMainWindow {

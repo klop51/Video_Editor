@@ -63,6 +63,12 @@ PlaybackController::~PlaybackController() {
         playback_thread_.join();
     }
     
+    // Clean up timeline decoder cache
+    {
+        std::scoped_lock lock(timeline_decoders_mutex_);
+        timeline_decoders_.clear();
+    }
+    
     // Clean up audio pipeline
     if (audio_callback_id_ != 0) {
         remove_audio_callback(audio_callback_id_);
@@ -138,16 +144,36 @@ void PlaybackController::close_media() {
     decoder_.reset();
     duration_us_ = 0;
     current_time_us_.store(0);
-    
+
     // Reset stats
     stats_ = Stats{};
     frame_count_.store(0);
     total_frame_time_ms_.store(0.0);
 }
 
-void PlaybackController::play() {
-    if (!has_media()) {
-        ve::log::warn("Cannot play: no media loaded");
+bool PlaybackController::has_timeline_content() const {
+    if (!timeline_) {
+        ve::log::debug("has_timeline_content: No timeline set");
+        return false;
+    }
+    
+    // Check if timeline has any tracks with segments
+    const auto& tracks = timeline_->tracks();
+    ve::log::debug("has_timeline_content: Found " + std::to_string(tracks.size()) + " tracks");
+    
+    for (const auto& track : tracks) {
+        if (!track->segments().empty()) {
+            ve::log::debug("has_timeline_content: Found track with " + std::to_string(track->segments().size()) + " segments");
+            return true;  // Found at least one segment
+        }
+    }
+    
+    ve::log::debug("has_timeline_content: No segments found in any track");
+    return false;  // No segments found
+}void PlaybackController::play() {
+    // Check if we have media to play (either single file or timeline content)
+    if (!has_media() && !has_timeline_content()) {
+        ve::log::warn("Cannot play: no media loaded and no timeline content");
         return;
     }
     
@@ -275,27 +301,55 @@ void PlaybackController::playback_thread_main() {
         }
         
         // Process frames if playing
-        if (state_.load() == PlaybackState::Playing && decoder_) {
-            VE_DEBUG_ONLY({
-                bool seek_req = seek_requested_.load();
-                ve::log::info("Processing frame in playback thread, state=Playing, seek_requested=" + std::string(seek_req ? "true" : "false"));
-            });
+        if (state_.load() == PlaybackState::Playing) {
+            bool has_content = false;
+            bool is_timeline_mode = false;
+            
+            // Determine playback mode: single-media or timeline
+            if (decoder_) {
+                has_content = true;
+                is_timeline_mode = false;
+            } else if (has_timeline_content()) {
+                has_content = true;
+                is_timeline_mode = true;
+            }
+            
+            if (has_content) {
+                VE_DEBUG_ONLY({
+                    bool seek_req = seek_requested_.load();
+                    std::string mode = is_timeline_mode ? "Timeline" : "Single-media";
+                    ve::log::info("Processing frame in playback thread, mode=" + mode + ", state=Playing, seek_requested=" + std::string(seek_req ? "true" : "false"));
+                });
+                
+                int64_t current_pts = current_time_us_.load();
+                
+                if (is_timeline_mode) {
+                    // Timeline-driven playback
+                    if (decode_timeline_frame(current_pts)) {
+                        // Timeline audio is handled by TimelineAudioManager
+                        // Video frame dispatching is handled in decode_timeline_frame
+                        // Update timing for next frame
+                        auto next_frame_delta = step_.next_delta_us();
+                        current_time_us_.store(current_pts + next_frame_delta);
+                    }
+                } else {
+                    // Single-media playback (existing logic)
             
             // If a single-step is pending, we will bypass cache below and ask decoder for next frame.
             bool bypass_cache = bypass_cache_once_.exchange(false);
 
-            int64_t current_pts = current_time_us_.load();
+            int64_t single_media_pts = current_time_us_.load();
             
             // Attempt cache reuse first (only exact pts match for now), unless bypassed for single-step
         if(seek_requested_.load()==false && !bypass_cache) { // if not in middle of seek handling
                     ve::cache::CachedFrame cached; cache_lookups_.fetch_add(1);
-                ve::cache::FrameKey key; key.pts_us = current_pts;
+                ve::cache::FrameKey key; key.pts_us = single_media_pts;
                 VE_DEBUG_ONLY(ve::log::info("Cache lookup for pts: " + std::to_string(key.pts_us)));
                 if(frame_cache_.get(key, cached)) {
                         VE_PROFILE_SCOPE_UNIQ("playback.cache_hit");
                     cache_hits_.fetch_add(1);
                     VE_DEBUG_ONLY(ve::log::info("Cache HIT for pts: " + std::to_string(key.pts_us)));
-                    decode::VideoFrame vf; vf.width = cached.width; vf.height = cached.height; vf.pts = current_pts; vf.data = cached.data; // copy buffer
+                    decode::VideoFrame vf; vf.width = cached.width; vf.height = cached.height; vf.pts = single_media_pts; vf.data = cached.data; // copy buffer
                     vf.format = cached.format;
                     vf.color_space = cached.color_space;
                     vf.color_range = cached.color_range;
@@ -309,7 +363,7 @@ void PlaybackController::playback_thread_main() {
                     // IMPORTANT: Advance time for next frame even when cache hits
                     // Prefer drift-proof step accumulator for fractional framerates
                     int64_t delta = step_.next_delta_us();
-                    int64_t next_pts = current_pts + delta;
+                    int64_t next_pts = single_media_pts + delta;
                     if (duration_us_ > 0 && next_pts >= duration_us_) {
                         current_time_us_.store(duration_us_);
                         set_state(ve::playback::PlaybackState::Stopped);   // notify UI we're done
@@ -484,6 +538,8 @@ void PlaybackController::playback_thread_main() {
                 VE_DEBUG_ONLY(ve::log::info("Advanced time to: " + std::to_string(next_pts) + " (no-frame path)"));
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
+                } // End single-media playback mode
+            } // End has_content check
         } else {
             // Not playing, sleep longer
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
@@ -821,6 +877,209 @@ bool PlaybackController::set_timeline_track_pan(ve::timeline::TrackId track_id, 
         return false;
     }
     return timeline_audio_manager_->set_track_pan(track_id, pan);
+}
+
+bool PlaybackController::decode_timeline_frame(int64_t timestamp_us) {
+    if (!timeline_) {
+        return false;
+    }
+    
+    // Convert timestamp to TimePoint
+    ve::TimePoint timeline_position{timestamp_us, 1000000};
+    
+    // Find video tracks with segments at current time
+    const auto& tracks = timeline_->tracks();
+    for (const auto& track : tracks) {
+        if (track->type() != ve::timeline::Track::Video) {
+            continue;  // Skip non-video tracks
+        }
+        
+        // Find segment at current time
+        const ve::timeline::Segment* segment = track->get_segment_at_time(timeline_position);
+        if (!segment) {
+            continue;  // No segment at this time
+        }
+        
+        // Get media source for this segment
+        const auto* clip = timeline_->get_clip(segment->clip_id);
+        if (!clip || !clip->source) {
+            continue;  // No media source
+        }
+        
+        // Extract file path from MediaSource
+        const std::string& file_path = clip->source->path;
+        if (file_path.empty()) {
+            ve::log::warn("Timeline segment has empty media source path");
+            continue;
+        }
+        
+        // Get decoder for this media source
+        decode::IDecoder* decoder = nullptr;
+        {
+            std::scoped_lock lock(timeline_decoders_mutex_);
+            auto it = timeline_decoders_.find(file_path);
+            if (it != timeline_decoders_.end() && it->second) {
+                decoder = it->second.get();
+            } else {
+                // Create new decoder if not in cache
+                auto new_decoder = decode::create_decoder();
+                if (!new_decoder) {
+                    ve::log::error("Failed to create decoder for timeline media: " + file_path);
+                    continue;
+                }
+                
+                // Open the media file
+                decode::OpenParams params;
+                params.filepath = file_path;
+                params.video = true;
+                params.audio = true;
+                
+                if (!new_decoder->open(params)) {
+                    ve::log::error("Failed to open timeline media file: " + file_path);
+                    continue;
+                }
+                
+                decoder = new_decoder.get();
+                timeline_decoders_[file_path] = std::move(new_decoder);
+                ve::log::info("Created and cached timeline decoder for: " + file_path);
+            }
+        }
+        
+        if (!decoder) {
+            continue;  // Failed to get decoder
+        }
+        
+        // Calculate position within the segment's source media
+        // segment->start_time is timeline position, we need source position
+        int64_t source_timestamp_us = timestamp_us - segment->start_time.to_rational().num / segment->start_time.to_rational().den * 1000000;
+        source_timestamp_us = std::max(0LL, source_timestamp_us);  // Clamp to non-negative
+        
+        // Seek and decode frame
+        if (decoder->seek_microseconds(source_timestamp_us)) {
+            auto video_frame = decoder->read_video();
+            if (video_frame) {
+                // Update frame timestamp to timeline time
+                video_frame->pts = timestamp_us;
+                
+                // Dispatch to video callbacks
+                std::vector<CallbackEntry<VideoFrameCallback>> copy;
+                {
+                    std::scoped_lock lk(callbacks_mutex_);
+                    copy = video_video_entries_;
+                }
+                
+                for (const auto& entry : copy) {
+                    entry.fn(*video_frame);
+                }
+                
+                return true;  // Successfully decoded and dispatched frame
+            }
+        }
+    }
+    
+    return false;  // No video frame found at this time
+}
+
+decode::IDecoder* PlaybackController::get_timeline_decoder_at_time(int64_t timestamp_us) {
+    if (!timeline_) {
+        return nullptr;
+    }
+    
+    // Convert timestamp to TimePoint
+    ve::TimePoint timeline_position{timestamp_us, 1000000};
+    
+    // Find video tracks with segments at current time to get the media source
+    const auto& tracks = timeline_->tracks();
+    for (const auto& track : tracks) {
+        if (track->type() != ve::timeline::Track::Video) {
+            continue;  // Skip non-video tracks
+        }
+        
+        // Find segment at current time
+        const ve::timeline::Segment* segment = track->get_segment_at_time(timeline_position);
+        if (!segment) {
+            continue;  // No segment at this time
+        }
+        
+        // Get media source for this segment
+        const auto* clip = timeline_->get_clip(segment->clip_id);
+        if (!clip || !clip->source) {
+            continue;  // No media source
+        }
+        
+        // Extract file path from MediaSource
+        const std::string& file_path = clip->source->path;
+        if (file_path.empty()) {
+            ve::log::warn("Timeline segment has empty media source path");
+            continue;
+        }
+        
+        // Check decoder cache first
+        {
+            std::scoped_lock lock(timeline_decoders_mutex_);
+            auto it = timeline_decoders_.find(file_path);
+            if (it != timeline_decoders_.end() && it->second) {
+                // Return raw pointer to cached decoder
+                return it->second.get();
+            }
+        }
+        
+        // Create new decoder if not in cache
+        auto decoder = decode::create_decoder();
+        if (!decoder) {
+            ve::log::error("Failed to create decoder for timeline media: " + file_path);
+            continue;
+        }
+        
+        // Open the media file
+        decode::OpenParams params;
+        params.filepath = file_path;
+        params.video = true;
+        params.audio = true;
+        
+        if (!decoder->open(params)) {
+            ve::log::error("Failed to open timeline media file: " + file_path);
+            continue;
+        }
+        
+        // Cache the decoder and return raw pointer
+        decode::IDecoder* result = decoder.get();
+        {
+            std::scoped_lock lock(timeline_decoders_mutex_);
+            timeline_decoders_[file_path] = std::move(decoder);
+        }
+        
+        ve::log::info("Created and cached timeline decoder for: " + file_path);
+        return result;
+    }
+    
+    return nullptr;  // No video segment found at this time
+}
+
+bool PlaybackController::has_timeline_video_at_time(int64_t timestamp_us) const {
+    if (!timeline_) {
+        return false;
+    }
+    
+    ve::TimePoint timeline_position{timestamp_us, 1000000};
+    const auto& tracks = timeline_->tracks();
+    
+    for (const auto& track : tracks) {
+        if (track->type() == ve::timeline::Track::Video) {
+            const ve::timeline::Segment* segment = track->get_segment_at_time(timeline_position);
+            if (segment) {
+                return true;  // Found video segment at this time
+            }
+        }
+    }
+    
+    return false;  // No video segments at this time
+}
+
+void PlaybackController::clear_timeline_decoder_cache() {
+    std::scoped_lock lock(timeline_decoders_mutex_);
+    timeline_decoders_.clear();
+    ve::log::info("Timeline decoder cache cleared");
 }
 
 } // namespace ve::playback

@@ -212,7 +212,34 @@ void TimelineProcessingWorker::processForTimeline(const QString& filePath) {
         
         info.duration_seconds = static_cast<double>(info.probeResult.duration_us) / 1000000.0;
         info.success = true;
-        
+
+        // Prepare clip metadata for UI thread (avoids heavy work on GUI)
+        info.clip_display_name = QFileInfo(filePath).baseName().toStdString();
+        if (info.clip_display_name.empty()) {
+            info.clip_display_name = info.filePath.toStdString();
+        }
+
+        auto prepared_source = std::make_shared<ve::timeline::MediaSource>();
+        prepared_source->path = filePath.toStdString();
+        prepared_source->format_name = info.probeResult.format;
+        prepared_source->duration = ve::TimeDuration{info.probeResult.duration_us, 1000000};
+
+        for (const auto& stream : info.probeResult.streams) {
+            if (stream.type == "video") {
+                prepared_source->width = stream.width;
+                prepared_source->height = stream.height;
+                if (stream.fps > 0.0) {
+                    prepared_source->frame_rate = ve::TimeRational{static_cast<int64_t>(stream.fps * 1000.0), 1000};
+                }
+            } else if (stream.type == "audio") {
+                prepared_source->sample_rate = static_cast<int>(stream.sample_rate);
+                prepared_source->channels = static_cast<int>(stream.channels);
+            }
+        }
+
+        info.prepared_clip.source = prepared_source;
+        info.prepared_clip.name = info.clip_display_name;
+
         // Final progress update
         emit progressUpdate(100, "Timeline processing complete");
         
@@ -1773,12 +1800,12 @@ void MainWindow::remove_media_browser_placeholder() {
 
 void MainWindow::flushTimelineBatch() {
     SCOPE("flushTimelineBatch");
-    
-    QElapsedTimer budget; 
+
+    QElapsedTimer budget;
     budget.start();
     const qint64 budgetMs = 5;   // Very small budget for maximum UI responsiveness - max 5ms per batch
     int processed = 0;
-    
+
     while (!timeline_update_queue_.isEmpty()) {
         if (budget.elapsed() > budgetMs && processed > 0) {
             // Time budget exceeded, schedule next batch with adaptive delay for UI responsiveness
@@ -1786,186 +1813,181 @@ void MainWindow::flushTimelineBatch() {
             timeline_update_pump_->start(delay);
             return;
         }
-        
+
         TimelineInfo info = timeline_update_queue_.dequeue();
-        
+
         // Process one timeline update item
         if (!timeline_) {
             QMessageBox::warning(this, "Add to Timeline Failed", "No timeline available. Please create a new project first.");
             continue;
         }
-        
-        // Build media source / clip (single clip representing both streams)
-        auto media_source = std::make_shared<ve::timeline::MediaSource>();
-        media_source->path = info.filePath.toStdString();
-        media_source->duration = ve::TimeDuration{info.probeResult.duration_us, 1000000};
-        media_source->format_name = info.probeResult.format;
-        
-        for (const auto& stream : info.probeResult.streams) {
-            if (stream.type == "video") {
-                media_source->width = stream.width;
-                media_source->height = stream.height;
-                if (stream.fps > 0) {
-                    media_source->frame_rate = ve::TimeRational{static_cast<int64_t>(stream.fps * 1000), 1000};
+
+        auto prepared_clip = info.prepared_clip;
+        if (!prepared_clip.source) {
+            auto fallback_source = std::make_shared<ve::timeline::MediaSource>();
+            fallback_source->path = info.filePath.toStdString();
+            fallback_source->format_name = info.probeResult.format;
+            fallback_source->duration = ve::TimeDuration{info.probeResult.duration_us, 1000000};
+
+            for (const auto& stream : info.probeResult.streams) {
+                if (stream.type == "video") {
+                    fallback_source->width = stream.width;
+                    fallback_source->height = stream.height;
+                    if (stream.fps > 0.0) {
+                        fallback_source->frame_rate = ve::TimeRational{static_cast<int64_t>(stream.fps * 1000.0), 1000};
+                    }
+                } else if (stream.type == "audio") {
+                    fallback_source->sample_rate = static_cast<int>(stream.sample_rate);
+                    fallback_source->channels = static_cast<int>(stream.channels);
                 }
-            } else if (stream.type == "audio") {
-                media_source->sample_rate = stream.sample_rate;
-                media_source->channels = stream.channels;
             }
+
+            prepared_clip.source = fallback_source;
         }
 
-        std::string clip_name = QFileInfo(info.filePath).baseName().toStdString();
-        auto clip_id = timeline_->add_clip(media_source, clip_name);
+        if (!prepared_clip.source) {
+            ve::log::warn("Timeline batch item missing prepared clip source for " + info.filePath.toStdString());
+            continue;
+        }
 
-        // Ensure target track exists (expand as needed)
-        // For media with both video and audio, create both track types
+        if (prepared_clip.name.empty()) {
+            prepared_clip.name = !info.clip_display_name.empty() ? info.clip_display_name : QFileInfo(info.filePath).baseName().toStdString();
+        }
+
+        const std::string clip_name = prepared_clip.name;
+        ve::TimeDuration clip_duration = prepared_clip.source->duration;
+        if (clip_duration.to_rational().num == 0) {
+            clip_duration = ve::TimeDuration{info.probeResult.duration_us, 1000000};
+        }
+
+        ve::timeline::ClipId clip_id = timeline_->commit_prepared_clip(prepared_clip);
+        if (clip_id == 0) {
+            clip_id = timeline_->add_clip(prepared_clip.source, clip_name);
+        }
+
+        auto ensure_track = [&](int desired_index, ve::timeline::Track::Type type) -> int {
+            if (desired_index < 0) {
+                desired_index = 0;
+            }
+
+            while (static_cast<int>(timeline_->tracks().size()) <= desired_index) {
+                std::string auto_name = (type == ve::timeline::Track::Video ? "Video " : "Audio ") + std::to_string(timeline_->tracks().size() + 1);
+                timeline_->add_track(type, auto_name);
+            }
+
+            if (timeline_->tracks()[desired_index]->type() != type) {
+                desired_index = static_cast<int>(timeline_->tracks().size());
+                std::string auto_name = (type == ve::timeline::Track::Video ? "Video " : "Audio ") + std::to_string(desired_index + 1);
+                timeline_->add_track(type, auto_name);
+            }
+
+            return desired_index;
+        };
+
+        auto add_segment_to_track = [&](int track_index, const std::string& name) {
+            if (track_index < 0 || static_cast<int>(timeline_->tracks().size()) <= track_index) {
+                return;
+            }
+
+            auto* track = timeline_->tracks()[track_index].get();
+            if (!track) {
+                return;
+            }
+
+            ve::timeline::Segment segment;
+            segment.clip_id = clip_id;
+            segment.start_time = info.start_time;
+            segment.duration = clip_duration;
+            segment.name = name;
+
+            if (!track->add_segment(segment)) {
+                ve::log::warn("Failed to add segment to track index " + std::to_string(track_index));
+            }
+        };
+
         if (info.has_video && info.has_audio) {
-            // Create separate video and audio tracks for mixed media
-            
-            // Ensure video track exists
-            while (static_cast<int>(timeline_->tracks().size()) <= info.track_index) {
-                std::string auto_name = "Video " + std::to_string(timeline_->tracks().size() + 1);
-                const auto new_track_id = timeline_->add_track(ve::timeline::Track::Video, auto_name);
-                (void)new_track_id;
-            }
-            
-            // Ensure audio track exists (next track after video)
-            int audio_track_index = info.track_index + 1;
-            while (static_cast<int>(timeline_->tracks().size()) <= audio_track_index) {
-                std::string auto_name = "Audio " + std::to_string(timeline_->tracks().size() + 1);
-                const auto new_track_id = timeline_->add_track(ve::timeline::Track::Audio, auto_name);
-                (void)new_track_id;
-            }
-            
-            // Create video segment
-            ve::timeline::Segment video_segment;
-            video_segment.clip_id = clip_id;
-            video_segment.start_time = info.start_time;
-            video_segment.duration = media_source->duration;
-            video_segment.name = clip_name + " (Video)";
-            
-            auto* video_track = timeline_->tracks()[info.track_index].get();
-            if(video_track && video_track->add_segment(video_segment)) {
-                ve::log::info("Added video segment to track index " + std::to_string(info.track_index));
-            }
-            
-            // Create audio segment
-            ve::timeline::Segment audio_segment;
-            audio_segment.clip_id = clip_id;
-            audio_segment.start_time = info.start_time;
-            audio_segment.duration = media_source->duration;
-            audio_segment.name = clip_name + " (Audio)";
-            
-            auto* audio_track = timeline_->tracks()[audio_track_index].get();
-            if(audio_track && audio_track->add_segment(audio_segment)) {
-                ve::log::info("Added audio segment to track index " + std::to_string(audio_track_index));
-            }
-            
+            int video_track_index = ensure_track(info.track_index, ve::timeline::Track::Video);
+            int audio_track_index = ensure_track(video_track_index + 1, ve::timeline::Track::Audio);
+
+            add_segment_to_track(video_track_index, clip_name + " (Video)");
+            add_segment_to_track(audio_track_index, clip_name + " (Audio)");
         } else {
-            // Single track type media (video-only or audio-only)
             ve::timeline::Track::Type track_type = info.has_video ? ve::timeline::Track::Video : ve::timeline::Track::Audio;
-            
-            // For audio-only files, ensure we don't try to add to a video track
             int target_track_index = info.track_index;
+
             if (!info.has_video && info.has_audio) {
-                // Audio-only file: find first available audio track or create new one
                 bool found_available_audio_track = false;
                 for (size_t i = 0; i < timeline_->tracks().size(); ++i) {
-                    if (timeline_->tracks()[i]->type() == ve::timeline::Track::Audio) {
-                        // Check if this audio track has space for our segment
-                        bool has_space = true;
-                        for (const auto& existing_segment : timeline_->tracks()[i]->segments()) {
-                            if (existing_segment.start_time <= info.start_time && 
-                                existing_segment.end_time() > info.start_time) {
-                                has_space = false;
-                                break;
-                            }
-                        }
-                        if (has_space) {
-                            target_track_index = static_cast<int>(i);
-                            found_available_audio_track = true;
+                    const auto* track = timeline_->tracks()[i].get();
+                    if (!track || track->type() != ve::timeline::Track::Audio) {
+                        continue;
+                    }
+
+                    bool has_space = true;
+                    for (const auto& existing_segment : track->segments()) {
+                        if (existing_segment.start_time <= info.start_time &&
+                            existing_segment.end_time() > info.start_time) {
+                            has_space = false;
                             break;
                         }
                     }
+
+                    if (has_space) {
+                        target_track_index = static_cast<int>(i);
+                        found_available_audio_track = true;
+                        break;
+                    }
                 }
+
                 if (!found_available_audio_track) {
-                    // Create new audio track
                     target_track_index = static_cast<int>(timeline_->tracks().size());
                     ve::log::info("Creating new audio track at index " + std::to_string(target_track_index));
                 }
             }
-            
-            // Ensure target track exists
-            int track_creation_attempts = 0;
-            const int max_track_creation_attempts = 10; // Prevent infinite loops
-            while (static_cast<int>(timeline_->tracks().size()) <= target_track_index && 
-                   track_creation_attempts < max_track_creation_attempts) {
-                std::string auto_name = (track_type == ve::timeline::Track::Video ? "Video " : "Audio ") + std::to_string(timeline_->tracks().size() + 1);
-                const auto new_track_id = timeline_->add_track(track_type, auto_name);
-                std::string track_type_str = (track_type == ve::timeline::Track::Video ? "video" : "audio");
-                ve::log::info("Created new " + track_type_str + " track: " + auto_name);
-                (void)new_track_id;
-                track_creation_attempts++;
-            }
-            
-            if (track_creation_attempts >= max_track_creation_attempts) {
-                ve::log::error("Failed to create track after " + std::to_string(max_track_creation_attempts) + " attempts");
-                continue;
-            }
-            
-            // Create segment referencing clip
-            ve::timeline::Segment segment;
-            segment.clip_id = clip_id;
-            segment.start_time = info.start_time;
-            segment.duration = media_source->duration;
-            segment.name = clip_name;
 
-            auto* track = timeline_->tracks()[target_track_index].get();
-            if(track && track->add_segment(segment)) {
-                ve::log::info("Added segment to track index " + std::to_string(target_track_index));
-            } else {
-                ve::log::warn("Failed to add segment to track index " + std::to_string(info.track_index));
-            }
+            target_track_index = ensure_track(target_track_index, track_type);
+            add_segment_to_track(target_track_index, clip_name);
         }
-        
+
         processed++;
-        
+
         // Check budget after each item for maximum responsiveness
         if (budget.elapsed() > budgetMs && processed > 0) {
             break;
         }
     }
-    
-    // Defer timeline UI update to prevent blocking (only update when batch is complete or queue is empty)
-    bool should_update_ui = timeline_update_queue_.isEmpty() || processed >= 8; // Update UI every 8 items or when done
-    
+
+    // Defer timeline UI update to prevent blocking (only update when batch is complete)
+    bool should_update_ui = timeline_update_queue_.isEmpty();
+
     if (timeline_panel_ && should_update_ui) {
         // Use QTimer::singleShot to defer the expensive UI update off the current call stack
         QTimer::singleShot(0, this, [this]() {
             SCOPE("deferred timeline UI update");
-            
+
             // Update timeline panel data (lightweight operation)
             timeline_panel_->set_timeline(timeline_);
-            
+
             // Defer status update further to avoid UI thread congestion
             QTimer::singleShot(50, this, [this]() {
                 SCOPE("deferred status message");
                 status_label_->setText("Media added to timeline successfully!");
                 status_label_->setStyleSheet("color: green;");
-                
+
                 ve::log::info("Timeline UI updated successfully");
             });
         });
     }
-    
+
     // Continue processing remaining items with optimized delay
     if (!timeline_update_queue_.isEmpty()) {
         // Use shorter delay for faster processing, but ensure UI responsiveness
         timeline_update_pump_->start(timeline_update_queue_.size() > 5 ? 25 : 100);  // Faster for large queues, slower for small ones
     }
-    
+
     ve::log::info("Processed " + std::to_string(processed) + " timeline updates in " + std::to_string(budget.elapsed()) + "ms");
 }
+
 
 // End of MainWindow implementation
 } // namespace ve::ui

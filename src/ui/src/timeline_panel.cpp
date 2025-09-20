@@ -21,6 +21,12 @@
 #include <QEnterEvent>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
+#include <limits>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 #include <atomic>
 // Global variable to track timeline operations
@@ -45,6 +51,14 @@ TimelinePanel::TimelinePanel(QWidget* parent)
     , selection_start_(ve::TimePoint{0})
     , selection_end_(ve::TimePoint{0})
     , update_timer_(nullptr)  // Initialize update timer to null
+    , throttle_timer_(nullptr) // Initialize throttle timer
+    , pending_heavy_update_(false) // No pending updates initially
+    , segments_being_added_(0) // No segments being added initially
+    , cache_zoom_level_(-1) // Invalid zoom level initially
+    , cached_hit_segment_id_(0)
+    , cached_hit_segment_index_(std::numeric_limits<size_t>::max())
+    , cached_hit_track_index_(std::numeric_limits<size_t>::max())
+    , cached_hit_timeline_version_(0)
 {
     setMinimumHeight(200);
     setMouseTracking(true);
@@ -63,6 +77,11 @@ TimelinePanel::TimelinePanel(QWidget* parent)
     background_color_ = QColor(45, 45, 45);
     grid_color_ = QColor(70, 70, 70);
     
+    // Initialize waveform systems - simplified approach for now
+    // TODO: Implement full waveform caching system when ready
+    // waveform_cache_ = ve::audio::WaveformCache::create(cache_config);
+    // waveform_generator_ = ve::audio::WaveformGenerator::create(gen_config);
+    
     // Add a QTimer for heartbeat debugging - reduced frequency for release
     heartbeat_timer_ = new QTimer(this);
     connect(heartbeat_timer_, &QTimer::timeout, this, [this]() {
@@ -77,8 +96,13 @@ TimelinePanel::TimelinePanel(QWidget* parent)
 
 void TimelinePanel::set_timeline(ve::timeline::Timeline* timeline) {
     timeline_ = timeline;
+    cached_hit_segment_id_ = 0;
+    cached_hit_segment_index_ = std::numeric_limits<size_t>::max();
+    cached_hit_track_index_ = std::numeric_limits<size_t>::max();
+    cached_hit_timeline_version_ = 0;
+
     
-    // Instead of immediate update(), use deferred update to batch multiple calls
+    // Enhanced throttling system for better performance during bulk operations
     if (!update_timer_) {
         update_timer_ = new QTimer(this);
         update_timer_->setSingleShot(true);
@@ -86,7 +110,32 @@ void TimelinePanel::set_timeline(ve::timeline::Timeline* timeline) {
         connect(update_timer_, &QTimer::timeout, this, QOverload<>::of(&QWidget::update));
     }
     
-    // Only start timer if it's not already running (batch multiple set_timeline calls)
+    // Add heavy operation throttling timer for bulk segment additions
+    if (!throttle_timer_) {
+        throttle_timer_ = new QTimer(this);
+        throttle_timer_->setSingleShot(true);
+        throttle_timer_->setInterval(100); // 100ms for heavy operations
+        connect(throttle_timer_, &QTimer::timeout, this, [this]() {
+            pending_heavy_update_ = false;
+            QWidget::update(); // Force full redraw after throttle period
+        });
+    }
+    
+    // Detect if we're in bulk operation mode (multiple set_timeline calls)
+    segments_being_added_++;
+    
+    // Use aggressive throttling during bulk operations
+    if (segments_being_added_ > 3) {
+        if (!pending_heavy_update_) {
+            pending_heavy_update_ = true;
+            throttle_timer_->start(); // Use heavy throttling
+        }
+        // Reset counter after some time
+        QTimer::singleShot(200, this, [this]() { segments_being_added_ = 0; });
+        return;
+    }
+    
+    // Normal throttling for single operations
     if (!update_timer_->isActive()) {
         update_timer_->start();
     }
@@ -336,7 +385,7 @@ void TimelinePanel::mousePressEvent(QMouseEvent* event) {
 }
 
 void TimelinePanel::mouseMoveEvent(QMouseEvent* event) {
-    // Time-based throttling to prevent excessive updates (60fps max)
+    // Enhanced time-based throttling to prevent excessive updates
     static auto last_update = std::chrono::high_resolution_clock::now();
     auto now = std::chrono::high_resolution_clock::now();
     auto time_since_last = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_update);
@@ -345,9 +394,9 @@ void TimelinePanel::mouseMoveEvent(QMouseEvent* event) {
     
     // Check if we need to start dragging (if segment operations are prepared but not yet dragging)
     if ((dragging_segment_ || resizing_segment_) && !dragging_) {
-        // Start actual dragging if mouse moved enough
+        // Start actual dragging if mouse moved enough - higher threshold for stability
         QPoint diff = event->pos() - last_mouse_pos_;
-        if (abs(diff.x()) > 3 || abs(diff.y()) > 3) { // Minimum movement threshold
+        if (abs(diff.x()) > 5 || abs(diff.y()) > 5) { // Increased threshold for less sensitivity
             dragging_ = true;
             grabMouse(); // Now grab mouse for actual drag operation
         }
@@ -355,8 +404,8 @@ void TimelinePanel::mouseMoveEvent(QMouseEvent* event) {
     
     if (dragging_) {
         if (event->pos().y() < TIMECODE_HEIGHT) {
-            // Scrubbing in timecode ruler - throttle updates
-            if (time_since_last.count() >= 16) {  // ~60fps
+            // Scrubbing in timecode ruler - more aggressive throttling
+            if (time_since_last.count() >= 33) {  // ~30fps for scrubbing
                 ve::TimePoint time = pixel_to_time(event->pos().x());
                 current_time_ = time;
                 emit time_changed(time);
@@ -364,16 +413,16 @@ void TimelinePanel::mouseMoveEvent(QMouseEvent* event) {
                 last_update = now;
             }
         } else {
-            // Dragging in track area - throttle updates
-            if (time_since_last.count() >= 16) {  // ~60fps
+            // Dragging in track area - throttle heavily during drag
+            if (time_since_last.count() >= 33) {  // ~30fps for dragging
                 update_drag(event->pos());
                 last_update = now;
             }
         }
     } else {
-        // Throttle cursor updates - only update every 10 pixels movement to reduce calls
+        // Throttle cursor updates heavily - only update every 15 pixels movement and reduce frequency
         QPoint diff = event->pos() - last_mouse_pos_;
-        if ((abs(diff.x()) > 10 || abs(diff.y()) > 10) && time_since_last.count() >= 32) {  // ~30fps for cursor updates
+        if ((abs(diff.x()) > 15 || abs(diff.y()) > 15) && time_since_last.count() >= 50) {  // ~20fps for cursor updates
             update_cursor(event->pos());
             last_update = now;
         }
@@ -458,6 +507,25 @@ void TimelinePanel::keyPressEvent(QKeyEvent* event) {
         case Qt::Key_V:
             if (event->modifiers() & Qt::ControlModifier) {
                 paste_segments();
+            }
+            break;
+            
+        case Qt::Key_Z:
+            if (event->modifiers() & Qt::ControlModifier) {
+                if (event->modifiers() & Qt::ShiftModifier) {
+                    // Ctrl+Shift+Z for redo
+                    request_redo();
+                } else {
+                    // Ctrl+Z for undo
+                    request_undo();
+                }
+            }
+            break;
+            
+        case Qt::Key_Y:
+            if (event->modifiers() & Qt::ControlModifier) {
+                // Ctrl+Y for redo (alternative)
+                request_redo();
             }
             break;
             
@@ -595,15 +663,43 @@ void TimelinePanel::draw_track(QPainter& painter, const ve::timeline::Track& tra
 void TimelinePanel::draw_segments(QPainter& painter, const ve::timeline::Track& track, int track_y) {
     const auto& segments = track.segments();
     
-    // Get visible viewport for aggressive culling
+    // Enhanced viewport culling for better performance
     int viewport_left = -scroll_x_;
     int viewport_right = viewport_left + width();
+    double viewport_margin = 50.0; // Pixels margin for smooth scrolling
     
     // Quick exit if no segments
     if (segments.empty()) return;
     
+    // Pre-filter segments to only those potentially visible
+    std::vector<const ve::timeline::Segment*> visible_segments;
+    visible_segments.reserve(segments.size());
+    
+    const int viewport_margin_pixels = static_cast<int>(viewport_margin);
+    const int viewport_right_with_margin = viewport_right + viewport_margin_pixels;
+    const int viewport_left_with_margin = viewport_left - viewport_margin_pixels;
+
+    for (const auto& segment : segments) {
+        int start_x = time_to_pixel(segment.start_time);
+        if (start_x > viewport_right_with_margin) {
+            break;
+        }
+
+        int end_x = time_to_pixel(segment.end_time());
+
+        // Skip segments that are completely outside viewport with margin
+        if (end_x < viewport_left_with_margin) {
+            continue;
+        }
+
+        visible_segments.push_back(&segment);
+    }
+    
+    // Early exit if no visible segments
+    if (visible_segments.empty()) return;
+    
     // Performance circuit breaker - limit number of segments processed per paint event
-    static int max_segments_per_paint = 50;  // Limit to prevent UI freezing
+    static int max_segments_per_paint = 40;  // Reduced limit for better performance
     int segments_drawn = 0;
     
     // Pre-calculate common values - much brighter colors for better visibility
@@ -626,10 +722,17 @@ void TimelinePanel::draw_segments(QPainter& painter, const ve::timeline::Track& 
     bool is_video_track = (track.type() == ve::timeline::Track::Video);
     QColor base_color = is_video_track ? cached_video_color : cached_audio_color;
     
-    for (const auto& segment : segments) {
+    for (const auto* segment_ptr : visible_segments) {
+        const auto& segment = *segment_ptr;
+        
         // Performance circuit breaker
         if (segments_drawn >= max_segments_per_paint) {
-            ve::log::warn("Timeline: Segment limit reached (" + std::to_string(max_segments_per_paint) + "), skipping remaining segments");
+            static auto last_segment_limit_warning = std::chrono::steady_clock::time_point{};
+            auto now = std::chrono::steady_clock::now();
+            if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_segment_limit_warning).count() > 1000) {
+                ve::log::warn("Timeline: Segment limit reached (" + std::to_string(max_segments_per_paint) + "), skipping remaining segments");
+                last_segment_limit_warning = now;
+            }
             break;
         }
         
@@ -642,12 +745,26 @@ void TimelinePanel::draw_segments(QPainter& painter, const ve::timeline::Track& 
         int end_x = time_to_pixel(segment.end_time());
         int segment_width = end_x - start_x;
         
-        // More aggressive culling - skip segments that are barely visible
+        // Skip very small segments that would be barely visible
         if (segment_width < 2) continue;
-        if (end_x < viewport_left - 10 || start_x > viewport_right + 10) continue;
         
         QRect segment_rect(start_x, track_y + 5, segment_width, TRACK_HEIGHT - 10);
         
+        // Try to use cached segment rendering for better performance
+        QPixmap* cached_pixmap = get_cached_segment(segment.id, segment_rect);
+        if (cached_pixmap && !cached_pixmap->isNull()) {
+            painter.drawPixmap(segment_rect.topLeft(), *cached_pixmap);
+            segments_drawn++;
+            continue;
+        }
+        
+        // For now, disable caching to avoid QPainter conflicts
+        // TODO: Implement caching in a separate render pass
+        // Create a pixmap to cache this segment rendering
+        // QPixmap segment_pixmap(segment_rect.size());
+        // segment_pixmap.fill(Qt::transparent);
+        // QPainter cache_painter(&segment_pixmap);
+        QRect local_rect = segment_rect; // Use original rect instead of local rect
         
         // Check if segment is selected (cache this lookup)
         bool is_selected = std::find(selected_segments_.begin(), selected_segments_.end(), 
@@ -657,64 +774,71 @@ void TimelinePanel::draw_segments(QPainter& painter, const ve::timeline::Track& 
         
         // For very small segments, use simple solid fill with stronger color
         if (segment_width < 20) {
-            painter.fillRect(segment_rect, segment_color.lighter(110));  // Even brighter for small segments
+            painter.fillRect(local_rect, segment_color.lighter(110));  // Even brighter for small segments
             // Add white border for small segments too
             painter.setPen(QPen(Qt::white, 1));
-            painter.drawRect(segment_rect);
-            // Skip all other details for tiny segments
+            painter.drawRect(local_rect);
+            
+            // Skip caching for now to avoid QPainter conflicts
+            // cache_segment(segment.id, segment_rect, segment_pixmap);
+            // painter.drawPixmap(segment_rect.topLeft(), segment_pixmap);
+            segments_drawn++;
             continue;
         }
         
         // Draw segment background - use solid color instead of gradient for better performance
-        painter.fillRect(segment_rect, segment_color);
+        painter.fillRect(local_rect, segment_color);
         
         // Simple border for better performance
         painter.setPen(QPen(Qt::white, 1));
-        painter.drawRect(segment_rect);
+        painter.drawRect(local_rect);
         
         // Only draw details for segments larger than minimum threshold  
-        if (segment_width < 40) continue;  // Increased threshold to skip more text rendering
-        
-        // Draw clip duration indicator only for larger segments
-        if (segment_width > 60) {  // Only show duration for larger segments
-            auto duration = segment.duration.to_rational();
-            double duration_seconds = static_cast<double>(duration.num) / duration.den;
-            QString duration_text = QString("%1s").arg(duration_seconds, 0, 'f', 1);
+        if (segment_width >= 40) {  // Draw details for larger segments
             
-            painter.setPen(cached_text_color);
-            painter.setFont(cached_small_font);
-            
-            QRect duration_rect = segment_rect.adjusted(3, segment_rect.height() - 15, -3, -2);
-            painter.drawText(duration_rect, Qt::AlignRight | Qt::AlignBottom, duration_text);
-        }
-        
-        // Segment name (if wide enough) - further optimized
-        if (segment_width > 80) {  // Increased threshold for text rendering
-            painter.setFont(cached_name_font);
-            
-            QRect text_rect = segment_rect.adjusted(5, 2, -5, -18);
-            QString segment_name = QString::fromStdString(segment.name);
-            
-            // Truncate name if too long (cache font metrics)
-            static QFontMetrics cached_fm(cached_name_font);
-            if (cached_fm.horizontalAdvance(segment_name) > text_rect.width()) {
-                segment_name = cached_fm.elidedText(segment_name, Qt::ElideRight, text_rect.width());
+            // Draw clip duration indicator only for larger segments
+            if (segment_width > 60) {  // Only show duration for larger segments
+                auto duration = segment.duration.to_rational();
+                double duration_seconds = static_cast<double>(duration.num) / duration.den;
+                QString duration_text = QString("%1s").arg(duration_seconds, 0, 'f', 1);
+                
+                painter.setPen(cached_text_color);
+                painter.setFont(cached_small_font);
+                
+                QRect duration_rect = local_rect.adjusted(3, local_rect.height() - 15, -3, -2);
+                painter.drawText(duration_rect, Qt::AlignRight | Qt::AlignBottom, duration_text);
             }
             
-            painter.drawText(text_rect, Qt::AlignLeft | Qt::AlignTop, segment_name);
-        }
-        
-        // Temporarily disable waveforms/thumbnails for performance testing
-        // TODO: Re-enable once performance is acceptable
-        /*
-        if (segment_width > 100) {  // Increased threshold for expensive operations
-            if (is_video_track) {
-                draw_video_thumbnail(painter, segment_rect, segment);
-            } else {
-                draw_audio_waveform(painter, segment_rect, segment);
+            // Segment name (if wide enough) - further optimized
+            if (segment_width > 80) {  // Increased threshold for text rendering
+                painter.setFont(cached_name_font);
+                
+                QRect text_rect = local_rect.adjusted(5, 2, -5, -18);
+                QString segment_name = QString::fromStdString(segment.name);
+                
+                // Truncate name if too long (cache font metrics)
+                static QFontMetrics cached_fm(cached_name_font);
+                if (cached_fm.horizontalAdvance(segment_name) > text_rect.width()) {
+                    segment_name = cached_fm.elidedText(segment_name, Qt::ElideRight, text_rect.width());
+                }
+                
+                painter.drawText(text_rect, Qt::AlignLeft | Qt::AlignTop, segment_name);
+            }
+            
+            // Only draw waveforms for larger segments to improve performance
+            if (segment_width > 120) {  // Increased threshold - only for large segments
+                if (is_video_track) {
+                    // For direct painter, we use the full rect
+                    draw_video_thumbnail(painter, local_rect, segment);
+                } else {
+                    draw_cached_waveform(painter, local_rect, segment);
+                }
             }
         }
-        */
+        
+        // Skip caching for now to avoid QPainter conflicts
+        // cache_segment(segment.id, segment_rect, segment_pixmap);
+        // painter.drawPixmap(segment_rect.topLeft(), segment_pixmap);
         
         // Draw segment handles for resizing (if selected)
         if (is_selected && segment_width > 20) {
@@ -1011,6 +1135,15 @@ void TimelinePanel::handle_context_menu(const QPoint& pos) {
         // Segment-specific menu - use segment ID instead of pointer
         QAction* splitAct = menu.addAction("Split Segment");
         QAction* deleteAct = menu.addAction("Delete Segment");
+        menu.addSeparator();
+        QAction* copyAct = menu.addAction("Copy Segment");
+        QAction* cutAct = menu.addAction("Cut Segment");
+        
+        // Enable paste if clipboard has content
+        QAction* pasteAct = nullptr;
+        if (!clipboard_segments_.empty()) {
+            pasteAct = menu.addAction("Paste Here");
+        }
         
         // Use segment ID in lambda to avoid dangling pointer issues
         connect(splitAct, &QAction::triggered, this, [this, segment_id, pos]() {
@@ -1058,9 +1191,59 @@ void TimelinePanel::handle_context_menu(const QPoint& pos) {
                 }
             }
         });
+        
+        connect(copyAct, &QAction::triggered, this, [this, segment_id]() {
+            ve::log::info("Copy segment requested id=" + std::to_string(segment_id));
+            
+            // Select this segment if not already selected
+            if (std::find(selected_segments_.begin(), selected_segments_.end(), segment_id) == selected_segments_.end()) {
+                selected_segments_.clear();
+                selected_segments_.push_back(segment_id);
+                emit selection_changed();
+            }
+            
+            copy_selected_segments();
+        });
+        
+        connect(cutAct, &QAction::triggered, this, [this, segment_id]() {
+            ve::log::info("Cut segment requested id=" + std::to_string(segment_id));
+            
+            // Select this segment if not already selected
+            if (std::find(selected_segments_.begin(), selected_segments_.end(), segment_id) == selected_segments_.end()) {
+                selected_segments_.clear();
+                selected_segments_.push_back(segment_id);
+                emit selection_changed();
+            }
+            
+            cut_selected_segments();
+        });
+        
+        if (pasteAct) {
+            connect(pasteAct, &QAction::triggered, this, [this, pos]() {
+                ve::log::info("Paste at position requested");
+                
+                // Set playhead to paste position for accurate pasting
+                ve::TimePoint paste_time = pixel_to_time(pos.x());
+                set_current_time(paste_time);
+                
+                paste_segments();
+            });
+        }
     } else {
         // Track-specific menu
         QAction* addClipAct = menu.addAction("Add Clip Here");
+        
+        // Add paste option if clipboard has content
+        QAction* pasteTrackAct = nullptr;
+        if (!clipboard_segments_.empty()) {
+            pasteTrackAct = menu.addAction("Paste Here");
+        }
+        
+        // Add separator and undo/redo options
+        menu.addSeparator();
+        QAction* undoAct = menu.addAction("Undo");
+        QAction* redoAct = menu.addAction("Redo");
+        
         connect(addClipAct, &QAction::triggered, this, [this, pos]() {
             ve::log::info("Add clip requested at position");
             
@@ -1088,6 +1271,26 @@ void TimelinePanel::handle_context_menu(const QPoint& pos) {
                              " at time " + std::to_string(drop_time.to_rational().num) + 
                              " on track " + std::to_string(track_index));
             }
+        });
+        
+        if (pasteTrackAct) {
+            connect(pasteTrackAct, &QAction::triggered, this, [this, pos]() {
+                ve::log::info("Paste on track requested");
+                
+                // Set playhead to paste position for accurate pasting
+                ve::TimePoint paste_time = pixel_to_time(pos.x());
+                set_current_time(paste_time);
+                
+                paste_segments();
+            });
+        }
+        
+        connect(undoAct, &QAction::triggered, this, [this]() {
+            request_undo();
+        });
+        
+        connect(redoAct, &QAction::triggered, this, [this]() {
+            request_redo();
         });
     }
     
@@ -1125,31 +1328,88 @@ ve::timeline::Segment* TimelinePanel::find_segment_at_pos(const QPoint& pos) {
     if (!timeline_ || pos.y() < TIMECODE_HEIGHT) {
         return nullptr;
     }
-    
+
     int track_index = track_at_y(pos.y());
-    
     if (track_index < 0) {
         return nullptr;
     }
-    
+
     const auto& tracks = timeline_->tracks();
-    
     if (track_index >= static_cast<int>(tracks.size())) {
         return nullptr;
     }
-    
+
+    auto* track = tracks[track_index].get();
+    auto& segments = const_cast<std::vector<ve::timeline::Segment>&>(track->segments());
+    if (segments.empty()) {
+        cached_hit_segment_id_ = 0;
+        cached_hit_segment_index_ = std::numeric_limits<size_t>::max();
+        cached_hit_track_index_ = std::numeric_limits<size_t>::max();
+        cached_hit_timeline_version_ = 0;
+        return nullptr;
+    }
+
     ve::TimePoint click_time = pixel_to_time(pos.x());
-    
-    // Search through segments in the track
-    auto& segments = const_cast<std::vector<ve::timeline::Segment>&>(tracks[track_index]->segments());
-    // Removed segment search debug logging for performance - called on every mouse click
-    
-    for (auto& segment : segments) {
-        if (click_time >= segment.start_time && click_time <= segment.end_time()) {
-            return &segment;
+    const uint64_t current_version = timeline_->version();
+
+    if (cached_hit_segment_id_ != 0 &&
+        cached_hit_timeline_version_ == current_version &&
+        cached_hit_track_index_ == static_cast<size_t>(track_index) &&
+        cached_hit_segment_index_ < segments.size()) {
+        auto& cached_segment = segments[cached_hit_segment_index_];
+        if (cached_segment.id == cached_hit_segment_id_ &&
+            click_time >= cached_segment.start_time &&
+            click_time <= cached_segment.end_time()) {
+            return &cached_segment;
         }
     }
-    
+
+    int left = 0;
+    int right = static_cast<int>(segments.size()) - 1;
+
+    if (cached_hit_segment_id_ != 0 &&
+        cached_hit_timeline_version_ == current_version &&
+        cached_hit_track_index_ == static_cast<size_t>(track_index) &&
+        cached_hit_segment_index_ < segments.size() &&
+        segments[cached_hit_segment_index_].id == cached_hit_segment_id_) {
+        auto& cached_segment = segments[cached_hit_segment_index_];
+        if (click_time < cached_segment.start_time) {
+            right = static_cast<int>(cached_hit_segment_index_) - 1;
+        } else if (click_time > cached_segment.end_time()) {
+            left = static_cast<int>(cached_hit_segment_index_) + 1;
+        } else {
+            cached_hit_segment_id_ = cached_segment.id;
+            cached_hit_track_index_ = static_cast<size_t>(track_index);
+            cached_hit_timeline_version_ = current_version;
+            return &cached_segment;
+        }
+    }
+
+    while (left <= right) {
+        int mid = left + (right - left) / 2;
+        auto& segment = segments[mid];
+
+        if (click_time < segment.start_time) {
+            right = mid - 1;
+            continue;
+        }
+
+        if (click_time > segment.end_time()) {
+            left = mid + 1;
+            continue;
+        }
+
+        cached_hit_segment_id_ = segment.id;
+        cached_hit_segment_index_ = static_cast<size_t>(mid);
+        cached_hit_track_index_ = static_cast<size_t>(track_index);
+        cached_hit_timeline_version_ = current_version;
+        return &segment;
+    }
+
+    cached_hit_segment_id_ = 0;
+    cached_hit_segment_index_ = std::numeric_limits<size_t>::max();
+    cached_hit_track_index_ = std::numeric_limits<size_t>::max();
+    cached_hit_timeline_version_ = 0;
     return nullptr;
 }
 
@@ -1181,15 +1441,140 @@ void TimelinePanel::cut_selected_segments() {
 }
 
 void TimelinePanel::copy_selected_segments() {
-    if (selected_segments_.empty()) return;
+    if (selected_segments_.empty()) {
+        ve::log::info("No segments selected for copying");
+        return;
+    }
     
-    // Store selected segments for pasting (future enhancement)
-    ve::log::info("Copied " + std::to_string(selected_segments_.size()) + " segments");
+    if (!timeline_) {
+        ve::log::warn("No timeline available for copying segments");
+        return;
+    }
+    
+    // Clear existing clipboard data
+    clipboard_segments_.clear();
+    
+    // Find and copy each selected segment's data
+    for (auto segment_id : selected_segments_) {
+        const auto& tracks = timeline_->tracks();
+        for (size_t track_idx = 0; track_idx < tracks.size(); ++track_idx) {
+            auto* track = tracks[track_idx].get();
+            const auto& segments = track->segments();
+            
+            auto segment_it = std::find_if(segments.begin(), segments.end(),
+                [segment_id](const ve::timeline::Segment& seg) { 
+                    return seg.id == segment_id; 
+                });
+            
+            if (segment_it != segments.end()) {
+                // Store segment data for pasting with relative positioning
+                ClipboardSegment clipboard_seg;
+                clipboard_seg.segment = *segment_it;
+                clipboard_seg.original_track_index = track_idx;
+                clipboard_seg.relative_start_time = segment_it->start_time;
+                
+                clipboard_segments_.push_back(clipboard_seg);
+                ve::log::debug("Copied segment '" + segment_it->name + "' from track " + std::to_string(track_idx));
+                break;
+            }
+        }
+    }
+    
+    if (!clipboard_segments_.empty()) {
+        // Calculate relative positioning based on first segment
+        ve::TimePoint earliest_time = clipboard_segments_[0].relative_start_time;
+        for (const auto& clip_seg : clipboard_segments_) {
+            if (clip_seg.relative_start_time < earliest_time) {
+                earliest_time = clip_seg.relative_start_time;
+            }
+        }
+        
+        // Make all times relative to the earliest segment
+        for (auto& clip_seg : clipboard_segments_) {
+            clip_seg.relative_start_time = ve::TimePoint{
+                clip_seg.relative_start_time.to_rational().num - earliest_time.to_rational().num,
+                clip_seg.relative_start_time.to_rational().den
+            };
+        }
+        
+        ve::log::info("Copied " + std::to_string(clipboard_segments_.size()) + " segments to clipboard");
+    } else {
+        ve::log::warn("Failed to copy any segments - segments not found in timeline");
+    }
 }
 
 void TimelinePanel::paste_segments() {
-    // Paste segments at playhead position (future enhancement)
-    ve::log::info("Paste segments at playhead position");
+    if (clipboard_segments_.empty()) {
+        ve::log::info("No segments in clipboard to paste");
+        return;
+    }
+    
+    if (!timeline_ || !command_executor_) {
+        ve::log::warn("Timeline or command executor not available for pasting");
+        return;
+    }
+    
+    // Get current playhead position as paste location
+    ve::TimePoint paste_time = current_time_;
+    
+    // Create macro command for pasting all segments
+    auto macro_command = std::make_unique<ve::commands::MacroCommand>("Paste segments");
+    
+    // Get current tracks
+    const auto& tracks = timeline_->tracks();
+    
+    for (const auto& clipboard_seg : clipboard_segments_) {
+        // Calculate absolute paste position
+        ve::TimePoint absolute_time = ve::TimePoint{
+            paste_time.to_rational().num + clipboard_seg.relative_start_time.to_rational().num,
+            paste_time.to_rational().den
+        };
+        
+        // Determine target track - use original track if available, otherwise first track
+        size_t target_track_index = clipboard_seg.original_track_index;
+        if (target_track_index >= tracks.size()) {
+            target_track_index = 0; // Fallback to first track
+        }
+        
+        if (target_track_index < tracks.size()) {
+            // Create a new segment with unique ID for pasting
+            ve::timeline::Segment new_segment = clipboard_seg.segment;
+            new_segment.id = tracks[target_track_index]->generate_segment_id(); // Generate new unique ID from target track
+            new_segment.start_time = absolute_time;
+            
+            // Create insert command
+            auto insert_cmd = std::make_unique<ve::commands::InsertSegmentCommand>(
+                tracks[target_track_index]->id(),
+                new_segment,
+                absolute_time
+            );
+            
+            macro_command->add_command(std::move(insert_cmd));
+            
+            ve::log::debug("Prepared paste for segment '" + new_segment.name + 
+                          "' at time " + std::to_string(absolute_time.to_rational().num) +
+                          " on track " + std::to_string(target_track_index));
+        } else {
+            ve::log::warn("No valid tracks available for pasting segment");
+        }
+    }
+    
+    // Execute the paste operation
+    if (macro_command->empty()) {
+        ve::log::warn("No segments prepared for pasting");
+        return;
+    }
+    
+    if (command_executor_(std::move(macro_command))) {
+        ve::log::info("Successfully pasted " + std::to_string(clipboard_segments_.size()) + 
+                      " segments at time " + std::to_string(paste_time.to_rational().num));
+        
+        // Refresh timeline display
+        refresh();
+        emit segments_added(); // New signal for paste operations
+    } else {
+        ve::log::warn("Failed to paste segments through command system");
+    }
 }
 
 void TimelinePanel::delete_selected_segments() {
@@ -1441,23 +1826,65 @@ void TimelinePanel::leaveEvent(QEvent* event) {
 }
 
 void TimelinePanel::draw_audio_waveform(QPainter& painter, const QRect& rect, const ve::timeline::Segment& segment) {
-    // Placeholder waveform uses segment id as seed to vary pattern slightly
-    int seed = static_cast<int>(segment.id % 7 + 3);
-    
-    // Fast simplified waveform representation - reduced detail for performance
-    painter.setPen(QPen(QColor(255, 255, 255, 100), 1));
+    // Highly optimized placeholder waveform - minimal draw calls
+    painter.setPen(QPen(QColor(255, 255, 255, 80), 1)); // Lower opacity for subtlety
     
     int center_y = rect.center().y();
+    int seed = static_cast<int>(segment.id % 5 + 2); // Reduced variation for consistency
     
-    // Draw fewer waveform "peaks" to reduce draw calls (every 12 pixels instead of 8)
-    for (int x = rect.left() + 6; x < rect.right() - 6; x += 12) {
-        int peak_height = ((x + seed) % 24) + 3; // Slight variation per segment
+    // Draw much fewer waveform "peaks" to reduce draw calls (every 16 pixels instead of 12)
+    for (int x = rect.left() + 8; x < rect.right() - 8; x += 16) {
+        int peak_height = ((x + seed) % 16) + 2; // Reduced variation
         painter.drawLine(x, center_y - peak_height/2, x, center_y + peak_height/2);
     }
+}
+
+void TimelinePanel::draw_cached_waveform(QPainter& painter, const QRect& rect, const ve::timeline::Segment& segment) {
+    // Ultra-fast waveform placeholder - optimized for performance over visual detail
+    if (!timeline_) {
+        draw_audio_waveform(painter, rect, segment);
+        return;
+    }
     
-    // Draw center line only for wider segments
-    if (rect.width() > 50) {
-        painter.setPen(QPen(QColor(255, 255, 255, 30), 1));
+    // Get the clip for this segment to use file path for deterministic waveform
+    const auto* clip = timeline_->get_clip(segment.clip_id);
+    if (!clip || !clip->source) {
+        draw_audio_waveform(painter, rect, segment);
+        return;
+    }
+    
+    // Use simple hash for deterministic pattern
+    std::hash<std::string> hasher;
+    size_t path_hash = hasher(clip->source->path);
+    
+    painter.setPen(QPen(QColor(120, 200, 255, 120), 1));
+    
+    int center_y = rect.center().y();
+    int max_height = rect.height() / 2 - 4;
+    
+    // Ultra-fast block-based waveform - no expensive math
+    int block_width = std::max(2, rect.width() / 50); // Much fewer blocks
+    int num_blocks = rect.width() / block_width;
+    
+    for (int i = 0; i < num_blocks; ++i) {
+        int x = rect.left() + i * block_width;
+        
+        // Simple deterministic pattern using bit operations (very fast)
+        unsigned int pattern = (path_hash ^ (i * 17)) + (segment.id * 23);
+        int height = (pattern % max_height) + 1;
+        
+        // Vary height with simple pattern
+        if ((i % 7) == 0) height = height / 3;  // Quiet moments
+        if ((i % 11) == 0) height = height * 2; // Loud moments
+        height = std::min(height, max_height);
+        
+        // Draw simple vertical line (much faster than individual lines)
+        painter.drawLine(x, center_y - height, x, center_y + height);
+    }
+    
+    // Only draw center line for wider segments
+    if (rect.width() > 100) {
+        painter.setPen(QPen(QColor(120, 200, 255, 30), 1));
         painter.drawLine(rect.left(), center_y, rect.right(), center_y);
     }
 }
@@ -1551,6 +1978,55 @@ void TimelinePanel::cancel_drag_operations() {
     update();
     
     qDebug() << "Drag operations canceled";
+}
+
+void TimelinePanel::request_undo() {
+    ve::log::info("Undo requested from timeline");
+    emit undo_requested();
+}
+
+void TimelinePanel::request_redo() {
+    ve::log::info("Redo requested from timeline");
+    emit redo_requested();
+}
+
+// Segment rendering cache implementation
+QPixmap* TimelinePanel::get_cached_segment(uint32_t segment_id, const QRect& rect) const {
+    // Check if zoom level changed - clear cache if so
+    int current_zoom = static_cast<int>(zoom_factor_ * 100);
+    if (cache_zoom_level_ != current_zoom) {
+        clear_segment_cache();
+        cache_zoom_level_ = current_zoom;
+        return nullptr;
+    }
+    
+    // Find cached entry
+    for (auto& entry : segment_cache_) {
+        if (entry.segment_id == segment_id && entry.rect == rect && entry.zoom_level == current_zoom) {
+            return &entry.cached_pixmap;
+        }
+    }
+    return nullptr;
+}
+
+void TimelinePanel::cache_segment(uint32_t segment_id, const QRect& rect, const QPixmap& pixmap) const {
+    // Limit cache size to prevent memory issues
+    if (segment_cache_.size() > 100) {
+        segment_cache_.erase(segment_cache_.begin(), segment_cache_.begin() + 50); // Remove first half
+    }
+    
+    int current_zoom = static_cast<int>(zoom_factor_ * 100);
+    SegmentCacheEntry entry;
+    entry.segment_id = segment_id;
+    entry.rect = rect;
+    entry.cached_pixmap = pixmap;
+    entry.zoom_level = current_zoom;
+    
+    segment_cache_.push_back(entry);
+}
+
+void TimelinePanel::clear_segment_cache() const {
+    segment_cache_.clear();
 }
 
 } // namespace ve::ui
