@@ -147,13 +147,10 @@ void TimelinePanel::paintEvent(QPaintEvent* event) {
     // Performance monitoring - track paint timing
     auto paint_start = std::chrono::high_resolution_clock::now();
     
-    // Early exit for extremely frequent paint events (performance protection)
+    // Throttle paint events but still do minimal painting to avoid white screen
     static auto last_paint = std::chrono::high_resolution_clock::now();
     auto time_since_last_paint = std::chrono::duration_cast<std::chrono::milliseconds>(paint_start - last_paint);
-    if (time_since_last_paint.count() < 16) {  // Skip if less than 16ms since last paint (60fps max)
-        return;
-    }
-    last_paint = paint_start;
+    bool is_throttled = time_since_last_paint.count() < 16;  // Skip heavy operations if less than 16ms since last paint
     
     if (g_timeline_busy.load(std::memory_order_acquire)) {
         // Skip reading timeline while a background commit is in progress
@@ -164,10 +161,64 @@ void TimelinePanel::paintEvent(QPaintEvent* event) {
         return;
     }
 
-    // Removed debug timing for performance - paint events are called very frequently
-    
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, false); // Crisp lines for timeline
+    
+    // If throttled, do minimal painting to avoid white screen
+    if (is_throttled) {
+        // Essential painting for visual feedback during rapid updates
+        draw_background(painter);  // Draw timeline background pattern
+        draw_timecode_ruler(painter);  // Always show timecode for navigation
+        
+        // Draw basic track structure and segments if timeline exists
+        if (timeline_) {
+            const auto& tracks = timeline_->tracks();
+            int y = TIMECODE_HEIGHT;
+            
+            // Draw track separators and basic segments
+            for (size_t i = 0; i < tracks.size() && y < height(); ++i) {
+                const auto& track = *tracks[i];  // Dereference the track pointer
+                
+                // Track separator line
+                QPen trackPen(palette().mid().color());
+                painter.setPen(trackPen);
+                painter.drawLine(0, y, width(), y);
+                
+                // Draw simplified segments - just basic shapes without details
+                const auto& segments = track.segments();
+                if (!segments.empty()) {
+                    // Use simple colors for quick rendering
+                    QColor segment_color = (track.type() == ve::timeline::Track::Video) ? 
+                                         QColor(100, 150, 200) : QColor(100, 200, 150);
+                    painter.fillRect(QRect(0, y + 5, width(), TRACK_HEIGHT - 10), palette().base());
+                    
+                    // Draw only a few segments for visual reference (limit for performance)
+                    int segments_drawn = 0;
+                    for (const auto& segment : segments) {
+                        if (segments_drawn >= 10) break;  // Limit segments in minimal mode
+                        
+                        int start_x = time_to_pixel(segment.start_time);
+                        int end_x = time_to_pixel(segment.end_time());
+                        int segment_width = end_x - start_x;
+                        
+                        if (segment_width > 5) {  // Only draw visible segments
+                            QRect segment_rect(start_x, y + 5, segment_width, TRACK_HEIGHT - 10);
+                            painter.fillRect(segment_rect, segment_color);
+                            segments_drawn++;
+                        }
+                    }
+                }
+                
+                y += TRACK_HEIGHT + TRACK_SPACING;
+            }
+        }
+        
+        draw_playhead(painter);  // Always draw playhead for visual feedback
+        return;
+    }
+    
+    // Full painting when not throttled - update last_paint timestamp
+    last_paint = paint_start;
     
     // Aggressive clipping to only paint visible area
     QRect clipRect = event->rect();
@@ -175,6 +226,7 @@ void TimelinePanel::paintEvent(QPaintEvent* event) {
     
     // Skip expensive operations if clip rect is very small (like resize handles)
     if (clipRect.width() < 5 || clipRect.height() < 5) {
+        painter.fillRect(clipRect, palette().base());  // Fill small areas to avoid white spots
         return;
     }
     
@@ -942,6 +994,9 @@ void TimelinePanel::handle_context_menu(const QPoint& pos) {
     // Menus disabled in this Qt build
     return;
 #else
+    // Force a repaint before showing context menu to avoid white screen
+    update();
+    
     // Create context menu with proper parent to avoid memory issues
     QMenu menu(this); // Use 'this' as parent for proper memory management
     
@@ -1039,6 +1094,9 @@ void TimelinePanel::handle_context_menu(const QPoint& pos) {
     // Show menu at mouse position using standard Qt approach
     QPoint globalPos = mapToGlobal(pos);
     menu.exec(globalPos);
+    
+    // Force repaint after context menu closes to ensure proper display
+    update();
 #endif
 }
 
