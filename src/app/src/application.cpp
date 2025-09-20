@@ -45,19 +45,24 @@ Application* Application::instance() {
 
 int Application::run() {
     if (!main_window_) {
-        // ve::log::error("Main window not created");
+        ve::log::error("Main window not created");
         return -1;
     }
     
+    ve::log::info("Showing main window...");
     main_window_->show();
+    
     // Schedule a mid-run profiling snapshot after a short delay (e.g., 5s)
     QTimer::singleShot(5000, this, [](){
         ve::log::info("Writing mid-run profiling snapshot: profiling_runtime.json");
         ve::prof::Accumulator::instance().write_json("profiling_runtime.json");
     });
-    // ve::log::info("Application started successfully");
     
-    return exec();
+    ve::log::info("Entering Qt event loop...");
+    int result = exec();
+    ve::log::info("Qt event loop exited with code: " + std::to_string(result));
+    
+    return result;
 }
 
 bool Application::new_project() {
@@ -155,9 +160,17 @@ void Application::on_project_modified() {
 }
 
 void Application::create_main_window() {
+    ve::log::info("Creating main window...");
     main_window_ = std::make_unique<ve::ui::MainWindow>();
+    ve::log::info("Main window object created");
+    
     main_window_->set_timeline(timeline_.get());
+    ve::log::info("Timeline set on main window");
+    
     main_window_->set_playback_controller(playback_controller_.get());
+    ve::log::info("Playback controller set on main window");
+    
+    ve::log::info("Main window created");
 }
 
 void Application::setup_connections() {

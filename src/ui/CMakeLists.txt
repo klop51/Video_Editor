@@ -24,17 +24,29 @@ add_library(ve_ui
     src/viewer_panel.cpp
     src/gl_video_widget.cpp
     
+    # Week 8 Qt Audio UI Components - Minimal Working Integration
+    src/minimal_waveform_widget.cpp
+    src/minimal_audio_track_widget.cpp
+    src/minimal_audio_meters_widget.cpp
+    
     # Headers with Q_OBJECT (for MOC processing)
     include/ui/main_window.hpp
     include/ui/timeline_panel.hpp
     include/ui/viewer_panel.hpp
     include/ui/gl_video_widget.hpp
+    
+    # Week 8 Audio UI Headers - Minimal Working Integration
+    include/ui/minimal_waveform_widget.hpp
+    include/ui/minimal_audio_track_widget.hpp
+    include/ui/minimal_audio_meters_widget.hpp
 )
 
 target_include_directories(ve_ui
     PUBLIC include
     PRIVATE src
     PRIVATE ${CMAKE_SOURCE_DIR}/src/core/include
+    # Week 8: Include Week 7 audio waveform system headers
+    PRIVATE ${CMAKE_SOURCE_DIR}/src/audio/include
     # Needed for referencing Application signals in main_window (no link dependency)
     PRIVATE ${CMAKE_SOURCE_DIR}/src/app/include
 )
@@ -47,12 +59,14 @@ target_link_libraries(ve_ui
         ve_timeline
         ve_playback
         ve_commands
-    ve_render
-    ve_gfx
-    Qt6::Core
-    Qt6::Widgets
-    Qt6::Multimedia
-    Qt6::OpenGLWidgets
+        ve_render
+        ve_gfx
+        # Week 8: Link Week 7 audio engine for waveform system
+        ve_audio
+        Qt6::Core
+        Qt6::Widgets
+        Qt6::Multimedia
+        Qt6::OpenGLWidgets
 )
 
 target_compile_features(ve_ui PUBLIC cxx_std_20)

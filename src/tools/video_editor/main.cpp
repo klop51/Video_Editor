@@ -4,13 +4,18 @@
 #include <iostream>
 
 int main(int argc, char** argv) {
-    // Apply DPI rounding policy early (before any Q(Gui)Application is created)
-    QApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
-
     std::cout << "Video Editor Main starting..." << std::endl;
     std::cout.flush();
+    
+    // Apply DPI rounding policy BEFORE any Qt application creation - must be very first Qt call
+    QApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
+    std::cout << "High DPI policy set" << std::endl;
+    
     try {
+        std::cout << "Creating Application object..." << std::endl;
         ve::app::Application app(argc, argv);
+        std::cout << "Application object created, calling run()..." << std::endl;
+        
         int result = app.run();
         std::cout << "Application finished with code: " << result << std::endl;
         return result;

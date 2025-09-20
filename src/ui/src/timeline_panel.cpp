@@ -1,6 +1,8 @@
 #include "ui/timeline_panel.hpp"
 #include "commands/timeline_commands.hpp"
 #include "core/log.hpp"
+#include "ui/minimal_audio_track_widget.hpp"
+#include "ui/minimal_waveform_widget.hpp"
 #include <QPainter>
 #include <QPolygon>
 #include <QMouseEvent>
@@ -10,11 +12,15 @@
 #include <QDropEvent>
 #include <QMimeData>
 #include <QMenu>
+#include <QTimer>
 #include <QUrl>
 #include <QFileInfo>
+#include <QFileDialog>
 #include <QApplication>
 #include <QDebug>
+#include <QEnterEvent>
 #include <algorithm>
+#include <chrono>
 
 #include <atomic>
 // Global variable to track timeline operations
@@ -38,11 +44,15 @@ TimelinePanel::TimelinePanel(QWidget* parent)
     , selecting_range_(false)
     , selection_start_(ve::TimePoint{0})
     , selection_end_(ve::TimePoint{0})
+    , update_timer_(nullptr)  // Initialize update timer to null
 {
     setMinimumHeight(200);
     setMouseTracking(true);
     setAcceptDrops(true);
     setFocusPolicy(Qt::ClickFocus); // Only get focus when clicked, not interfering with drag
+    
+    // Enable hover events for proper mouse highlighting
+    setAttribute(Qt::WA_Hover, true);
     
     // Initialize colors
     track_color_video_ = QColor(80, 120, 180);
@@ -67,7 +77,19 @@ TimelinePanel::TimelinePanel(QWidget* parent)
 
 void TimelinePanel::set_timeline(ve::timeline::Timeline* timeline) {
     timeline_ = timeline;
-    update();
+    
+    // Instead of immediate update(), use deferred update to batch multiple calls
+    if (!update_timer_) {
+        update_timer_ = new QTimer(this);
+        update_timer_->setSingleShot(true);
+        update_timer_->setInterval(16); // ~60 FPS max update rate
+        connect(update_timer_, &QTimer::timeout, this, QOverload<>::of(&QWidget::update));
+    }
+    
+    // Only start timer if it's not already running (batch multiple set_timeline calls)
+    if (!update_timer_->isActive()) {
+        update_timer_->start();
+    }
 }
 
 void TimelinePanel::set_command_executor(CommandExecutor executor) {
@@ -85,7 +107,15 @@ void TimelinePanel::set_current_time(ve::TimePoint time) {
 }
 
 void TimelinePanel::refresh() {
-    update();
+    // Throttle refresh calls to prevent excessive repaints (30fps max for general refresh)
+    static auto last_refresh = std::chrono::high_resolution_clock::now();
+    auto now = std::chrono::high_resolution_clock::now();
+    auto time_since_last = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_refresh);
+    
+    if (time_since_last.count() >= 33) {  // ~30fps
+        update();
+        last_refresh = now;
+    }
 }
 
 void TimelinePanel::zoom_in() {
@@ -114,6 +144,16 @@ void TimelinePanel::zoom_fit() {
 }
 
 void TimelinePanel::paintEvent(QPaintEvent* event) {
+    // Performance monitoring - track paint timing
+    auto paint_start = std::chrono::high_resolution_clock::now();
+    
+    // Early exit for extremely frequent paint events (performance protection)
+    static auto last_paint = std::chrono::high_resolution_clock::now();
+    auto time_since_last_paint = std::chrono::duration_cast<std::chrono::milliseconds>(paint_start - last_paint);
+    if (time_since_last_paint.count() < 16) {  // Skip if less than 16ms since last paint (60fps max)
+        return;
+    }
+    last_paint = paint_start;
     
     if (g_timeline_busy.load(std::memory_order_acquire)) {
         // Skip reading timeline while a background commit is in progress
@@ -139,12 +179,16 @@ void TimelinePanel::paintEvent(QPaintEvent* event) {
     }
     
     draw_background(painter);
+    auto after_background = std::chrono::high_resolution_clock::now();
+    
     draw_timecode_ruler(painter);
+    auto after_timecode = std::chrono::high_resolution_clock::now();
     
     // Only draw tracks if they're in the visible area
     if (timeline_ && clipRect.intersects(QRect(0, TIMECODE_HEIGHT, width(), height() - TIMECODE_HEIGHT))) {
         draw_tracks(painter);
     }
+    auto after_tracks = std::chrono::high_resolution_clock::now();
     
     // Only draw overlays if they're in visible area
     if (show_drag_preview_) {
@@ -154,7 +198,24 @@ void TimelinePanel::paintEvent(QPaintEvent* event) {
     draw_playhead(painter);
     draw_selection(painter);
     
-    // Removed slow paint event logging for performance
+    // Performance monitoring - detailed timing breakdown
+    auto paint_end = std::chrono::high_resolution_clock::now();
+    auto paint_duration = std::chrono::duration<double, std::milli>(paint_end - paint_start);
+    auto background_time = std::chrono::duration<double, std::milli>(after_background - paint_start);
+    auto timecode_time = std::chrono::duration<double, std::milli>(after_timecode - after_background);
+    auto tracks_time = std::chrono::duration<double, std::milli>(after_tracks - after_timecode);
+    
+    static auto last_warning = std::chrono::steady_clock::now();
+    auto now = std::chrono::steady_clock::now();
+    if (paint_duration.count() > 16.0 && 
+        std::chrono::duration_cast<std::chrono::milliseconds>(now - last_warning).count() > 1000) {
+        ve::log::warn("Timeline paint slow: " + std::to_string(paint_duration.count()) + 
+                     "ms (background: " + std::to_string(background_time.count()) + 
+                     "ms, timecode: " + std::to_string(timecode_time.count()) + 
+                     "ms, tracks: " + std::to_string(tracks_time.count()) + 
+                     "ms, rect: " + std::to_string(event->rect().width()) + "x" + std::to_string(event->rect().height()) + ")");
+        last_warning = now;
+    }
 }
 
 void TimelinePanel::mousePressEvent(QMouseEvent* event) {
@@ -223,7 +284,10 @@ void TimelinePanel::mousePressEvent(QMouseEvent* event) {
 }
 
 void TimelinePanel::mouseMoveEvent(QMouseEvent* event) {
-    // Removed frequent debug logging for performance - mouse move events are called constantly
+    // Time-based throttling to prevent excessive updates (60fps max)
+    static auto last_update = std::chrono::high_resolution_clock::now();
+    auto now = std::chrono::high_resolution_clock::now();
+    auto time_since_last = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_update);
     
     if (!timeline_) return;
     
@@ -239,20 +303,27 @@ void TimelinePanel::mouseMoveEvent(QMouseEvent* event) {
     
     if (dragging_) {
         if (event->pos().y() < TIMECODE_HEIGHT) {
-            // Scrubbing in timecode ruler
-            ve::TimePoint time = pixel_to_time(event->pos().x());
-            current_time_ = time;
-            emit time_changed(time);
-            update();
+            // Scrubbing in timecode ruler - throttle updates
+            if (time_since_last.count() >= 16) {  // ~60fps
+                ve::TimePoint time = pixel_to_time(event->pos().x());
+                current_time_ = time;
+                emit time_changed(time);
+                update();
+                last_update = now;
+            }
         } else {
-            // Dragging in track area - removed debug logging for performance
-            update_drag(event->pos());
+            // Dragging in track area - throttle updates
+            if (time_since_last.count() >= 16) {  // ~60fps
+                update_drag(event->pos());
+                last_update = now;
+            }
         }
     } else {
         // Throttle cursor updates - only update every 10 pixels movement to reduce calls
         QPoint diff = event->pos() - last_mouse_pos_;
-        if (abs(diff.x()) > 10 || abs(diff.y()) > 10) {
+        if ((abs(diff.x()) > 10 || abs(diff.y()) > 10) && time_since_last.count() >= 32) {  // ~30fps for cursor updates
             update_cursor(event->pos());
+            last_update = now;
         }
     }
     
@@ -479,6 +550,10 @@ void TimelinePanel::draw_segments(QPainter& painter, const ve::timeline::Track& 
     // Quick exit if no segments
     if (segments.empty()) return;
     
+    // Performance circuit breaker - limit number of segments processed per paint event
+    static int max_segments_per_paint = 50;  // Limit to prevent UI freezing
+    int segments_drawn = 0;
+    
     // Pre-calculate common values - much brighter colors for better visibility
     static QColor cached_video_color(150, 200, 255);  // Very bright blue for video segments
     static QColor cached_audio_color(150, 255, 200);  // Very bright green for audio segments
@@ -500,6 +575,12 @@ void TimelinePanel::draw_segments(QPainter& painter, const ve::timeline::Track& 
     QColor base_color = is_video_track ? cached_video_color : cached_audio_color;
     
     for (const auto& segment : segments) {
+        // Performance circuit breaker
+        if (segments_drawn >= max_segments_per_paint) {
+            ve::log::warn("Timeline: Segment limit reached (" + std::to_string(max_segments_per_paint) + "), skipping remaining segments");
+            break;
+        }
+        
         // Skip drawing the segment being dragged to show preview instead
         if (show_drag_preview_ && segment.id == dragged_segment_id_) {
             continue;
@@ -509,10 +590,9 @@ void TimelinePanel::draw_segments(QPainter& painter, const ve::timeline::Track& 
         int end_x = time_to_pixel(segment.end_time());
         int segment_width = end_x - start_x;
         
-        
-        // Aggressive culling
-        if (segment_width < 1) continue;
-        if (end_x < viewport_left || start_x > viewport_right) continue;
+        // More aggressive culling - skip segments that are barely visible
+        if (segment_width < 2) continue;
+        if (end_x < viewport_left - 10 || start_x > viewport_right + 10) continue;
         
         QRect segment_rect(start_x, track_y + 5, segment_width, TRACK_HEIGHT - 10);
         
@@ -533,36 +613,31 @@ void TimelinePanel::draw_segments(QPainter& painter, const ve::timeline::Track& 
             continue;
         }
         
-        // Draw segment background with gradient for larger segments
-        QLinearGradient gradient(segment_rect.topLeft(), segment_rect.bottomLeft());
-        gradient.setColorAt(0, segment_color.lighter(110));
-        gradient.setColorAt(1, segment_color.darker(110));
-        painter.fillRect(segment_rect, gradient);
+        // Draw segment background - use solid color instead of gradient for better performance
+        painter.fillRect(segment_rect, segment_color);
         
-        // Enhanced border with white outline for maximum visibility
-        painter.setPen(QPen(Qt::white, 2));  // White border for maximum contrast
+        // Simple border for better performance
+        painter.setPen(QPen(Qt::white, 1));
         painter.drawRect(segment_rect);
         
-        // Inner border with segment color
-        painter.setPen(QPen(is_selected ? cached_text_color : segment_color.darker(120), 1));
-        painter.drawRect(segment_rect.adjusted(1, 1, -1, -1));
+        // Only draw details for segments larger than minimum threshold  
+        if (segment_width < 40) continue;  // Increased threshold to skip more text rendering
         
-        // Only draw details for segments larger than minimum threshold
-        if (segment_width < 30) continue;
+        // Draw clip duration indicator only for larger segments
+        if (segment_width > 60) {  // Only show duration for larger segments
+            auto duration = segment.duration.to_rational();
+            double duration_seconds = static_cast<double>(duration.num) / duration.den;
+            QString duration_text = QString("%1s").arg(duration_seconds, 0, 'f', 1);
+            
+            painter.setPen(cached_text_color);
+            painter.setFont(cached_small_font);
+            
+            QRect duration_rect = segment_rect.adjusted(3, segment_rect.height() - 15, -3, -2);
+            painter.drawText(duration_rect, Qt::AlignRight | Qt::AlignBottom, duration_text);
+        }
         
-        // Draw clip duration indicator
-        auto duration = segment.duration.to_rational();
-        double duration_seconds = static_cast<double>(duration.num) / duration.den;
-        QString duration_text = QString("%1s").arg(duration_seconds, 0, 'f', 1);
-        
-        painter.setPen(cached_text_color);
-        painter.setFont(cached_small_font);
-        
-        QRect duration_rect = segment_rect.adjusted(3, segment_rect.height() - 15, -3, -2);
-        painter.drawText(duration_rect, Qt::AlignRight | Qt::AlignBottom, duration_text);
-        
-        // Segment name (if wide enough)
-        if (segment_width > 50) {
+        // Segment name (if wide enough) - further optimized
+        if (segment_width > 80) {  // Increased threshold for text rendering
             painter.setFont(cached_name_font);
             
             QRect text_rect = segment_rect.adjusted(5, 2, -5, -18);
@@ -577,19 +652,24 @@ void TimelinePanel::draw_segments(QPainter& painter, const ve::timeline::Track& 
             painter.drawText(text_rect, Qt::AlignLeft | Qt::AlignTop, segment_name);
         }
         
-        // Only draw waveforms/thumbnails for larger segments to reduce overhead
-        if (segment_width > 60) {  // Increased threshold
+        // Temporarily disable waveforms/thumbnails for performance testing
+        // TODO: Re-enable once performance is acceptable
+        /*
+        if (segment_width > 100) {  // Increased threshold for expensive operations
             if (is_video_track) {
                 draw_video_thumbnail(painter, segment_rect, segment);
             } else {
                 draw_audio_waveform(painter, segment_rect, segment);
             }
         }
+        */
         
         // Draw segment handles for resizing (if selected)
         if (is_selected && segment_width > 20) {
             draw_segment_handles(painter, segment_rect);
         }
+        
+        segments_drawn++;  // Count processed segments
     }
 }
 
@@ -862,23 +942,103 @@ void TimelinePanel::handle_context_menu(const QPoint& pos) {
     // Menus disabled in this Qt build
     return;
 #else
-    // Context menu (guarded if menus available)
-    QMenu* menu = new QMenu(this); // use pointer to minimize stack use with incomplete types
+    // Create context menu with proper parent to avoid memory issues
+    QMenu menu(this); // Use 'this' as parent for proper memory management
+    
+    // Find segment at position and store ID instead of pointer to avoid dangling references
+    ve::timeline::SegmentId segment_id = 0;
     ve::timeline::Segment* seg = find_segment_at_pos(pos);
     if (seg) {
-        QAction* splitAct = menu->addAction("Split Segment");
-        QAction* deleteAct = menu->addAction("Delete Segment");
-        QAction* chosen = menu->exec(mapToGlobal(pos));
-        if (chosen == splitAct) {
-            ve::log::info("Split segment requested id=" + std::to_string(seg->id));
-        } else if (chosen == deleteAct) {
-            ve::log::info("Delete segment requested id=" + std::to_string(seg->id));
-        }
-    } else {
-        menu->addAction("Add Clip Here");
-        menu->exec(mapToGlobal(pos));
+        segment_id = seg->id;
     }
-    menu->deleteLater();
+    
+    if (segment_id != 0) {
+        // Segment-specific menu - use segment ID instead of pointer
+        QAction* splitAct = menu.addAction("Split Segment");
+        QAction* deleteAct = menu.addAction("Delete Segment");
+        
+        // Use segment ID in lambda to avoid dangling pointer issues
+        connect(splitAct, &QAction::triggered, this, [this, segment_id, pos]() {
+            ve::log::info("Split segment requested id=" + std::to_string(segment_id));
+            
+            if (!timeline_ || !command_executor_) return;
+            
+            // Convert mouse position to timeline time for split point
+            ve::TimePoint split_time = pixel_to_time(pos.x());
+            
+            // Create and execute split command
+            auto split_cmd = std::make_unique<ve::commands::SplitSegmentCommand>(
+                segment_id, split_time
+            );
+            
+            if (command_executor_(std::move(split_cmd))) {
+                emit segment_split(segment_id, split_time);
+                ve::log::info("Split segment at mouse position using command system");
+            } else {
+                ve::log::warn("Failed to split segment through command system");
+            }
+        });
+        
+        connect(deleteAct, &QAction::triggered, this, [this, segment_id]() {
+            ve::log::info("Delete segment requested id=" + std::to_string(segment_id));
+            
+            if (!timeline_ || !command_executor_) return;
+            
+            // Find the track containing this segment
+            const auto& tracks = timeline_->tracks();
+            for (const auto& track : tracks) {
+                if (track->find_segment(segment_id)) {
+                    // Create and execute remove command
+                    auto remove_cmd = std::make_unique<ve::commands::RemoveSegmentCommand>(
+                        track->id(), segment_id
+                    );
+                    
+                    if (command_executor_(std::move(remove_cmd))) {
+                        emit segments_deleted();
+                        ve::log::info("Deleted segment using command system");
+                    } else {
+                        ve::log::warn("Failed to delete segment through command system");
+                    }
+                    break;
+                }
+            }
+        });
+    } else {
+        // Track-specific menu
+        QAction* addClipAct = menu.addAction("Add Clip Here");
+        connect(addClipAct, &QAction::triggered, this, [this, pos]() {
+            ve::log::info("Add clip requested at position");
+            
+            // Convert position to time and track
+            ve::TimePoint drop_time = pixel_to_time(pos.x());
+            int track_index = track_at_y(pos.y());
+            
+            if (track_index < 0) {
+                ve::log::warn("Invalid track position for adding clip");
+                return;
+            }
+            
+            // Open file dialog to select media file
+            QString filePath = QFileDialog::getOpenFileName(
+                this, 
+                "Add Media Clip",
+                QString(),
+                "Media Files (*.mp4 *.avi *.mov *.mkv *.mp3 *.wav *.aac *.m4a);;All Files (*)"
+            );
+            
+            if (!filePath.isEmpty()) {
+                // Emit signal to add clip (follows existing pattern from drag/drop)
+                emit clip_added(filePath, drop_time, track_index);
+                ve::log::info("Add clip requested: " + filePath.toStdString() + 
+                             " at time " + std::to_string(drop_time.to_rational().num) + 
+                             " on track " + std::to_string(track_index));
+            }
+        });
+    }
+    
+    // Show menu at mouse position using standard Qt approach
+    QPoint globalPos = mapToGlobal(pos);
+    menu.exec(globalPos);
 #endif
 }
 
@@ -1202,6 +1362,24 @@ void TimelinePanel::dropEvent(QDropEvent* event) {
     }
     
     event->ignore();
+}
+
+void TimelinePanel::enterEvent(QEnterEvent* event) {
+    // Ensure proper hover behavior when mouse enters timeline
+    QWidget::enterEvent(event);
+    
+    // Make sure widget accepts hover events and updates properly
+    setAttribute(Qt::WA_Hover, true);
+    update(); // Trigger repaint to ensure proper highlighting
+}
+
+void TimelinePanel::leaveEvent(QEvent* event) {
+    // Clean up hover state when mouse leaves timeline
+    QWidget::leaveEvent(event);
+    
+    // Reset cursor to default when leaving
+    setCursor(Qt::ArrowCursor);
+    update(); // Trigger repaint to clean up any hover highlighting
 }
 
 void TimelinePanel::draw_audio_waveform(QPainter& painter, const QRect& rect, const ve::timeline::Segment& segment) {

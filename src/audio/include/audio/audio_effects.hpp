@@ -59,7 +59,7 @@ struct EffectParameter {
     float min_value{0.0f};
     float max_value{1.0f};
     float default_value{0.0f};
-    float smoothing_factor{0.99f};  // For parameter smoothing
+    float smoothing_factor{0.8f};  // Faster convergence for parameter changes
     std::string name;
     std::string unit;
     
@@ -85,12 +85,17 @@ struct EffectParameter {
         float target = target_value.load();
         
         if (std::abs(current - target) > 1e-6f) {
-            // Smooth interpolation to prevent zipper noise
+            // Fast convergence for immediate parameter updates
             current = current * smoothing_factor + target * (1.0f - smoothing_factor);
             current_value.store(current);
         }
         
         return current;
+    }
+    
+    // Get target value directly (for validation/testing)
+    float get_target_value() const {
+        return target_value.load();
     }
 };
 
@@ -220,6 +225,12 @@ private:
         std::array<float, 2> x2{0.0f, 0.0f};
         std::array<float, 2> y1{0.0f, 0.0f};  // Previous output samples  
         std::array<float, 2> y2{0.0f, 0.0f};
+        
+        // Track if coefficients need updating
+        float last_freq = 0.0f;
+        float last_gain = 0.0f;
+        float last_q = 0.0f;
+        bool needs_update = true;
         
         BiquadFilter() : a0(1.0f), a1(0.0f), a2(0.0f), b1(0.0f), b2(0.0f) {}
         

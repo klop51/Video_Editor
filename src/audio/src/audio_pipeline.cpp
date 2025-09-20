@@ -9,6 +9,7 @@
 #include "core/log.hpp"
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 
 namespace ve::audio {
 
@@ -357,14 +358,16 @@ void AudioPipeline::update_stats(const std::shared_ptr<AudioFrame>& frame) {
 }
 
 void AudioPipeline::process_audio_buffer() {
-    // Mix buffered audio frames
-    auto mixed_frame = mix_buffered_audio(config_.buffer_size);
-    if (!mixed_frame) {
-        return;
-    }
+    while (true) {
+        auto mixed_frame = mix_buffered_audio(config_.buffer_size);
+        if (!mixed_frame) {
+            break;
+        }
 
-    // Send to output if available
-    if (output_ && state_.load() == AudioPipelineState::Playing) {
+        if (!output_ || state_.load() != AudioPipelineState::Playing) {
+            break;
+        }
+
         output_->submit_frame(mixed_frame);
     }
 }
@@ -386,22 +389,41 @@ std::shared_ptr<AudioFrame> AudioPipeline::mix_buffered_audio(uint32_t frame_cou
         return nullptr;
     }
 
-    // TODO: Fix mixer implementation - for now bypass it to prevent grinding sound
-    // The mixer was causing audio corruption, returning null/empty frames
-    // This direct return provides clean audio until mixer issues are resolved
-    return latest_frame;
+    // Check if mixer is properly initialized and has channels
+    if (!mixer_ || !mixer_->is_initialized()) {
+        return latest_frame; // Fallback to direct passthrough
+    }
+
+    // If no channels exist, return the frame directly (no mixing needed)
+    if (mixer_->get_channel_count() == 0) {
+        return latest_frame;
+    }
+
+    // Use the mixer to process and mix audio channels
+    // Create output frame with requested frame count and latest frame timestamp
+    auto mixed_frame = mixer_->mix_channels(frame_count, latest_frame->timestamp());
+    
+    // Return mixed frame if successful, otherwise fallback to original
+    return mixed_frame ? mixed_frame : latest_frame;
 }
 
 void AudioPipeline::processing_thread_main() {
     ve::log::info("Audio pipeline processing thread started");
+
+    const uint64_t frame_period_us = config_.sample_rate > 0
+        ? (static_cast<uint64_t>(config_.buffer_size) * 1000000ull) / config_.sample_rate
+        : 0;
+    const auto sleep_duration = frame_period_us > 0
+        ? std::chrono::microseconds(std::max<uint64_t>(frame_period_us / 2, 500))
+        : std::chrono::milliseconds(1);
 
     while (!processing_thread_should_exit_.load()) {
         if (state_.load() == AudioPipelineState::Playing) {
             process_audio_buffer();
         }
 
-        // Sleep to avoid busy waiting
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        // Sleep to avoid busy waiting while keeping up with tiny buffers
+        std::this_thread::sleep_for(sleep_duration);
     }
 
     ve::log::info("Audio pipeline processing thread ended");

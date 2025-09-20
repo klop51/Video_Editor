@@ -271,6 +271,23 @@ if(ENABLE_TOOLS)
         src/core/include
     )
 
+    # AUDIO ENGINE ROADMAP Phase 1 Week 2 validation executable  
+    add_executable(audio_engine_phase1_week2_validation
+        audio_phase1_week2_validation_simple.cpp
+    )
+    
+    target_link_libraries(audio_engine_phase1_week2_validation PRIVATE
+        ve_audio
+        ve_media_io
+        ve_core
+    )
+    
+    target_include_directories(audio_engine_phase1_week2_validation PRIVATE
+        src/audio/include
+        src/media_io/include
+        src/core/include
+    )
+
     # AUDIO ENGINE ROADMAP Phase 2 Week 4 Advanced Mixing Graph validation executable
     add_executable(audio_engine_phase2_week4_validation
         audio_engine_phase2_week4_validation.cpp
@@ -291,6 +308,95 @@ if(ENABLE_TOOLS)
     # Disable warnings for this test executable
     if(MSVC)
         target_compile_options(audio_engine_phase2_week4_validation PRIVATE /W0)
+    endif()
+
+    # AUDIO ENGINE ROADMAP Phase 2 Week 6 A/V Synchronization Integration Test
+    add_executable(audio_engine_week6_integration_test
+        audio_engine_week6_integration_test.cpp
+    )
+    
+    target_link_libraries(audio_engine_week6_integration_test PRIVATE
+        ve_audio
+        ve_media_io
+        ve_core
+    )
+    
+    target_include_directories(audio_engine_week6_integration_test PRIVATE
+        src/audio/include
+        src/media_io/include
+        src/core/include
+    )
+    
+    # Disable warnings for this test executable
+    if(MSVC)
+        target_compile_options(audio_engine_week6_integration_test PRIVATE /W0)
+    endif()
+
+    # AUDIO ENGINE Week 6 Debug Test
+    add_executable(audio_engine_week6_debug_test
+        audio_engine_week6_debug_test.cpp
+    )
+    
+    target_link_libraries(audio_engine_week6_debug_test PRIVATE
+        ve_audio
+        ve_core
+    )
+    
+    target_include_directories(audio_engine_week6_debug_test PRIVATE
+        src/audio/include
+        src/core/include
+    )
+    
+    # Disable warnings for this debug test
+    if(MSVC)
+        target_compile_options(audio_engine_week6_debug_test PRIVATE /W0)
+    endif()
+
+    # AUDIO ENGINE ROADMAP Phase 2 Week 7 Waveform System Integration Test
+    find_package(GTest QUIET)
+    if(GTest_FOUND)
+        add_executable(audio_engine_week7_waveform_integration_test
+            audio_engine_week7_waveform_integration_test.cpp
+        )
+        
+        target_link_libraries(audio_engine_week7_waveform_integration_test PRIVATE
+            ve_audio
+            ve_media_io
+            ve_core
+            GTest::gtest
+            GTest::gtest_main
+        )
+        
+        target_include_directories(audio_engine_week7_waveform_integration_test PRIVATE
+            src/audio/include
+            src/media_io/include
+            src/core/include
+        )
+        
+        # Disable warnings for this test executable
+        if(MSVC)
+            target_compile_options(audio_engine_week7_waveform_integration_test PRIVATE /W0)
+        endif()
+    else()
+        message(STATUS "Skipping audio_engine_week7_waveform_integration_test - GTest not found")
+    endif()
+
+    # AUDIO ENGINE ROADMAP Phase 2 Week 7 Basic Validation Test
+    add_executable(audio_engine_week7_basic_validation
+        audio_engine_week7_basic_validation.cpp
+    )
+    
+    target_link_libraries(audio_engine_week7_basic_validation PRIVATE
+        ve_core
+    )
+    
+    target_include_directories(audio_engine_week7_basic_validation PRIVATE
+        src/core/include
+    )
+    
+    # Disable warnings for this test executable
+    if(MSVC)
+        target_compile_options(audio_engine_week7_basic_validation PRIVATE /W0)
     endif()
 
     # AUDIO ENGINE ROADMAP Phase 1B: Simple Mixer Core Validation
@@ -353,6 +459,26 @@ if(ENABLE_TOOLS)
         target_compile_options(test_phase2_week1_audio_pipeline PRIVATE /W0)
     endif()
 
+    # Audio Pipeline Mixer Integration Test
+    add_executable(audio_pipeline_mixer_test
+        audio_pipeline_mixer_test.cpp
+    )
+    
+    target_link_libraries(audio_pipeline_mixer_test PRIVATE
+        ve_audio
+        ve_core
+    )
+    
+    target_include_directories(audio_pipeline_mixer_test PRIVATE
+        src/audio/include
+        src/core/include
+    )
+    
+    # Disable warnings for this test executable
+    if(MSVC)
+        target_compile_options(audio_pipeline_mixer_test PRIVATE /W0)
+    endif()
+
     # Phase 2 Week 2: Audio Synchronization Validation
     add_executable(test_phase2_week2_audio_sync
         test_phase2_week2_audio_sync.cpp
@@ -380,6 +506,7 @@ if(ENABLE_TOOLS)
     
     target_link_libraries(test_phase2_week3_audio_render PRIVATE
         ve_audio
+        ve_media_io
         ve_core
     )
     
@@ -387,6 +514,14 @@ if(ENABLE_TOOLS)
         src/audio/include
         src/core/include
     )
+    
+    # Add FFmpeg support for audio rendering test
+    if(ENABLE_FFMPEG)
+        # Explicitly link FFmpeg libraries for test
+        find_package(FFMPEG REQUIRED)
+        target_link_libraries(test_phase2_week3_audio_render PRIVATE ${FFMPEG_LIBRARIES})
+        target_include_directories(test_phase2_week3_audio_render PRIVATE ${FFMPEG_INCLUDE_DIRS})
+    endif()
     
     # Disable warnings for this test executable
     if(MSVC)
@@ -437,6 +572,139 @@ if(ENABLE_TOOLS)
         target_compile_options(audio_effects_phase2_week5_validation PRIVATE /W0)
     endif()
 
+    # Week 10: Real-Time Audio Monitoring Validation (Standalone)
+    add_executable(audio_monitoring_week10_validation_standalone
+        audio_monitoring_week10_validation_standalone.cpp
+    )
+
+    # This is a standalone validation that doesn't depend on the audio engine
+    # It demonstrates all Week 10 concepts independently
+    set_target_properties(audio_monitoring_week10_validation_standalone PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
+    )
+
+    # Disable warnings for this test executable
+    if(MSVC)
+        target_compile_options(audio_monitoring_week10_validation_standalone PRIVATE /W0)
+    endif()
+
+    # Week 10: Real-Time Audio Monitoring Validation
+    add_executable(audio_monitoring_week10_validation
+        audio_monitoring_week10_validation.cpp
+    )
+
+    target_link_libraries(audio_monitoring_week10_validation PRIVATE
+        ve_audio
+        ve_core
+    )
+
+    target_include_directories(audio_monitoring_week10_validation PRIVATE
+        src/core/include
+        src/audio/include
+    )
+
+    set_target_properties(audio_monitoring_week10_validation PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
+    )
+
+    # Disable warnings for this test executable
+    if(MSVC)
+        target_compile_options(audio_monitoring_week10_validation PRIVATE /W0)
+    endif()
+
+    # Phase 2 Week 6: A/V Synchronization Validation Framework Test
+    add_executable(sync_validator_test
+        sync_validator_test.cpp
+    )
+
+    target_link_libraries(sync_validator_test PRIVATE
+        ve_audio
+        ve_core
+    )
+
+    target_include_directories(sync_validator_test PRIVATE
+        src/core/include
+        src/audio/include
+    )
+
+    set_target_properties(sync_validator_test PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
+    )
+
+    # Disable warnings for this test executable
+    if(MSVC)
+        target_compile_options(sync_validator_test PRIVATE /W0)
+    endif()
+
+    # FFmpeg Codec Enhancement Validation Test
+    add_executable(ffmpeg_codec_validation_test
+        ffmpeg_codec_validation_test.cpp
+    )
+
+    target_link_libraries(ffmpeg_codec_validation_test PRIVATE
+        ve_audio
+        ve_core
+    )
+
+    target_include_directories(ffmpeg_codec_validation_test PRIVATE
+        src/core/include
+        src/audio/include
+    )
+
+    set_target_properties(ffmpeg_codec_validation_test PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
+    )
+
+    # Disable warnings for this test executable
+    if(MSVC)
+        target_compile_options(ffmpeg_codec_validation_test PRIVATE /W0)
+    endif()
+
+    # Week 9 Audio Export Pipeline Validation Test
+    add_executable(audio_export_presets_week9_validation
+        audio_export_presets_week9_validation.cpp
+    )
+
+    target_link_libraries(audio_export_presets_week9_validation PRIVATE
+        ve_audio
+        ve_core
+    )
+
+    target_include_directories(audio_export_presets_week9_validation PRIVATE
+        src/core/include
+        src/audio/include
+    )
+
+    set_target_properties(audio_export_presets_week9_validation PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
+    )
+
+    # Disable warnings for this test executable
+    if(MSVC)
+        target_compile_options(audio_export_presets_week9_validation PRIVATE /W0)
+    endif()
+
+    # Week 9 Audio Export Pipeline Simple Validation Test (Standalone)
+    add_executable(audio_export_presets_week9_simple_validation
+        audio_export_presets_week9_simple_validation.cpp
+    )
+
+    # No dependencies - standalone implementation
+    set_target_properties(audio_export_presets_week9_simple_validation PROPERTIES
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED ON
+    )
+
+    # Disable warnings for this test executable
+    if(MSVC)
+        target_compile_options(audio_export_presets_week9_simple_validation PRIVATE /W0)
+    endif()
+
     # AUDIO ENGINE ROADMAP Phase 1 Week 3 FFmpeg Integration Test
     add_executable(phase1_week3_ffmpeg_integration_test
         phase1_week3_ffmpeg_integration_test_simple.cpp
@@ -449,6 +717,29 @@ if(ENABLE_TOOLS)
     )
     
     target_include_directories(phase1_week3_ffmpeg_integration_test PRIVATE
+        src/audio/include
+        src/media_io/include
+        src/core/include
+    )
+
+    # FFmpeg Direct Functionality Test
+    add_executable(ffmpeg_direct_test
+        ffmpeg_direct_test.cpp
+    )
+    
+    target_link_libraries(ffmpeg_direct_test PRIVATE
+        ve_audio
+        ve_media_io
+        ve_core
+    )
+    
+    if(ENABLE_FFMPEG)
+        # Explicitly link FFmpeg libraries for test
+        find_package(FFMPEG REQUIRED)
+        target_link_libraries(ffmpeg_direct_test PRIVATE ${FFMPEG_LIBRARIES})
+    endif()
+    
+    target_include_directories(ffmpeg_direct_test PRIVATE
         src/audio/include
         src/media_io/include
         src/core/include
@@ -640,6 +931,94 @@ target_include_directories(debug_sample_rate_test
     ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
     ${FFMPEG_INCLUDE_DIRS}
 )
+
+# Week 8: Qt Timeline UI Integration Test Application
+if(ENABLE_QT_TOOLS)
+    find_package(Qt6 QUIET COMPONENTS Core Widgets Concurrent)
+    if(Qt6_FOUND)
+        # Enable Qt's MOC for this test
+        set(CMAKE_AUTOMOC ON)
+        
+        # Create a minimal UI library with just our Week 8 components (no dependencies on existing UI)
+        add_library(ve_ui_minimal
+            src/ui/src/minimal_waveform_widget.cpp
+            src/ui/src/minimal_audio_track_widget.cpp
+            src/ui/src/minimal_audio_meters_widget.cpp
+            
+            src/ui/include/ui/minimal_waveform_widget.hpp
+            src/ui/include/ui/minimal_audio_track_widget.hpp
+            src/ui/include/ui/minimal_audio_meters_widget.hpp
+        )
+        
+        target_include_directories(ve_ui_minimal
+            PUBLIC src/ui/include
+            PRIVATE src/ui/src
+            PRIVATE ${CMAKE_SOURCE_DIR}/src/core/include
+            PRIVATE ${CMAKE_SOURCE_DIR}/src/audio/include
+        )
+        
+        target_link_libraries(ve_ui_minimal
+            PUBLIC
+                ve_core
+                Qt6::Core
+                Qt6::Widgets
+                Qt6::Concurrent
+        )
+        
+        add_executable(week8_integration_test
+            week8_integration_test.cpp
+        )
+        
+        target_link_libraries(week8_integration_test
+            PRIVATE
+            ve_ui_minimal
+            ve_core
+            Qt6::Core
+            Qt6::Widgets
+        )
+        
+        target_include_directories(week8_integration_test
+            PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
+        )
+        
+        # Disable warnings for this test executable
+        if(MSVC)
+            target_compile_options(week8_integration_test PRIVATE /W0)
+        endif()
+        
+        # Simple audio widget runtime test
+        add_executable(simple_audio_widget_test
+            simple_audio_widget_test.cpp
+        )
+        
+        target_link_libraries(simple_audio_widget_test
+            PRIVATE
+            ve_ui_minimal
+            ve_core
+            Qt6::Core
+            Qt6::Widgets
+        )
+        
+        target_include_directories(simple_audio_widget_test
+            PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
+        )
+        
+        # Disable warnings for this test executable
+        if(MSVC)
+            target_compile_options(simple_audio_widget_test PRIVATE /W0)
+        endif()
+        
+        message(STATUS "Week 8 Integration Test Application configured")
+    else()
+        message(STATUS "Skipping Week 8 Integration Test - Qt6 not found")
+    endif()
+else()
+    message(STATUS "Skipping Week 8 Integration Test - UI module not available")
+endif()
 
 set(CPACK_PACKAGE_NAME "VideoEditor")
 set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})

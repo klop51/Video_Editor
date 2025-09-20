@@ -663,14 +663,15 @@ bool PlaybackController::initialize_audio_pipeline() {
                 return;
             }
             
+            // Audio frame processing debug logging disabled for performance
             // Debug logging to check for duplicate frames (reduced frequency)
-            static int log_counter = 0;
-            if (++log_counter % 100 == 0) { // Log every 100th frame to reduce spam
-                ve::log::info("Processing audio frame: pts=" + std::to_string(frame.pts) + 
-                             ", samples=" + std::to_string(frame.data.size()) +
-                             ", rate=" + std::to_string(frame.sample_rate) +
-                             ", channels=" + std::to_string(frame.channels));
-            }
+            // static int log_counter = 0;
+            // if (++log_counter % 100 == 0) { // Log every 100th frame to reduce spam
+            //     ve::log::info("Processing audio frame: pts=" + std::to_string(frame.pts) + 
+            //                  ", samples=" + std::to_string(frame.data.size()) +
+            //                  ", rate=" + std::to_string(frame.sample_rate) +
+            //                  ", channels=" + std::to_string(frame.channels));
+            // }
             
             // Convert decode::AudioFrame to audio::AudioFrame for pipeline
             

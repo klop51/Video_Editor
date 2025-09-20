@@ -68,6 +68,10 @@ protected:
     void dragMoveEvent(QDragMoveEvent* event) override;
     void dropEvent(QDropEvent* event) override;
     
+    // Hover events for proper mouse highlighting
+    void enterEvent(QEnterEvent* event) override;
+    void leaveEvent(QEvent* event) override;
+    
 private:
     // Drawing methods
     void draw_background(QPainter& painter);
@@ -162,6 +166,9 @@ private:
     
     // Debug tools
     QTimer* heartbeat_timer_;
+    
+    // Update optimization
+    QTimer* update_timer_;  // For batching timeline UI updates
 };
 
 } // namespace ve::ui

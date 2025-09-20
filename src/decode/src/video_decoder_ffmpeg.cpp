@@ -119,7 +119,8 @@ bool copy_frame_data(AVFrame* frame, VideoFrame& vf) {
             return false;
         }
         
-        ve::log::info("D3D11 frame transfer successful: " + std::to_string(frame->format) + " -> " + std::to_string(sw_frame->format));
+        // D3D11 frame transfer debug logging disabled for performance
+        // ve::log::info("D3D11 frame transfer successful: " + std::to_string(frame->format) + " -> " + std::to_string(sw_frame->format));
         
         // Copy frame properties
         av_frame_copy_props(sw_frame, frame);

@@ -14,6 +14,8 @@
 #include <immintrin.h>  // For AVX/AVX2 intrinsics
 #include <chrono>
 #include <cstring>
+#include <unordered_map>
+#include <mutex>
 
 namespace ve::audio {
 
@@ -162,18 +164,24 @@ bool EQNode::process_effect(
     uint32_t sample_count = input->sample_count();
     uint16_t channel_count = input->channel_count();
     
-    // Copy input to output first
-    std::memcpy(output_data, input_data, sample_count * channel_count * sizeof(float));
+    // Copy input to output first (SIMD optimized)
+    uint32_t total_samples = sample_count * channel_count;
+    effects_utils::copy_with_gain_simd(input_data, output_data, total_samples, 1.0f);
+    
+    // Update all filter coefficients once per buffer (not per sample)
+    for (int band = 0; band < NUM_BANDS; ++band) {
+        if (band_enabled_[band]) {
+            update_filter_coefficients(band);
+        }
+    }
     
     // Apply each enabled EQ band
     for (int band = 0; band < NUM_BANDS; ++band) {
         if (!band_enabled_[band]) continue;
         
-        // Update filter coefficients if parameters changed
-        update_filter_coefficients(band);
-        
-        // Process each channel
+        // Process each channel with optimized loop
         for (uint16_t ch = 0; ch < channel_count; ++ch) {
+            // Process all samples for this channel/band in one go
             for (uint32_t sample = 0; sample < sample_count; ++sample) {
                 size_t index = sample * channel_count + ch;
                 output_data[index] = filters_[band].process_sample(output_data[index], ch);
@@ -207,15 +215,30 @@ void EQNode::update_filter_coefficients(int band) {
     
     if (!band_enabled_[band]) return;
     
+    // Only update coefficients if parameters changed
+    auto& filter = filters_[band];
+    if (!filter.needs_update && 
+        std::abs(filter.last_freq - freq) < 0.1f &&
+        std::abs(filter.last_gain - gain_db) < 0.01f &&
+        std::abs(filter.last_q - q) < 0.001f) {
+        return; // No change needed
+    }
+    
+    // Update coefficients and cache parameter values
     calculate_biquad_coefficients(band, freq, gain_db, q,
-                                filters_[band].a0, filters_[band].a1, filters_[band].a2,
-                                filters_[band].b1, filters_[band].b2);
+                                filter.a0, filter.a1, filter.a2,
+                                filter.b1, filter.b2);
+    
+    filter.last_freq = freq;
+    filter.last_gain = gain_db;
+    filter.last_q = q;
+    filter.needs_update = false;
 }
 
 void EQNode::calculate_biquad_coefficients(int band, float freq, float gain_db, float q,
                                          float& a0, float& a1, float& a2, float& b1, float& b2) {
     // Get sample rate from current configuration
-    float sample_rate = 48000.0f; // TODO: Get from actual configuration
+    float sample_rate = static_cast<float>(params_.sample_rate);
     
     float A = std::powf(10.0f, gain_db / 40.0f);
     float omega = 2.0f * static_cast<float>(M_PI) * freq / sample_rate;
@@ -242,18 +265,21 @@ void EQNode::calculate_biquad_coefficients(int band, float freq, float gain_db, 
 void EQNode::set_band_gain(int band, float gain_db) {
     if (band >= 0 && band < NUM_BANDS) {
         set_parameter("band" + std::to_string(band + 1) + "_gain", gain_db);
+        filters_[band].needs_update = true;
     }
 }
 
 void EQNode::set_band_frequency(int band, float freq_hz) {
     if (band >= 0 && band < NUM_BANDS) {
         set_parameter("band" + std::to_string(band + 1) + "_freq", freq_hz);
+        filters_[band].needs_update = true;
     }
 }
 
 void EQNode::set_band_q_factor(int band, float q) {
     if (band >= 0 && band < NUM_BANDS) {
         set_parameter("band" + std::to_string(band + 1) + "_q", q);
+        filters_[band].needs_update = true;
     }
 }
 
@@ -266,28 +292,32 @@ void EQNode::set_band_enabled(int band, bool enabled) {
 
 float EQNode::get_band_gain(int band) const {
     if (band >= 0 && band < NUM_BANDS) {
-        return get_parameter("band" + std::to_string(band + 1) + "_gain");
+        auto param = get_parameter_ptr("band" + std::to_string(band + 1) + "_gain");
+        return param ? param->get_target_value() : 0.0f;
     }
     return 0.0f;
 }
 
 float EQNode::get_band_frequency(int band) const {
     if (band >= 0 && band < NUM_BANDS) {
-        return get_parameter("band" + std::to_string(band + 1) + "_freq");
+        auto param = get_parameter_ptr("band" + std::to_string(band + 1) + "_freq");
+        return param ? param->get_target_value() : 0.0f;
     }
     return 0.0f;
 }
 
 float EQNode::get_band_q_factor(int band) const {
     if (band >= 0 && band < NUM_BANDS) {
-        return get_parameter("band" + std::to_string(band + 1) + "_q");
+        auto param = get_parameter_ptr("band" + std::to_string(band + 1) + "_q");
+        return param ? param->get_target_value() : 0.0f;
     }
     return 0.0f;
 }
 
 bool EQNode::is_band_enabled(int band) const {
     if (band >= 0 && band < NUM_BANDS) {
-        return get_parameter("band" + std::to_string(band + 1) + "_enabled") > 0.5f;
+        auto param = get_parameter_ptr("band" + std::to_string(band + 1) + "_enabled");
+        return param ? (param->get_target_value() > 0.5f) : false;
     }
     return false;
 }
@@ -334,36 +364,43 @@ bool CompressorNode::process_effect(
     
     float makeup_gain = effects_utils::db_to_linear(get_parameter("makeup"));
     
-    for (uint32_t sample = 0; sample < sample_count; ++sample) {
-        // Calculate RMS level for this sample (simplified)
-        float sum_squares = 0.0f;
-        for (uint16_t ch = 0; ch < channel_count; ++ch) {
-            float input_sample = input_data[sample * channel_count + ch];
-            sum_squares += input_sample * input_sample;
-        }
+    // Process in optimized chunks for better performance
+    const uint32_t chunk_size = 16; // Process 16 samples at a time for envelope following
+    
+    for (uint32_t start = 0; start < sample_count; start += chunk_size) {
+        uint32_t end = std::min(start + chunk_size, sample_count);
         
-        float rms_level = std::sqrt(sum_squares / channel_count);
-        float level_db = effects_utils::linear_to_db(rms_level);
-        
-        // Compute gain reduction
-        float gr_db = compute_gain_reduction(level_db);
-        
-        // Smooth gain reduction with envelope follower
-        float target_gr = std::abs(gr_db);
-        if (target_gr > gain_reduction_) {
-            // Attack
-            gain_reduction_ = target_gr * (1.0f - attack_coeff_) + gain_reduction_ * attack_coeff_;
-        } else {
-            // Release
-            gain_reduction_ = target_gr * (1.0f - release_coeff_) + gain_reduction_ * release_coeff_;
-        }
-        
-        float gain_linear = effects_utils::db_to_linear(-gain_reduction_) * makeup_gain;
-        
-        // Apply gain to all channels
-        for (uint16_t ch = 0; ch < channel_count; ++ch) {
-            size_t index = sample * channel_count + ch;
-            output_data[index] = input_data[index] * gain_linear;
+        for (uint32_t sample = start; sample < end; ++sample) {
+            // Calculate RMS level for this sample (simplified)
+            float sum_squares = 0.0f;
+            for (uint16_t ch = 0; ch < channel_count; ++ch) {
+                float input_sample = input_data[sample * channel_count + ch];
+                sum_squares += input_sample * input_sample;
+            }
+            
+            float rms_level = std::sqrt(sum_squares / channel_count);
+            float level_db = effects_utils::linear_to_db(rms_level);
+            
+            // Compute gain reduction
+            float gr_db = compute_gain_reduction(level_db);
+            
+            // Smooth gain reduction with envelope follower
+            float target_gr = std::abs(gr_db);
+            if (target_gr > gain_reduction_) {
+                // Attack
+                gain_reduction_ = target_gr * (1.0f - attack_coeff_) + gain_reduction_ * attack_coeff_;
+            } else {
+                // Release
+                gain_reduction_ = target_gr * (1.0f - release_coeff_) + gain_reduction_ * release_coeff_;
+            }
+            
+            float gain_linear = effects_utils::db_to_linear(-gain_reduction_) * makeup_gain;
+            
+            // Apply gain to all channels
+            for (uint16_t ch = 0; ch < channel_count; ++ch) {
+                size_t index = sample * channel_count + ch;
+                output_data[index] = input_data[index] * gain_linear;
+            }
         }
     }
     

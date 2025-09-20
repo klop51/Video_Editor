@@ -19,6 +19,9 @@
 #include "audio/audio_clock.hpp"
 #include "audio/mixing_graph.hpp"
 #include "audio/audio_effects.hpp"
+#include "audio/audio_types.hpp"
+#include "audio/export_presets.hpp"
+#include "audio/ffmpeg_audio_encoder.hpp"
 
 #include <memory>
 #include <string>
@@ -31,74 +34,13 @@
 
 namespace ve::audio {
 
-/**
- * @brief Audio export format specifications
- */
-enum class ExportFormat {
-    WAV,        ///< Uncompressed WAV format
-    MP3,        ///< MPEG-1 Audio Layer III
-    FLAC,       ///< Free Lossless Audio Codec
-    AAC,        ///< Advanced Audio Codec
-    OGG,        ///< Ogg Vorbis
-    AIFF        ///< Audio Interchange File Format
-};
+// Types imported from audio_types.hpp:
+// - ExportFormat, QualityPreset, RenderMode, ExportConfig, MixdownConfig
 
 /**
- * @brief Audio quality preset levels
+ * @brief Specialized MixdownConfig for render engine with effects support
  */
-enum class QualityPreset {
-    Draft,      ///< Fast rendering, lower quality
-    Standard,   ///< Balanced quality and speed
-    High,       ///< High quality, slower rendering
-    Maximum,    ///< Maximum quality, slowest rendering
-    Custom      ///< User-defined custom settings
-};
-
-/**
- * @brief Audio rendering mode
- */
-enum class RenderMode {
-    Realtime,   ///< Real-time rendering (for monitoring)
-    Offline,    ///< Offline rendering (for export)
-    Preview     ///< Low-latency preview rendering
-};
-
-/**
- * @brief Export format configuration
- */
-struct ExportConfig {
-    ExportFormat format = ExportFormat::WAV;
-    uint32_t sample_rate = 48000;           ///< Target sample rate
-    uint16_t channel_count = 2;             ///< Target channel count
-    uint32_t bit_depth = 24;                ///< Bit depth (8, 16, 24, 32)
-    QualityPreset quality = QualityPreset::High;
-    
-    // Format-specific settings
-    struct {
-        uint32_t bitrate = 320;             ///< MP3/AAC bitrate (kbps)
-        bool vbr = true;                    ///< Variable bitrate
-        uint32_t compression_level = 5;      ///< FLAC compression (0-8)
-        bool joint_stereo = true;           ///< Joint stereo encoding
-    } codec_settings;
-    
-    // Metadata
-    std::string title;
-    std::string artist;
-    std::string album;
-    std::string genre;
-    std::string comment;
-    uint32_t year = 0;
-    uint32_t track_number = 0;
-    
-    bool normalize_output = false;          ///< Apply output normalization
-    double target_lufs = -23.0;            ///< Target LUFS for normalization
-    bool apply_dithering = true;           ///< Apply dithering for bit depth reduction
-};
-
-/**
- * @brief Multi-track mix-down configuration
- */
-struct MixdownConfig {
+struct RenderMixdownConfig {
     struct TrackConfig {
         uint32_t track_id;
         double volume = 1.0;                ///< Track volume multiplier
@@ -226,6 +168,25 @@ public:
     // Export operations
     
     /**
+     * @brief Start audio export to file using preset
+     * @param output_path Output file path
+     * @param preset Export preset configuration
+     * @param mixdown_config Mix-down configuration
+     * @param start_time Start time for export
+     * @param duration Duration to export
+     * @param progress_callback Progress callback (optional)
+     * @param completion_callback Completion callback (optional)
+     * @return Export job ID for tracking
+     */
+    uint32_t start_export_with_preset(const std::string& output_path,
+                                     const AudioExportPreset& preset,
+                                     const MixdownConfig& mixdown_config,
+                                     const TimePoint& start_time,
+                                     const TimeDuration& duration,
+                                     ProgressCallback progress_callback = nullptr,
+                                     CompletionCallback completion_callback = nullptr);
+
+    /**
      * @brief Start audio export to file
      * @param output_path Output file path
      * @param config Export configuration
@@ -325,8 +286,60 @@ public:
      */
     void set_quality_callback(QualityCallback callback);
 
+    // Export presets support
+    
+    /**
+     * @brief Get all available export presets
+     * @return Vector of available presets
+     */
+    std::vector<AudioExportPreset> get_available_presets() const;
+    
+    /**
+     * @brief Get presets by category
+     * @param category Preset category
+     * @return Vector of presets in category
+     */
+    std::vector<AudioExportPreset> get_presets_by_category(ExportPresetCategory category) const;
+    
+    /**
+     * @brief Get presets for specific platform
+     * @param platform Target delivery platform
+     * @return Vector of platform-specific presets
+     */
+    std::vector<AudioExportPreset> get_presets_by_platform(DeliveryPlatform platform) const;
+    
+    /**
+     * @brief Get recommended preset for platform
+     * @param platform Target delivery platform
+     * @return Recommended preset configuration
+     */
+    AudioExportPreset get_recommended_preset(DeliveryPlatform platform) const;
+    
+    /**
+     * @brief Validate export preset configuration
+     * @param preset Preset to validate
+     * @return true if preset is valid and supported
+     */
+    bool validate_preset(const AudioExportPreset& preset) const;
+
     // Format support queries
     
+    /**
+     * @brief Check codec support capabilities
+     * @return Codec support information
+     */
+    struct CodecSupport {
+        bool mp3_support = false;
+        bool aac_support = false;
+        bool flac_support = false;
+        bool ogg_support = false;
+        bool wav_support = true;  // Always supported
+        std::string ffmpeg_version;
+        std::vector<std::string> available_encoders;
+    };
+    
+    CodecSupport get_codec_support() const;
+
     /**
      * @brief Get supported export formats
      * @return Vector of supported formats

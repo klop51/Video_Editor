@@ -10,12 +10,20 @@ add_library(ve_audio STATIC
     src/audio_buffer_pool.cpp          # Phase 1 Week 2: Lock-free buffer management
     src/audio_clock.cpp                # Phase 1 Week 2: Precision audio timeline sync
     src/ffmpeg_audio_decoder.cpp       # Phase 1 Week 3: FFmpeg audio decoder integration
+    src/ffmpeg_audio_encoder.cpp       # Week 9: FFmpeg audio encoder integration
+    src/export_presets.cpp             # Week 9: Professional export presets system
     src/mixing_graph.cpp               # Phase 2 Week 4: Node-based mixing architecture
     src/audio_effects.cpp              # Phase 2 Week 5: Professional audio effects suite
-    src/audio_render_engine.cpp        # Phase 2 Week 3: Advanced audio rendering engine
+    src/audio_render_engine.cpp        # Phase 2 Week 3 + Week 9: Advanced audio rendering with presets
     src/audio_output.cpp               # Phase 1A: WASAPI audio output backend
     src/simple_mixer.cpp               # Phase 1B: Simple mixer core
     src/audio_pipeline.cpp             # Phase 1C: Audio pipeline integration
+    src/master_clock.cpp               # Phase 2 Week 6: A/V synchronization master clock
+    src/sync_validator.cpp             # Phase 2 Week 6: A/V synchronization validation framework
+    src/latency_compensator.cpp        # Phase 2 Week 6: Automatic latency detection and compensation
+    src/loudness_monitor.cpp           # Week 10: Real-time loudness monitoring (EBU R128)
+    src/audio_meters.cpp               # Week 10: Professional audio meters with broadcast ballistics
+    src/quality_dashboard.cpp          # Week 10: Quality analysis dashboard and compliance monitoring
     # Keep existing audio_engine.cpp if it exists
     $<$<BOOL:${CMAKE_CURRENT_SOURCE_DIR}/src/audio_engine.cpp>:src/audio_engine.cpp>
 )
@@ -38,8 +46,10 @@ target_link_libraries(ve_audio
 if(ENABLE_FFMPEG)
     target_compile_definitions(ve_audio PUBLIC ENABLE_FFMPEG=1)
     
-    # Link FFmpeg libraries if available through media_io
-    # FFmpeg libraries are transitively linked through ve_media_io
+    # Explicitly link FFmpeg libraries for audio encoder/decoder functionality
+    find_package(FFMPEG REQUIRED)
+    target_link_libraries(ve_audio PUBLIC ${FFMPEG_LIBRARIES})
+    target_include_directories(ve_audio PRIVATE ${FFMPEG_INCLUDE_DIRS})
     
     # Relax warnings for external headers on MSVC
     if(MSVC)

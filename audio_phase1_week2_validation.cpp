@@ -86,10 +86,11 @@ bool test_sample_rate_converter() {
         
         // Test configuration: 44.1kHz to 48kHz conversion
         ResampleConfig config;
-        config.input_rate = 44100;
-        config.output_rate = 48000;
-        config.channel_count = 2;
-        config.quality = ResampleQuality::High;
+        config.input_sample_rate = 44100;
+        config.output_sample_rate = 48000;
+        config.input_channels = 2;
+        config.output_channels = 2;
+        config.quality = ResampleQuality::Highest;
         
         auto converter = SampleRateConverter::create(config);
         if (!converter) {

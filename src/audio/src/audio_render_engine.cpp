@@ -11,6 +11,8 @@
  */
 
 #include "audio/audio_render_engine.hpp"
+#include "audio/export_presets.hpp"
+#include "audio/ffmpeg_audio_encoder.hpp"
 #include "core/log.hpp"
 
 #include <algorithm>
@@ -20,7 +22,9 @@
 #include <thread>
 #include <chrono>
 #include <sstream>
+#ifdef __SSE2__
 #include <immintrin.h>
+#endif
 
 namespace ve::audio {
 
@@ -37,14 +41,16 @@ public:
     
     ~Impl() = default;
 
-    // Core codec support flags
-    struct CodecSupport {
+    // Core codec support flags (Updated for Week 9)
+    struct CodecSupportInternal {
         bool wav_support = true;        // Always supported (native)
-        bool mp3_support = false;       // Requires external encoder
-        bool flac_support = false;      // Requires FLAC library
-        bool aac_support = false;       // Requires AAC encoder
-        bool ogg_support = false;       // Requires Vorbis encoder
+        bool mp3_support = false;       // FFmpeg encoder support
+        bool flac_support = false;      // FFmpeg encoder support
+        bool aac_support = false;       // FFmpeg encoder support
+        bool ogg_support = false;       // FFmpeg encoder support
         bool aiff_support = true;       // Native support
+        std::string ffmpeg_version;
+        std::vector<std::string> available_encoders;
     } codec_support_;
     
     // Quality monitoring
@@ -599,19 +605,51 @@ bool AudioRenderEngine::validate_export_config(const ExportConfig& config) const
 // Impl class method implementations
 
 bool AudioRenderEngine::Impl::initialize_codec_support() {
-    // For now, only enable native format support
-    // In a full implementation, this would detect available codec libraries
+    // Native format support
     codec_support_.wav_support = true;
     codec_support_.aiff_support = true;
     
-    // TODO: Detect external codec libraries
-    // codec_support_.mp3_support = detect_mp3_encoder();
-    // codec_support_.flac_support = detect_flac_library();
-    // codec_support_.aac_support = detect_aac_encoder();
-    // codec_support_.ogg_support = detect_vorbis_encoder();
+#ifdef ENABLE_FFMPEG
+    // Detect FFmpeg codec support
+    try {
+        auto test_encoder = FFmpegAudioEncoder::create(AudioExportFormat::MP3, 44100, 2);
+        codec_support_.mp3_support = (test_encoder != nullptr);
+        
+        test_encoder = FFmpegAudioEncoder::create(AudioExportFormat::AAC, 44100, 2);
+        codec_support_.aac_support = (test_encoder != nullptr);
+        
+        test_encoder = FFmpegAudioEncoder::create(AudioExportFormat::FLAC, 44100, 2);
+        codec_support_.flac_support = (test_encoder != nullptr);
+        
+        test_encoder = FFmpegAudioEncoder::create(AudioExportFormat::OGG, 44100, 2);
+        codec_support_.ogg_support = (test_encoder != nullptr);
+        
+        codec_support_.ffmpeg_version = FFmpegAudioEncoder::get_version_info();
+        codec_support_.available_encoders = FFmpegAudioEncoder::get_available_encoders();
+        
+        ve::log::info("AudioRenderEngine: FFmpeg codec support initialized - MP3:" + 
+                     std::string(codec_support_.mp3_support ? "YES" : "NO") + 
+                     " AAC:" + std::string(codec_support_.aac_support ? "YES" : "NO") +
+                     " FLAC:" + std::string(codec_support_.flac_support ? "YES" : "NO") +
+                     " OGG:" + std::string(codec_support_.ogg_support ? "YES" : "NO"));
+                     
+    } catch (const std::exception& e) {
+        ve::log::error("AudioRenderEngine: FFmpeg codec initialization failed: " + std::string(e.what()));
+        // Fall back to native formats only
+        codec_support_.mp3_support = false;
+        codec_support_.aac_support = false;
+        codec_support_.flac_support = false;
+        codec_support_.ogg_support = false;
+    }
+#else
+    ve::log::info("AudioRenderEngine: FFmpeg support not compiled in, using native formats only");
+    codec_support_.mp3_support = false;
+    codec_support_.aac_support = false;
+    codec_support_.flac_support = false;
+    codec_support_.ogg_support = false;
+#endif
     
     ve::log::info("AudioRenderEngine: Codec support initialized");
-    
     return true;
 }
 
@@ -878,6 +916,135 @@ bool AudioRenderEngine::Impl::write_wav_file(const std::string& path, const Expo
         ve::log::error("AudioRenderEngine: WAV file write failed");
         return false;
     }
+}
+
+// Week 9 Export Preset Integration
+
+uint32_t AudioRenderEngine::start_export_with_preset(const std::string& output_path,
+                                                     const AudioExportPreset& preset,
+                                                     const MixdownConfig& mixdown_config,
+                                                     const TimePoint& start_time,
+                                                     const TimeDuration& duration,
+                                                     ProgressCallback progress_callback,
+                                                     CompletionCallback completion_callback) {
+    // Convert preset to export config for compatibility
+    ExportConfig export_config;
+    export_config.format = preset.export_config.format;
+    export_config.sample_rate = preset.export_config.sample_rate;
+    export_config.channel_count = preset.export_config.channel_count;
+    export_config.bit_depth = preset.export_config.bit_depth;
+    export_config.quality = preset.export_config.quality;
+    
+    // Apply encoder settings
+    export_config.codec_settings.bitrate = preset.encoder_config.bitrate / 1000; // Convert to kbps
+    export_config.codec_settings.vbr = preset.encoder_config.vbr_mode;
+    export_config.codec_settings.compression_level = preset.encoder_config.compression_level;
+    export_config.codec_settings.joint_stereo = preset.encoder_config.joint_stereo;
+    
+    // Apply metadata if present
+    if (!preset.metadata.title.empty()) export_config.title = preset.metadata.title;
+    if (!preset.metadata.artist.empty()) export_config.artist = preset.metadata.artist;
+    if (!preset.metadata.album.empty()) export_config.album = preset.metadata.album;
+    if (!preset.metadata.genre.empty()) export_config.genre = preset.metadata.genre;
+    if (!preset.metadata.comment.empty()) export_config.comment = preset.metadata.comment;
+    if (preset.metadata.year > 0) export_config.year = preset.metadata.year;
+    if (preset.metadata.track > 0) export_config.track_number = preset.metadata.track;
+    
+    // Apply loudness normalization settings
+    export_config.normalize_output = preset.enable_loudness_normalization;
+    export_config.target_lufs = preset.target_lufs;
+    
+    ve::log::info("AudioRenderEngine: Starting export with preset: " + preset.name);
+    
+    // Use existing export method
+    return start_export(output_path, export_config, mixdown_config, start_time, duration,
+                       progress_callback, completion_callback);
+}
+
+std::vector<AudioExportPreset> AudioRenderEngine::get_available_presets() const {
+    return ExportPresetManager::get_all_presets();
+}
+
+std::vector<AudioExportPreset> AudioRenderEngine::get_presets_by_category(ExportPresetCategory category) const {
+    return ExportPresetManager::get_presets_by_category(category);
+}
+
+std::vector<AudioExportPreset> AudioRenderEngine::get_presets_by_platform(DeliveryPlatform platform) const {
+    return ExportPresetManager::get_presets_by_platform(platform);
+}
+
+AudioExportPreset AudioRenderEngine::get_recommended_preset(DeliveryPlatform platform) const {
+    return ExportPresetManager::get_recommended_preset(platform);
+}
+
+bool AudioRenderEngine::validate_preset(const AudioExportPreset& preset) const {
+    // Validate with preset manager
+    if (!ExportPresetManager::validate_preset(preset)) {
+        return false;
+    }
+    
+    // Check format support in our engine
+    ExportFormat format;
+    switch (preset.preferred_format) {
+        case AudioExportFormat::MP3:
+            format = ExportFormat::MP3;
+            break;
+        case AudioExportFormat::AAC:
+            format = ExportFormat::AAC;
+            break;
+        case AudioExportFormat::FLAC:
+            format = ExportFormat::FLAC;
+            break;
+        case AudioExportFormat::OGG:
+            format = ExportFormat::OGG;
+            break;
+        default:
+            format = ExportFormat::WAV;
+            break;
+    }
+    
+    if (!is_format_supported(format)) {
+        ve::log::error("AudioRenderEngine: Preset format not supported by engine");
+        return false;
+    }
+    
+    return true;
+}
+
+AudioRenderEngine::CodecSupport AudioRenderEngine::get_codec_support() const {
+    CodecSupport support;
+    
+#ifdef ENABLE_FFMPEG
+    // Check FFmpeg encoder availability
+    try {
+        auto encoder = FFmpegAudioEncoder::create(AudioExportFormat::MP3, 44100, 2);
+        support.mp3_support = (encoder != nullptr);
+        
+        encoder = FFmpegAudioEncoder::create(AudioExportFormat::AAC, 44100, 2);
+        support.aac_support = (encoder != nullptr);
+        
+        encoder = FFmpegAudioEncoder::create(AudioExportFormat::FLAC, 44100, 2);
+        support.flac_support = (encoder != nullptr);
+        
+        encoder = FFmpegAudioEncoder::create(AudioExportFormat::OGG, 44100, 2);
+        support.ogg_support = (encoder != nullptr);
+        
+        support.ffmpeg_version = FFmpegAudioEncoder::get_version_info();
+        support.available_encoders = FFmpegAudioEncoder::get_available_encoders();
+        
+        ve::log::info("AudioRenderEngine: FFmpeg codec support detected");
+        
+    } catch (const std::exception& e) {
+        ve::log::error("AudioRenderEngine: FFmpeg codec detection failed: " + std::string(e.what()));
+    }
+#else
+    ve::log::info("AudioRenderEngine: FFmpeg support not compiled in");
+#endif
+    
+    // Native formats always supported
+    support.wav_support = true;
+    
+    return support;
 }
 
 } // namespace ve::audio
