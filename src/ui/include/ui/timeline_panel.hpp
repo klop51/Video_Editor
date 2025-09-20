@@ -41,6 +41,9 @@ public slots:
     void zoom_out();
     void zoom_fit();
     
+    // Phase 1: Override update for throttled painting
+    void update();
+    
     // Editing operations
     void cut_selected_segments();
     void copy_selected_segments();
@@ -113,6 +116,13 @@ private:
     QPixmap* get_cached_segment(uint32_t segment_id, const QRect& rect) const;
     void cache_segment(uint32_t segment_id, const QRect& rect, const QPixmap& pixmap) const;
     void clear_segment_cache() const;
+    
+    // Phase 1 performance optimizations
+    void init_paint_objects() const;                    // Initialize pre-allocated objects
+    void set_heavy_operation_mode(bool enabled);       // Enable/disable heavy operation mode
+    void request_throttled_update();                   // Request throttled paint update
+    void draw_minimal_timeline(QPainter& painter);     // Ultra-fast minimal timeline
+    bool should_skip_expensive_features() const;       // Check if we should skip expensive rendering
     
     // Coordinate conversion
     ve::TimePoint pixel_to_time(int x) const;
@@ -203,6 +213,13 @@ private:
     bool pending_heavy_update_; // Flag to prevent excessive heavy redraws
     int segments_being_added_; // Track when multiple segments are being added
     
+    // Enhanced throttling for Phase 1 optimizations
+    static constexpr int HEAVY_OPERATION_FPS = 15;  // 66ms between paints during heavy ops
+    static constexpr int NORMAL_FPS = 60;           // 16ms between paints normally
+    bool heavy_operation_mode_;                     // Current operation mode
+    QTimer* paint_throttle_timer_;                  // Timer for throttled painting
+    bool pending_paint_request_;                    // Flag for pending paint
+    
     // Simple segment rendering cache
     struct SegmentCacheEntry {
         uint32_t segment_id;
@@ -212,6 +229,19 @@ private:
     };
     mutable std::vector<SegmentCacheEntry> segment_cache_;
     mutable int cache_zoom_level_; // Current zoom level for cache validation
+    
+    // Pre-allocated paint objects (Phase 1 optimization)
+    mutable QColor cached_video_color_;
+    mutable QColor cached_audio_color_;
+    mutable QColor cached_selected_color_;
+    mutable QColor cached_text_color_;
+    mutable QPen cached_border_pen_;
+    mutable QPen cached_grid_pen_;
+    mutable QBrush cached_segment_brush_;
+    mutable QFont cached_name_font_;
+    mutable QFont cached_small_font_;
+    mutable QFontMetrics cached_font_metrics_;
+    mutable bool paint_objects_initialized_;
 
     // Cached hit-test state to cut down repeated scans
     mutable ve::timeline::SegmentId cached_hit_segment_id_;

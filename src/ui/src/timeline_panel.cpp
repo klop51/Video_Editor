@@ -54,7 +54,12 @@ TimelinePanel::TimelinePanel(QWidget* parent)
     , throttle_timer_(nullptr) // Initialize throttle timer
     , pending_heavy_update_(false) // No pending updates initially
     , segments_being_added_(0) // No segments being added initially
+    , heavy_operation_mode_(false) // Phase 1: Start in normal mode
+    , paint_throttle_timer_(nullptr) // Phase 1: Initialize throttle timer
+    , pending_paint_request_(false) // Phase 1: No pending paint initially
     , cache_zoom_level_(-1) // Invalid zoom level initially
+    , cached_font_metrics_(QFont()) // Phase 1: Initialize with default font
+    , paint_objects_initialized_(false) // Phase 1: Objects not initialized yet
     , cached_hit_segment_id_(0)
     , cached_hit_segment_index_(std::numeric_limits<size_t>::max())
     , cached_hit_track_index_(std::numeric_limits<size_t>::max())
@@ -92,6 +97,14 @@ TimelinePanel::TimelinePanel(QWidget* parent)
         }
     });
     heartbeat_timer_->start(100); // 100ms intervals
+    
+    // Phase 1: Setup paint throttling timer
+    paint_throttle_timer_ = new QTimer(this);
+    paint_throttle_timer_->setSingleShot(true);
+    connect(paint_throttle_timer_, &QTimer::timeout, this, [this]() {
+        pending_paint_request_ = false;
+        QWidget::update(); // Perform the actual paint
+    });
 }
 
 void TimelinePanel::set_timeline(ve::timeline::Timeline* timeline) {
@@ -121,21 +134,28 @@ void TimelinePanel::set_timeline(ve::timeline::Timeline* timeline) {
         });
     }
     
-    // Detect if we're in bulk operation mode (multiple set_timeline calls)
+    // Phase 1: Detect if we're in bulk operation mode (multiple set_timeline calls)
     segments_being_added_++;
     
-    // Use aggressive throttling during bulk operations
-    if (segments_being_added_ > 3) {
+    // Use heavy operation mode during bulk operations
+    if (segments_being_added_ > 2) {  // Lower threshold for faster detection
+        set_heavy_operation_mode(true);
+        
         if (!pending_heavy_update_) {
             pending_heavy_update_ = true;
             throttle_timer_->start(); // Use heavy throttling
         }
-        // Reset counter after some time
-        QTimer::singleShot(200, this, [this]() { segments_being_added_ = 0; });
+        
+        // Reset counter and exit heavy mode after some time
+        QTimer::singleShot(500, this, [this]() { 
+            segments_being_added_ = 0; 
+            set_heavy_operation_mode(false);
+            pending_heavy_update_ = false;
+        });
         return;
     }
     
-    // Normal throttling for single operations
+    // Normal operation for single timeline updates
     if (!update_timer_->isActive()) {
         update_timer_->start();
     }
@@ -192,109 +212,50 @@ void TimelinePanel::zoom_fit() {
     update();
 }
 
+// Phase 1: Override update to use throttled painting
+void TimelinePanel::update() {
+    request_throttled_update();
+}
+
 void TimelinePanel::paintEvent(QPaintEvent* event) {
     // Performance monitoring - track paint timing
     auto paint_start = std::chrono::high_resolution_clock::now();
     
-    // Throttle paint events but still do minimal painting to avoid white screen
-    static auto last_paint = std::chrono::high_resolution_clock::now();
-    auto time_since_last_paint = std::chrono::duration_cast<std::chrono::milliseconds>(paint_start - last_paint);
-    bool is_throttled = time_since_last_paint.count() < 16;  // Skip heavy operations if less than 16ms since last paint
-    
-    if (g_timeline_busy.load(std::memory_order_acquire)) {
-        // Skip reading timeline while a background commit is in progress
-        QPainter p(this);
-        p.fillRect(rect(), palette().base());
-        p.setPen(Qt::gray);
-        p.drawText(rect(), Qt::AlignCenter, tr("Preparing clip..."));
-        return;
-    }
-
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, false); // Crisp lines for timeline
     
-    // If throttled, do minimal painting to avoid white screen
+    // Phase 1: Check if we should use minimal timeline rendering
+    if (should_skip_expensive_features()) {
+        draw_minimal_timeline(painter);
+        return;
+    }
+    
+    // Initialize pre-allocated paint objects
+    init_paint_objects();
+    
+    // Throttle paint events for heavy operations - but do minimal painting to avoid white screen
+    static auto last_paint = std::chrono::high_resolution_clock::now();
+    auto time_since_last_paint = std::chrono::duration_cast<std::chrono::milliseconds>(paint_start - last_paint);
+    bool is_throttled = heavy_operation_mode_ && time_since_last_paint.count() < (1000 / HEAVY_OPERATION_FPS);
+    
     if (is_throttled) {
-        // Essential painting for visual feedback during rapid updates
-        draw_background(painter);  // Draw timeline background pattern
-        draw_timecode_ruler(painter);  // Always show timecode for navigation
-        
-        // Draw basic track structure and segments if timeline exists
-        if (timeline_) {
-            const auto& tracks = timeline_->tracks();
-            int y = TIMECODE_HEIGHT;
-            
-            // Draw track separators and basic segments
-            for (size_t i = 0; i < tracks.size() && y < height(); ++i) {
-                const auto& track = *tracks[i];  // Dereference the track pointer
-                
-                // Track separator line
-                QPen trackPen(palette().mid().color());
-                painter.setPen(trackPen);
-                painter.drawLine(0, y, width(), y);
-                
-                // Draw simplified segments - just basic shapes without details
-                const auto& segments = track.segments();
-                if (!segments.empty()) {
-                    // Use simple colors for quick rendering
-                    QColor segment_color = (track.type() == ve::timeline::Track::Video) ? 
-                                         QColor(100, 150, 200) : QColor(100, 200, 150);
-                    painter.fillRect(QRect(0, y + 5, width(), TRACK_HEIGHT - 10), palette().base());
-                    
-                    // Draw only a few segments for visual reference (limit for performance)
-                    int segments_drawn = 0;
-                    for (const auto& segment : segments) {
-                        if (segments_drawn >= 10) break;  // Limit segments in minimal mode
-                        
-                        int start_x = time_to_pixel(segment.start_time);
-                        int end_x = time_to_pixel(segment.end_time());
-                        int segment_width = end_x - start_x;
-                        
-                        if (segment_width > 5) {  // Only draw visible segments
-                            QRect segment_rect(start_x, y + 5, segment_width, TRACK_HEIGHT - 10);
-                            painter.fillRect(segment_rect, segment_color);
-                            segments_drawn++;
-                        }
-                    }
-                }
-                
-                y += TRACK_HEIGHT + TRACK_SPACING;
-            }
-        }
-        
-        draw_playhead(painter);  // Always draw playhead for visual feedback
+        // During heavy operations, show simplified view
+        draw_minimal_timeline(painter);
         return;
     }
     
-    // Full painting when not throttled - update last_paint timestamp
-    last_paint = paint_start;
+    // Full detailed timeline rendering
+    painter.setClipRect(event->rect());
     
-    // Aggressive clipping to only paint visible area
-    QRect clipRect = event->rect();
-    painter.setClipRect(clipRect);
-    
-    // Skip expensive operations if clip rect is very small (like resize handles)
-    if (clipRect.width() < 5 || clipRect.height() < 5) {
-        painter.fillRect(clipRect, palette().base());  // Fill small areas to avoid white spots
-        return;
-    }
-    
-    draw_background(painter);
+    // Draw all timeline components in order
     auto after_background = std::chrono::high_resolution_clock::now();
+    draw_background(painter);
     
-    draw_timecode_ruler(painter);
     auto after_timecode = std::chrono::high_resolution_clock::now();
+    draw_timecode_ruler(painter);
     
-    // Only draw tracks if they're in the visible area
-    if (timeline_ && clipRect.intersects(QRect(0, TIMECODE_HEIGHT, width(), height() - TIMECODE_HEIGHT))) {
-        draw_tracks(painter);
-    }
     auto after_tracks = std::chrono::high_resolution_clock::now();
-    
-    // Only draw overlays if they're in visible area
-    if (show_drag_preview_) {
-        draw_drag_preview(painter);
-    }
+    draw_tracks(painter);
     
     draw_playhead(painter);
     draw_selection(painter);
@@ -305,6 +266,8 @@ void TimelinePanel::paintEvent(QPaintEvent* event) {
     auto background_time = std::chrono::duration<double, std::milli>(after_background - paint_start);
     auto timecode_time = std::chrono::duration<double, std::milli>(after_timecode - after_background);
     auto tracks_time = std::chrono::duration<double, std::milli>(after_tracks - after_timecode);
+    
+    last_paint = paint_start;
     
     static auto last_warning = std::chrono::steady_clock::now();
     auto now = std::chrono::steady_clock::now();
@@ -770,18 +733,17 @@ void TimelinePanel::draw_segments(QPainter& painter, const ve::timeline::Track& 
         bool is_selected = std::find(selected_segments_.begin(), selected_segments_.end(), 
                                    segment.id) != selected_segments_.end();
         
-        QColor segment_color = is_selected ? base_color.lighter(150) : base_color.lighter(120);
+        // Phase 1: Use pre-allocated colors instead of creating new ones
+        QColor segment_color = is_selected ? cached_selected_color_ : 
+                              (is_video_track ? cached_video_color_ : cached_audio_color_);
         
         // For very small segments, use simple solid fill with stronger color
         if (segment_width < 20) {
             painter.fillRect(local_rect, segment_color.lighter(110));  // Even brighter for small segments
             // Add white border for small segments too
-            painter.setPen(QPen(Qt::white, 1));
+            painter.setPen(cached_border_pen_);
             painter.drawRect(local_rect);
             
-            // Skip caching for now to avoid QPainter conflicts
-            // cache_segment(segment.id, segment_rect, segment_pixmap);
-            // painter.drawPixmap(segment_rect.topLeft(), segment_pixmap);
             segments_drawn++;
             continue;
         }
@@ -790,11 +752,11 @@ void TimelinePanel::draw_segments(QPainter& painter, const ve::timeline::Track& 
         painter.fillRect(local_rect, segment_color);
         
         // Simple border for better performance
-        painter.setPen(QPen(Qt::white, 1));
+        painter.setPen(cached_border_pen_);
         painter.drawRect(local_rect);
         
-        // Only draw details for segments larger than minimum threshold  
-        if (segment_width >= 40) {  // Draw details for larger segments
+        // Phase 1: Skip expensive features during heavy operations
+        if (!should_skip_expensive_features() && segment_width >= 40) {  // Draw details for larger segments
             
             // Draw clip duration indicator only for larger segments
             if (segment_width > 60) {  // Only show duration for larger segments
@@ -802,24 +764,23 @@ void TimelinePanel::draw_segments(QPainter& painter, const ve::timeline::Track& 
                 double duration_seconds = static_cast<double>(duration.num) / duration.den;
                 QString duration_text = QString("%1s").arg(duration_seconds, 0, 'f', 1);
                 
-                painter.setPen(cached_text_color);
-                painter.setFont(cached_small_font);
+                painter.setPen(cached_text_color_);
+                painter.setFont(cached_small_font_);
                 
                 QRect duration_rect = local_rect.adjusted(3, local_rect.height() - 15, -3, -2);
                 painter.drawText(duration_rect, Qt::AlignRight | Qt::AlignBottom, duration_text);
             }
             
-            // Segment name (if wide enough) - further optimized
+            // Segment name (if wide enough) - Phase 1: Skip expensive font metrics during heavy operations
             if (segment_width > 80) {  // Increased threshold for text rendering
-                painter.setFont(cached_name_font);
+                painter.setFont(cached_name_font_);
                 
                 QRect text_rect = local_rect.adjusted(5, 2, -5, -18);
                 QString segment_name = QString::fromStdString(segment.name);
                 
-                // Truncate name if too long (cache font metrics)
-                static QFontMetrics cached_fm(cached_name_font);
-                if (cached_fm.horizontalAdvance(segment_name) > text_rect.width()) {
-                    segment_name = cached_fm.elidedText(segment_name, Qt::ElideRight, text_rect.width());
+                // Phase 1: Skip expensive font metrics calculation during heavy operations
+                if (!heavy_operation_mode_ && cached_font_metrics_.horizontalAdvance(segment_name) > text_rect.width()) {
+                    segment_name = cached_font_metrics_.elidedText(segment_name, Qt::ElideRight, text_rect.width());
                 }
                 
                 painter.drawText(text_rect, Qt::AlignLeft | Qt::AlignTop, segment_name);
@@ -2027,6 +1988,114 @@ void TimelinePanel::cache_segment(uint32_t segment_id, const QRect& rect, const 
 
 void TimelinePanel::clear_segment_cache() const {
     segment_cache_.clear();
+}
+
+// ======= Phase 1 Performance Optimizations =======
+
+void TimelinePanel::init_paint_objects() const {
+    if (paint_objects_initialized_) return;
+    
+    // Pre-allocate all paint objects to avoid allocation during paint events
+    cached_video_color_ = QColor(80, 120, 180);
+    cached_audio_color_ = QColor(120, 180, 80);
+    cached_selected_color_ = QColor(200, 140, 100);
+    cached_text_color_ = QColor(220, 220, 220);
+    
+    cached_border_pen_ = QPen(Qt::white, 1);
+    cached_grid_pen_ = QPen(QColor(70, 70, 70), 1);
+    
+    cached_segment_brush_ = QBrush(cached_video_color_);
+    
+    cached_name_font_ = QFont("Arial", 8);
+    cached_small_font_ = QFont("Arial", 7);
+    cached_font_metrics_ = QFontMetrics(cached_name_font_);
+    
+    paint_objects_initialized_ = true;
+}
+
+void TimelinePanel::set_heavy_operation_mode(bool enabled) {
+    if (heavy_operation_mode_ == enabled) return;
+    
+    heavy_operation_mode_ = enabled;
+    ve::log::info(enabled ? "Timeline entering heavy operation mode (15fps)" : "Timeline returning to normal mode (60fps)");
+    
+    // Clear any pending paint requests when switching modes
+    if (paint_throttle_timer_->isActive()) {
+        paint_throttle_timer_->stop();
+    }
+    pending_paint_request_ = false;
+    
+    // Force immediate update when exiting heavy mode to show final state
+    if (!enabled) {
+        QWidget::update();
+    }
+}
+
+void TimelinePanel::request_throttled_update() {
+    if (pending_paint_request_) return; // Already have a pending request
+    
+    int throttle_interval = heavy_operation_mode_ ? (1000 / HEAVY_OPERATION_FPS) : (1000 / NORMAL_FPS);
+    
+    pending_paint_request_ = true;
+    paint_throttle_timer_->start(throttle_interval);
+}
+
+bool TimelinePanel::should_skip_expensive_features() const {
+    return heavy_operation_mode_ || segments_being_added_ > 0 || g_timeline_busy.load(std::memory_order_acquire);
+}
+
+void TimelinePanel::draw_minimal_timeline(QPainter& painter) {
+    // Ultra-fast minimal timeline for heavy operations
+    init_paint_objects();
+    
+    // Simple background
+    painter.fillRect(rect(), QColor(45, 45, 45));
+    
+    // Basic timecode ruler
+    painter.setPen(cached_grid_pen_);
+    painter.drawLine(0, TIMECODE_HEIGHT, width(), TIMECODE_HEIGHT);
+    
+    if (!timeline_) return;
+    
+    // Draw basic track structure only
+    const auto& tracks = timeline_->tracks();
+    int y = TIMECODE_HEIGHT;
+    
+    for (size_t i = 0; i < tracks.size() && y < height(); ++i) {
+        const auto& track = *tracks[i];
+        
+        // Track separator
+        painter.setPen(cached_grid_pen_);
+        painter.drawLine(0, y, width(), y);
+        
+        // Very basic segments - just colored rectangles, no details
+        const auto& segments = track.segments();
+        QColor track_color = (track.type() == ve::timeline::Track::Video) ? 
+                            cached_video_color_ : cached_audio_color_;
+        
+        // Limit segments for performance
+        int segments_drawn = 0;
+        for (const auto& segment : segments) {
+            if (segments_drawn >= 5) break; // Only draw first 5 segments per track
+            
+            int start_x = time_to_pixel(segment.start_time);
+            int end_x = time_to_pixel(segment.end_time());
+            int segment_width = end_x - start_x;
+            
+            if (segment_width > 2) { // Only draw visible segments
+                QRect segment_rect(start_x, y + 5, segment_width, TRACK_HEIGHT - 10);
+                painter.fillRect(segment_rect, track_color);
+                segments_drawn++;
+            }
+        }
+        
+        y += TRACK_HEIGHT;
+    }
+    
+    // Simple playhead
+    int playhead_x = time_to_pixel(current_time_);
+    painter.setPen(QPen(Qt::red, 2));
+    painter.drawLine(playhead_x, 0, playhead_x, height());
 }
 
 } // namespace ve::ui
