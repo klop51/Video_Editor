@@ -111,6 +111,9 @@ private:
     // Enhanced drawing methods
     void draw_audio_waveform(QPainter& painter, const QRect& rect, const ve::timeline::Segment& segment);
     void draw_cached_waveform(QPainter& painter, const QRect& rect, const ve::timeline::Segment& segment);
+    
+    // Enhanced waveform integration helper functions
+    void draw_placeholder_waveform(QPainter& painter, const QRect& rect, const ve::timeline::Segment& segment);
     void draw_video_thumbnail(QPainter& painter, const QRect& rect, const ve::timeline::Segment& segment);
     void draw_segment_handles(QPainter& painter, const QRect& rect);
     
@@ -244,9 +247,9 @@ private:
     // Debug tools
     QTimer* heartbeat_timer_;
     
-    // Waveform caching and generation
-    std::unique_ptr<ve::audio::WaveformCache> waveform_cache_;
-    std::unique_ptr<ve::audio::WaveformGenerator> waveform_generator_;
+    // Waveform caching and generation (placeholder for future implementation)
+    // std::unique_ptr<ve::audio::WaveformCache> waveform_cache_;
+    // std::unique_ptr<ve::audio::WaveformGenerator> waveform_generator_;
     
     // Update optimization
     QTimer* update_timer_;  // For batching timeline UI updates

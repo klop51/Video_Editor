@@ -83,10 +83,9 @@ TimelinePanel::TimelinePanel(QWidget* parent)
     background_color_ = QColor(45, 45, 45);
     grid_color_ = QColor(70, 70, 70);
     
-    // Initialize waveform systems - simplified approach for now
-    // TODO: Implement full waveform caching system when ready
-    // waveform_cache_ = ve::audio::WaveformCache::create(cache_config);
-    // waveform_generator_ = ve::audio::WaveformGenerator::create(gen_config);
+    // WaveformGenerator and WaveformCache integration placeholder
+    // TODO: Implement actual WaveformGenerator when audio engine is complete
+    // Future waveform system initialization will go here
     
     // Add a QTimer for heartbeat debugging - reduced frequency for release
     heartbeat_timer_ = new QTimer(this);
@@ -1970,46 +1969,10 @@ void TimelinePanel::leaveEvent(QEvent* event) {
 }
 
 void TimelinePanel::draw_audio_waveform(QPainter& painter, const QRect& rect, const ve::timeline::Segment& segment) {
-    // Phase 2: Enhanced placeholder waveform with more realistic patterns
-    painter.setPen(QPen(QColor(120, 180, 255, 120), 1)); // More visible and slightly blue
+    // Enhanced Waveform Integration - Simplified implementation using enhanced placeholder
     
-    int center_y = rect.center().y();
-    int max_height = rect.height() * 0.6; // Use more vertical space
-    
-    // Create deterministic but varied pattern based on segment properties
-    int base_seed = static_cast<int>(segment.id * 13 + segment.start_time.to_rational().num / 1000);
-    
-    // Generate waveform with multiple frequency components for realism
-    for (int x = rect.left(); x < rect.right(); x += 8) {
-        int sample_index = (x - rect.left()) / 8;
-        int sample_seed = base_seed + sample_index;
-        
-        // Create multiple sine wave components for realistic waveform shape
-        float low_freq = std::sin(sample_seed * 0.05f) * 0.5f;
-        float mid_freq = std::sin(sample_seed * 0.12f) * 0.3f;
-        float high_freq = std::sin(sample_seed * 0.25f) * 0.15f;
-        
-        // Combine and apply amplitude variation
-        float amplitude = low_freq + mid_freq + high_freq;
-        amplitude *= (0.7f + (sample_seed % 50) / 100.0f); // Add variation
-        
-        // Convert to pixel height
-        int sample_height = static_cast<int>(std::abs(amplitude) * max_height);
-        sample_height = std::max(2, std::min(sample_height, max_height)); // Ensure visible minimum
-        
-        // Draw waveform line with proper amplitude direction
-        if (amplitude >= 0) {
-            painter.drawLine(x, center_y, x, center_y - sample_height);
-        } else {
-            painter.drawLine(x, center_y, x, center_y + sample_height);
-        }
-    }
-    
-    // Add subtle center reference line for longer segments
-    if (rect.width() > 80) {
-        painter.setPen(QPen(QColor(120, 180, 255, 30), 1));
-        painter.drawLine(rect.left(), center_y, rect.right(), center_y);
-    }
+    // For now, use enhanced placeholder until full WaveformGenerator is implemented
+    draw_placeholder_waveform(painter, rect, segment);
 }
 
 void TimelinePanel::draw_cached_waveform(QPainter& painter, const QRect& rect, const ve::timeline::Segment& segment) {
@@ -3206,6 +3169,48 @@ void TimelinePanel::cleanup_phase4_resources() const {
     memory_optimizations_.clear_containers();
     
     // Don't reset performance analytics - they accumulate over time
+}
+
+// Enhanced Waveform Integration Helper Functions
+
+void TimelinePanel::draw_placeholder_waveform(QPainter& painter, const QRect& rect, const ve::timeline::Segment& segment) {
+    // Enhanced placeholder waveform with realistic patterns (fallback for when real generation fails)
+    painter.setPen(QPen(QColor(120, 180, 255, 120), 1));
+    
+    int center_y = rect.center().y();
+    int max_height = rect.height() * 0.6;
+    
+    // Create deterministic pattern based on segment properties
+    int base_seed = static_cast<int>(segment.id * 13 + segment.start_time.to_rational().num / 1000);
+    
+    // Generate realistic waveform pattern
+    for (int x = rect.left(); x < rect.right(); x += 4) {
+        int sample_index = (x - rect.left()) / 4;
+        int sample_seed = base_seed + sample_index;
+        
+        // Multiple frequency components for realism
+        float low_freq = std::sin(sample_seed * 0.05f) * 0.5f;
+        float mid_freq = std::sin(sample_seed * 0.12f) * 0.3f;
+        float high_freq = std::sin(sample_seed * 0.25f) * 0.15f;
+        
+        float amplitude = low_freq + mid_freq + high_freq;
+        amplitude *= (0.7f + (sample_seed % 50) / 100.0f);
+        
+        int sample_height = static_cast<int>(std::abs(amplitude) * max_height);
+        sample_height = std::max(2, std::min(sample_height, max_height));
+        
+        if (amplitude >= 0) {
+            painter.drawLine(x, center_y, x, center_y - sample_height);
+        } else {
+            painter.drawLine(x, center_y, x, center_y + sample_height);
+        }
+    }
+    
+    // Add subtle center reference line
+    if (rect.width() > 80) {
+        painter.setPen(QPen(QColor(120, 180, 255, 30), 1));
+        painter.drawLine(rect.left(), center_y, rect.right(), center_y);
+    }
 }
 
 } // namespace ve::ui
