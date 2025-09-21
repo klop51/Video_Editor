@@ -1,8 +1,18 @@
 #include "ui/timeline_panel.hpp"
 #include "commands/timeline_commands.hpp"
 #include "core/log.hpp"
+#include "../../playback/include/playback/controller.hpp"
 #include "ui/minimal_audio_track_widget.hpp"
 #include "ui/minimal_waveform_widget.hpp"
+
+// Fix Windows macro conflicts
+#ifdef max
+#undef max
+#endif
+#ifdef min
+#undef min
+#endif
+
 #include <QPainter>
 #include <QPolygon>
 #include <QMouseEvent>
@@ -40,6 +50,7 @@ TimelinePanel::TimelinePanel(QWidget* parent)
     , timeline_(nullptr)
     , current_time_(ve::TimePoint{0})
     , zoom_factor_(1.0)
+    , playback_controller_(nullptr)
     , scroll_x_(0)
     , dragging_(false)
     , dragged_segment_id_(0)
@@ -71,7 +82,10 @@ TimelinePanel::TimelinePanel(QWidget* parent)
     , cached_hit_track_index_(std::numeric_limits<size_t>::max())
     , cached_hit_timeline_version_(0)
 {
-    setMinimumHeight(200);
+    // Professional timeline dimensions - take significant portion of application
+    setMinimumHeight(600);    // Professional minimum height for multi-track editing
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    
     setMouseTracking(true);
     setAcceptDrops(true);
     setFocusPolicy(Qt::ClickFocus); // Only get focus when clicked, not interfering with drag
@@ -79,14 +93,14 @@ TimelinePanel::TimelinePanel(QWidget* parent)
     // Enable hover events for proper mouse highlighting
     setAttribute(Qt::WA_Hover, true);
     
-    // Initialize colors
-    track_color_video_ = QColor(80, 120, 180);
-    track_color_audio_ = QColor(120, 180, 80);
+    // Professional track colors matching industry standards
+    track_color_video_ = QColor(45, 65, 95);     // Dark blue-gray for video tracks
+    track_color_audio_ = QColor(55, 75, 45);     // Dark olive-green for audio tracks
     segment_color_ = QColor(100, 140, 200);
     segment_selected_color_ = QColor(200, 140, 100);
     playhead_color_ = QColor(255, 0, 0);
-    background_color_ = QColor(45, 45, 45);
-    grid_color_ = QColor(70, 70, 70);
+    background_color_ = QColor(30, 30, 30);      // Darker professional background
+    grid_color_ = QColor(60, 60, 60);            // Lighter grid lines
     snap_guide_color_ = QColor(255, 255, 0, 180);  // Semi-transparent yellow
     rubber_band_color_ = QColor(100, 150, 255, 80); // Semi-transparent blue
     
@@ -123,7 +137,6 @@ void TimelinePanel::set_timeline(ve::timeline::Timeline* timeline) {
     cached_hit_segment_index_ = std::numeric_limits<size_t>::max();
     cached_hit_track_index_ = std::numeric_limits<size_t>::max();
     cached_hit_timeline_version_ = 0;
-
     
     // Enhanced throttling system for better performance during bulk operations
     if (!update_timer_) {
@@ -176,6 +189,12 @@ void TimelinePanel::set_timeline(ve::timeline::Timeline* timeline) {
 
 void TimelinePanel::set_command_executor(CommandExecutor executor) {
     command_executor_ = executor;
+}
+
+void TimelinePanel::set_playback_controller(ve::playback::PlaybackController* controller) {
+    playback_controller_ = controller;
+    // Video playback integration is now available
+    ve::log::info("Timeline panel connected to playback controller for video scrubbing");
 }
 
 void TimelinePanel::set_zoom(double zoom_factor) {
@@ -395,12 +414,22 @@ void TimelinePanel::mousePressEvent(QMouseEvent* event) {
     
     if (event->button() == Qt::LeftButton) {
         if (event->pos().y() < TIMECODE_HEIGHT) {
-            // Clicked in timecode ruler - start scrubbing
+            // Clicked in timecode ruler - ONLY move playhead on click (not drag)
             ve::TimePoint time = pixel_to_time(event->pos().x());
             current_time_ = time;
             emit time_changed(time);
-            dragging_ = true;
+            
+            // Immediate video preview for timeline scrubbing (without debounce)
+            if (playback_controller_) {
+                auto r = time.to_rational();
+                int64_t time_us = (r.num * 1000000) / r.den;
+                playback_controller_->seek(time_us);
+                // This provides immediate video frame preview during timeline scrubbing
+            }
+            
             update();
+            // Don't enable dragging for playhead - user wants click-only movement
+            return;
         } else {
             // Clicked in track area - check for segment interaction
             ve::timeline::Segment* segment = find_segment_at_pos(event->pos());
@@ -483,16 +512,9 @@ void TimelinePanel::mouseMoveEvent(QMouseEvent* event) {
     }
     
     if (dragging_) {
-        if (event->pos().y() < TIMECODE_HEIGHT) {
-            // Scrubbing in timecode ruler - more aggressive throttling
-            if (time_since_last.count() >= 33) {  // ~30fps for scrubbing
-                ve::TimePoint time = pixel_to_time(event->pos().x());
-                current_time_ = time;
-                emit time_changed(time);
-                update();
-                last_update = now;
-            }
-        } else {
+        // NOTE: Playhead scrubbing removed - user wants click-only playhead movement
+        // Only handle segment dragging in track area
+        if (event->pos().y() >= TIMECODE_HEIGHT) {
             // Dragging in track area - throttle heavily during drag
             if (time_since_last.count() >= 33) {  // ~30fps for dragging
                 update_drag(event->pos());
@@ -731,12 +753,105 @@ void TimelinePanel::draw_timecode_ruler(QPainter& painter) {
 }
 
 void TimelinePanel::draw_tracks(QPainter& painter) {
-    const auto& tracks = timeline_->tracks();
-    
     // Enhanced viewport culling: Calculate viewport info once
     ViewportInfo viewport = calculate_viewport_info();
     
-    for (size_t i = 0; i < tracks.size(); ++i) {
+    if (timeline_) {
+        // Draw actual timeline tracks
+        const auto& tracks = timeline_->tracks();
+        
+        for (size_t i = 0; i < tracks.size(); ++i) {
+            int track_y = track_y_position(i);
+            
+            // Enhanced viewport culling: Skip tracks completely outside viewport
+            if (!is_track_visible(track_y, viewport)) {
+                continue;
+            }
+            
+            draw_track(painter, *tracks[i], track_y);
+        }
+    } else {
+        // Draw default empty timeline structure (V1-V3, A1-A8) when no timeline is loaded
+        draw_default_empty_tracks(painter, viewport);
+    }
+}
+
+void TimelinePanel::draw_track(QPainter& painter, const ve::timeline::Track& track, int track_y) {
+    QRect track_rect(0, track_y, width(), TRACK_HEIGHT);
+    
+    // Professional track background with type-specific styling
+    QColor track_bg;
+    QColor track_border;
+    QString track_icon;
+    
+    if (track.type() == ve::timeline::Track::Video) {
+        track_bg = QColor(25, 35, 55);       // Dark blue-gray for video tracks
+        track_border = QColor(65, 85, 125);  // Lighter blue border
+        track_icon = "V";                    // Video icon placeholder
+    } else {
+        track_bg = QColor(35, 45, 25);       // Dark olive-green for audio tracks
+        track_border = QColor(75, 95, 55);   // Lighter green border
+        track_icon = "A";                    // Audio icon placeholder
+    }
+    
+    painter.fillRect(track_rect, track_bg);
+    
+    // Professional track border with subtle gradient
+    painter.setPen(QPen(track_border, 1));
+    painter.drawRect(track_rect);
+    
+    // Track header area with professional styling
+    QRect header_rect(0, track_y, 120, TRACK_HEIGHT);
+    painter.fillRect(header_rect, track_bg.lighter(115));
+    
+    // Track type icon in a small square
+    QRect icon_rect(8, track_y + 8, 20, 20);
+    painter.setPen(QPen(QColor(200, 200, 200), 1));
+    painter.drawRect(icon_rect);
+    painter.setFont(QFont("Arial", 8, QFont::Bold));
+    painter.drawText(icon_rect, Qt::AlignCenter, track_icon);
+    
+    // Track name with professional typography
+    painter.setPen(QColor(220, 220, 220));
+    painter.setFont(QFont("Arial", 9));
+    QRect label_rect(35, track_y + 5, 80, 20);
+    QString track_name = QString::fromStdString(track.name());
+    painter.drawText(label_rect, Qt::AlignLeft | Qt::AlignVCenter, track_name);
+    
+    // Track controls area indicator (mute/solo placeholder)
+    QRect controls_rect(35, track_y + 25, 80, 15);
+    painter.setPen(QColor(150, 150, 150));
+    painter.setFont(QFont("Arial", 7));
+    if (track.is_muted()) {
+        painter.drawText(controls_rect, Qt::AlignLeft | Qt::AlignVCenter, "MUTED");
+    }
+    
+    // Separator line between header and content
+    painter.setPen(QPen(track_border, 1));
+    painter.drawLine(120, track_y, 120, track_y + TRACK_HEIGHT);
+    
+    // Draw segments
+    draw_segments(painter, track, track_y);
+}
+
+void TimelinePanel::draw_default_empty_tracks(QPainter& painter, const ViewportInfo& viewport) {
+    // Draw default professional track layout: V1-V3 (video) and A1-A8 (audio)
+    const int total_tracks = 11; // 3 video tracks + 8 audio tracks
+    const std::vector<std::pair<std::string, bool>> default_tracks = {
+        {"V3", true},  // Video tracks (top to bottom)
+        {"V2", true},
+        {"V1", true},
+        {"A1", false}, // Audio tracks (top to bottom)
+        {"A2", false},
+        {"A3", false},
+        {"A4", false},
+        {"A5", false},
+        {"A6", false},
+        {"A7", false},
+        {"A8", false}
+    };
+    
+    for (int i = 0; i < total_tracks; ++i) {
         int track_y = track_y_position(i);
         
         // Enhanced viewport culling: Skip tracks completely outside viewport
@@ -744,31 +859,60 @@ void TimelinePanel::draw_tracks(QPainter& painter) {
             continue;
         }
         
-        draw_track(painter, *tracks[i], track_y);
+        const auto& track_info = default_tracks[i];
+        const std::string& track_name = track_info.first;
+        bool is_video = track_info.second;
+        
+        draw_empty_track(painter, track_name, is_video, track_y);
     }
 }
 
-void TimelinePanel::draw_track(QPainter& painter, const ve::timeline::Track& track, int track_y) {
+void TimelinePanel::draw_empty_track(QPainter& painter, const std::string& track_name, bool is_video, int track_y) {
     QRect track_rect(0, track_y, width(), TRACK_HEIGHT);
     
-    // Track background - much lighter to show segments clearly
-    QColor track_bg = (track.type() == ve::timeline::Track::Video) ? 
-                      QColor(40, 60, 90) :    // Very dark blue background for video tracks
-                      QColor(40, 90, 60);     // Very dark green background for audio tracks
+    // Professional track background with type-specific styling
+    QColor track_bg;
+    QColor track_border;
+    QString track_icon;
+    
+    if (is_video) {
+        track_bg = QColor(25, 35, 55);       // Dark blue-gray for video tracks
+        track_border = QColor(65, 85, 125);  // Lighter blue border
+        track_icon = "V";                    // Video icon placeholder
+    } else {
+        track_bg = QColor(35, 45, 25);       // Dark olive-green for audio tracks
+        track_border = QColor(75, 95, 55);   // Lighter green border
+        track_icon = "A";                    // Audio icon placeholder
+    }
+    
+    // Draw track background
     painter.fillRect(track_rect, track_bg);
     
-    // Track border
-    painter.setPen(grid_color_);
+    // Draw track border
+    painter.setPen(QPen(track_border, 1));
     painter.drawRect(track_rect);
     
-    // Track label
-    painter.setPen(QColor(200, 200, 200));
-    QRect label_rect(5, track_y + 5, 80, 20);
-    QString track_name = QString::fromStdString(track.name());
-    painter.drawText(label_rect, Qt::AlignLeft | Qt::AlignVCenter, track_name);
+    // Track header area (first 120 pixels)
+    QRect header_rect(0, track_y, 120, TRACK_HEIGHT);
+    painter.fillRect(header_rect, track_bg.darker(110));
     
-    // Draw segments
-    draw_segments(painter, track, track_y);
+    // Track icon
+    QRect icon_rect(10, track_y + 5, 20, TRACK_HEIGHT - 10);
+    painter.setPen(QPen(track_border.lighter(150), 1));
+    painter.setFont(QFont("Arial", 10, QFont::Bold));
+    painter.drawText(icon_rect, Qt::AlignCenter, track_icon);
+    
+    // Track name
+    QRect label_rect(35, track_y, 80, TRACK_HEIGHT);
+    painter.setPen(QPen(QColor(200, 200, 200), 1));
+    painter.setFont(QFont("Arial", 9));
+    painter.drawText(label_rect, Qt::AlignLeft | Qt::AlignVCenter, QString::fromStdString(track_name));
+    
+    // Separator line between header and content
+    painter.setPen(QPen(track_border, 1));
+    painter.drawLine(120, track_y, 120, track_y + TRACK_HEIGHT);
+    
+    // No segments to draw for empty tracks
 }
 
 void TimelinePanel::draw_segments(QPainter& painter, const ve::timeline::Track& track, int track_y) {
@@ -2382,7 +2526,20 @@ void TimelinePanel::draw_minimal_timeline(QPainter& painter) {
     painter.setPen(QColor(100, 100, 100));
     painter.drawLine(0, TIMECODE_HEIGHT, width(), TIMECODE_HEIGHT);
     
-    if (!timeline_) return;
+    if (!timeline_) {
+        // Draw default empty tracks even in minimal mode
+        ViewportInfo viewport;
+        viewport.left_x = 0;
+        viewport.right_x = width();
+        viewport.top_y = 0;
+        viewport.bottom_y = height();
+        viewport.start_time = ve::TimePoint{0};
+        viewport.end_time = ve::TimePoint{10000}; // 10 seconds default
+        viewport.time_to_pixel_ratio = 1.0;
+        
+        draw_default_empty_tracks(painter, viewport);
+        return;
+    }
     
     // Draw basic track structure only - no details
     const auto& tracks = timeline_->tracks();

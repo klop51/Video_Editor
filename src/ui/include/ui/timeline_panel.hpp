@@ -16,6 +16,7 @@
 
 // Forward declarations
 namespace ve::commands { class Command; }
+namespace ve::playback { class PlaybackController; }
 
 namespace ve::ui {
 
@@ -28,6 +29,9 @@ public:
     void set_timeline(ve::timeline::Timeline* timeline);
     void set_zoom(double zoom_factor);
     void set_current_time(ve::TimePoint time);
+    
+    // Video playback integration
+    void set_playback_controller(ve::playback::PlaybackController* controller);
     
     // Command system integration
     using CommandExecutor = std::function<bool(std::unique_ptr<ve::commands::Command>)>;
@@ -192,6 +196,10 @@ private:
     void clear_dirty_regions();                       // Clear all dirty regions
     bool is_region_dirty(const QRect& rect) const;   // Check if region needs repaint
     
+    // Default empty timeline drawing (requires ViewportInfo definition)
+    void draw_default_empty_tracks(QPainter& painter, const ViewportInfo& viewport);
+    void draw_empty_track(QPainter& painter, const std::string& track_name, bool is_video, int track_y);
+    
     // Level-of-detail calculation method
     DetailLevel calculate_detail_level(int segment_width, double zoom_factor) const;
     
@@ -233,6 +241,9 @@ private:
     ve::timeline::Timeline* timeline_;
     ve::TimePoint current_time_;
     double zoom_factor_;
+    
+    // Video playback integration
+    ve::playback::PlaybackController* playback_controller_;
     
     // Command system integration
     CommandExecutor command_executor_;

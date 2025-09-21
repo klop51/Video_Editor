@@ -72,6 +72,22 @@ bool Application::new_project() {
     timeline_->set_name("Untitled Project");
     timeline_->set_modified_callback([this]{ on_project_modified(); });
     
+    // Create professional multi-track system like Adobe Premiere
+    // Video tracks: V1, V2, V3 (bottom to top)
+    timeline_->add_track(ve::timeline::Track::Video, "V1");
+    timeline_->add_track(ve::timeline::Track::Video, "V2");
+    timeline_->add_track(ve::timeline::Track::Video, "V3");
+    
+    // Audio tracks: A1-A8 (stereo pairs)
+    timeline_->add_track(ve::timeline::Track::Audio, "A1");
+    timeline_->add_track(ve::timeline::Track::Audio, "A2");
+    timeline_->add_track(ve::timeline::Track::Audio, "A3");
+    timeline_->add_track(ve::timeline::Track::Audio, "A4");
+    timeline_->add_track(ve::timeline::Track::Audio, "A5");
+    timeline_->add_track(ve::timeline::Track::Audio, "A6");
+    timeline_->add_track(ve::timeline::Track::Audio, "A7");
+    timeline_->add_track(ve::timeline::Track::Audio, "A8");
+    
     if (main_window_) {
         main_window_->set_timeline(timeline_.get());
     }
@@ -80,7 +96,7 @@ bool Application::new_project() {
     project_modified_ = false;
     
     emit project_changed();
-    ve::log::info("New project created");
+    ve::log::info("New project created with professional multi-track layout");
     
     return true;
 }

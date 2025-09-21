@@ -5,7 +5,7 @@
 #endif
 
 #include "ui/main_window.hpp"
-#include "ui/timeline_panel.hpp"
+#include "ui/timeline_dock.hpp"
 #include "ui/professional_audio_monitoring_ui.hpp"
 #include "ui/viewer_panel.hpp"
 #include "timeline/timeline.hpp"
@@ -257,7 +257,6 @@ MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
     , viewer_panel_(nullptr)
     , timeline_dock_(nullptr)
-    , timeline_panel_(nullptr)
     , media_browser_dock_(nullptr)
     , media_browser_(nullptr)
     , properties_dock_(nullptr)
@@ -303,6 +302,12 @@ MainWindow::MainWindow(QWidget* parent)
     QSettings settings;
     restoreGeometry(settings.value("geometry").toByteArray());
     restoreState(settings.value("windowState").toByteArray());
+    
+    // Hide timeline dock on startup - only show when project is created
+    if (timeline_dock_) {
+        timeline_dock_->setVisible(false);
+        timeline_dock_->hide();
+    }
     
     // Set initial status message to guide the user
     status_label_->setText("Welcome! Create a new project to get started: File → New Project");
@@ -418,8 +423,8 @@ void MainWindow::cleanup_timeline_worker() {
 
 void MainWindow::set_timeline(ve::timeline::Timeline* timeline) {
     timeline_ = timeline;
-    if (timeline_panel_) {
-        timeline_panel_->set_timeline(timeline);
+    if (timeline_dock_) {
+        timeline_dock_->set_timeline(timeline);
     }
     update_window_title();
 }
@@ -428,6 +433,11 @@ void MainWindow::set_playback_controller(ve::playback::PlaybackController* contr
     playback_controller_ = controller;
     if (viewer_panel_) {
         viewer_panel_->set_playback_controller(controller);
+    }
+    
+    // Connect timeline dock to playback controller for video scrubbing
+    if (timeline_dock_) {
+        timeline_dock_->set_playback_controller(controller);
     }
     
     // Initialize audio pipeline when controller is set
@@ -772,19 +782,23 @@ void MainWindow::create_status_bar() {
 }
 
 void MainWindow::create_dock_widgets() {
-    // Timeline dock
-    timeline_dock_ = new QDockWidget("Timeline", this);
+    // Timeline dock with integrated timeline functionality
+    timeline_dock_ = new TimelineDock("Timeline", this);
     timeline_dock_->setObjectName("TimelineDock");
-    timeline_panel_ = new TimelinePanel();
     
-    // Connect command system to timeline panel
-    timeline_panel_->set_command_executor([this](std::unique_ptr<ve::commands::Command> cmd) {
+    // Connect command system to timeline dock
+    timeline_dock_->set_command_executor([this](std::unique_ptr<ve::commands::Command> cmd) {
         return execute_command(std::move(cmd));
     });
     
-    timeline_dock_->setWidget(timeline_panel_);
-    timeline_dock_->setAllowedAreas(Qt::BottomDockWidgetArea);
+    // Timeline dock is ready but hidden initially
+    timeline_dock_->setVisible(false);  // Hidden until project creation
+    
     addDockWidget(Qt::BottomDockWidgetArea, timeline_dock_);
+    
+    // Timeline dock starts hidden - will be shown when project is created
+    timeline_dock_->setVisible(false);
+    timeline_dock_->hide();
     
     // Media browser dock - Tree widget for media files
     media_browser_dock_ = new QDockWidget("Media Browser", this);
@@ -829,8 +843,8 @@ void MainWindow::setup_layout() {
     viewer_panel_ = new ViewerPanel();
     setCentralWidget(viewer_panel_);
     
-    // Set dock widget sizes
-    resizeDocks({timeline_dock_}, {300}, Qt::Vertical);
+    // Set dock widget sizes - Professional timeline gets 70% of screen height
+    resizeDocks({timeline_dock_}, {700}, Qt::Vertical);  // Much larger timeline area
     resizeDocks({media_browser_dock_, properties_dock_}, {250, 250}, Qt::Horizontal);
 }
 
@@ -867,7 +881,7 @@ void MainWindow::connect_signals() {
     }
     
     // Connect timeline panel signals
-    if (timeline_panel_) {
+    if (timeline_dock_) {
         // Debounced seek scheduling to reduce excessive decoder seeks during rapid scrubbing
         static QTimer* seekDebounceTimer = nullptr; // static ensures single instance tied to lambda lifetime
         if(!seekDebounceTimer) {
@@ -875,7 +889,7 @@ void MainWindow::connect_signals() {
             seekDebounceTimer->setSingleShot(true);
         }
         static int64_t pendingSeekUs = -1;
-        connect(timeline_panel_, &TimelinePanel::time_changed,
+        connect(timeline_dock_, &TimelineDock::time_changed,
                 this, [this](ve::TimePoint tp){
                     auto r = tp.to_rational();
                     pendingSeekUs = (r.num * 1000000) / r.den;
@@ -893,7 +907,7 @@ void MainWindow::connect_signals() {
                 if(!was_playing) { /* preview decode handled internally */ }
             }
         });
-        connect(timeline_panel_, &TimelinePanel::clip_added,
+        connect(timeline_dock_, &TimelineDock::clip_added,
                 this, &MainWindow::on_timeline_clip_added);
     }
     
@@ -910,6 +924,9 @@ void MainWindow::connect_signals() {
         connect(app, &ve::app::Application::project_changed, this, &MainWindow::on_project_state_changed);
         connect(app, &ve::app::Application::project_modified, this, &MainWindow::on_project_dirty);
     }
+    
+    // Don't create default timeline on startup - wait for project creation
+    // Timeline will be shown and initialized when user creates a new project
 }
 
 void MainWindow::update_window_title() {
@@ -985,72 +1002,154 @@ void MainWindow::update_actions() {
 void MainWindow::new_project() { 
     ve::log::info("New project requested");
     
-    // Initialize a new timeline if we don't have one
-    if (!timeline_) {
-        timeline_ = new ve::timeline::Timeline();
-        
-        // Set the timeline in the timeline panel
-        if (timeline_panel_) {
-            timeline_panel_->set_timeline(timeline_);
-        }
-        
-        // Initialize or reset playback controller
-        if (!playback_controller_) {
-            playback_controller_ = new ve::playback::PlaybackController();
-            set_playback_controller(playback_controller_);
-        } else {
-            playback_controller_->set_video_callback(nullptr);
-            playback_controller_->clear_state_callbacks();
-            set_playback_controller(playback_controller_); // rewire callbacks
-        }
-
-        // Update UI state
-        project_modified_ = false;
-        setWindowTitle("Video Editor - New Project");
-        
-        status_label_->setText("New project created. Use File → Import Media to add content.");
-        status_label_->setStyleSheet("color: green;");
-        
-        QMessageBox::information(this, "New Project Created", 
-            "New project created successfully!\n\n"
-            "Next steps:\n"
-            "1. Go to File → Import Media to add video/audio files\n"
-            "2. Drag media from the Media Browser to the Timeline\n"
-            "3. Right-click on media items for additional options");
-        
-        ve::log::info("New project initialized successfully");
-    } else {
-        // Project already exists, ask if user wants to create a new one
+    // Ask for confirmation if timeline exists and has content
+    if (timeline_ && !timeline_->tracks().empty()) {
         QMessageBox::StandardButton reply = QMessageBox::question(this, "New Project",
-            "A project is already open. Create a new project?\n\n"
+            "Create a new project?\n\n"
             "Note: Any unsaved changes will be lost.",
             QMessageBox::Yes | QMessageBox::No);
             
-        if (reply == QMessageBox::Yes) {
-            // Create a new timeline to replace the existing one
-            delete timeline_;
-            timeline_ = new ve::timeline::Timeline();
-            
-            // Update timeline panel with new timeline
-            if (timeline_panel_) {
-                timeline_panel_->set_timeline(timeline_);
-            }
-            
-            // Clear media browser
-            if (media_browser_) {
-                media_browser_->clear();
-                add_media_browser_placeholder(); // Add helpful placeholder
-            }
-            
-            // Reset UI state
-            project_modified_ = false;
-            setWindowTitle("Video Editor - New Project");
-            status_label_->setText("New project created. Use File → Import Media to add content.");
-            status_label_->setStyleSheet("color: green;");
-            
-            ve::log::info("New project created, previous project cleared");
+        if (reply == QMessageBox::No) {
+            return; // User cancelled
         }
     }
+    
+    // Clean up existing timeline if it exists
+    if (timeline_) {
+        delete timeline_;
+    }
+    
+    // Always create new timeline using the working sequence
+    timeline_ = new ve::timeline::Timeline();
+    
+    // Create professional multi-track system like Adobe Premiere
+    // Video tracks: V3, V2, V1 (top to bottom)
+    timeline_->add_track(ve::timeline::Track::Video, "V3");
+    timeline_->add_track(ve::timeline::Track::Video, "V2");
+    timeline_->add_track(ve::timeline::Track::Video, "V1");
+    
+    // Audio tracks: A1-A8 (stereo pairs)
+    timeline_->add_track(ve::timeline::Track::Audio, "A1");
+    timeline_->add_track(ve::timeline::Track::Audio, "A2");
+    timeline_->add_track(ve::timeline::Track::Audio, "A3");
+    timeline_->add_track(ve::timeline::Track::Audio, "A4");
+    timeline_->add_track(ve::timeline::Track::Audio, "A5");
+    timeline_->add_track(ve::timeline::Track::Audio, "A6");
+    timeline_->add_track(ve::timeline::Track::Audio, "A7");
+    timeline_->add_track(ve::timeline::Track::Audio, "A8");
+    
+    ve::log::info("Created replacement project with professional multi-track layout");
+    
+    // Set the timeline in the timeline dock (working sequence)
+    if (timeline_dock_) {
+        timeline_dock_->set_timeline(timeline_);
+        
+        // POTENTIAL FIX: Ensure widget is properly visible first
+        timeline_dock_->setVisible(true);
+        timeline_dock_->show();
+        QApplication::processEvents();
+        
+        // Then force complete widget reinitialization
+        timeline_dock_->setVisible(false);
+        QApplication::processEvents();
+        timeline_dock_->setVisible(true);
+        timeline_dock_->show();
+        
+        // Force immediate timeline dock refresh after setting timeline
+        timeline_dock_->refresh();
+        timeline_dock_->updateGeometry();
+        timeline_dock_->update();
+        timeline_dock_->repaint();
+        QApplication::processEvents();
+        
+        // Debug: Force paint event to see if tracks are rendering
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+        
+        ve::log::info("Timeline set in panel with immediate refresh");
+    }
+    
+    // Initialize or reset playback controller (working sequence)
+    if (!playback_controller_) {
+        playback_controller_ = new ve::playback::PlaybackController();
+        set_playback_controller(playback_controller_);
+    } else {
+        playback_controller_->set_video_callback(nullptr);
+        playback_controller_->clear_state_callbacks();
+        set_playback_controller(playback_controller_); // rewire callbacks
+    }
+    
+    // Clear media browser (working sequence)
+    if (media_browser_) {
+        media_browser_->clear();
+        add_media_browser_placeholder(); // Add helpful placeholder
+    }
+
+    // Reset UI state (working sequence)
+    project_modified_ = false;
+    setWindowTitle("Video Editor - New Project");
+    
+    // Timeline dock setup (working sequence from second project)
+    if (timeline_dock_ && timeline_dock_) {
+        timeline_dock_->setFloating(false);  // Prevent floating
+        timeline_dock_->setVisible(true);
+        timeline_dock_->show();
+        
+        // Ensure it's docked to bottom area
+        addDockWidget(Qt::BottomDockWidgetArea, timeline_dock_);
+        
+        // Ensure timeline panel is visible and updated
+        timeline_dock_->setVisible(true);
+        timeline_dock_->show();
+        
+        // Immediate refresh after showing timeline panel (working sequence)
+        timeline_dock_->refresh();
+        timeline_dock_->updateGeometry();
+        timeline_dock_->update();
+        timeline_dock_->repaint();
+        QApplication::processEvents();
+        
+        ve::log::info("Timeline panel shown with immediate content refresh");
+        
+        // Final update with delay (working sequence)
+        QTimer::singleShot(100, this, [this]() {
+            if (timeline_dock_) {
+                resizeDocks({timeline_dock_}, {700}, Qt::Vertical);
+                timeline_dock_->setFloating(false);
+            }
+            
+            if (timeline_dock_) {
+                // Force complete widget refresh through Qt event system
+                timeline_dock_->refresh();
+                timeline_dock_->updateGeometry();
+                timeline_dock_->update();
+                timeline_dock_->repaint();
+                
+                // Additional safety - trigger paint event manually
+                QApplication::processEvents();
+                
+                // Debug: Log widget states
+                ve::log::info("Timeline dock visible: " + std::to_string(timeline_dock_->isVisible()) + 
+                             ", timeline panel visible: " + std::to_string(timeline_dock_->isVisible()));
+                ve::log::info("Timeline dock size: " + std::to_string(timeline_dock_->width()) + "x" + 
+                             std::to_string(timeline_dock_->height()) + ", timeline panel size: " + 
+                             std::to_string(timeline_dock_->width()) + "x" + std::to_string(timeline_dock_->height()));
+            }
+        });
+        
+        ve::log::info("Timeline dock shown and properly docked for new project");
+    }
+    
+    status_label_->setText("New project created. Use File → Import Media to add content.");
+    status_label_->setStyleSheet("color: green;");
+    
+    QMessageBox::information(this, "New Project Created", 
+        "New project created successfully!\n\n"
+        "Next steps:\n"
+        "1. Go to File → Import Media to add video/audio files\n"
+        "2. Drag media from the Media Browser to the Timeline\n"
+        "3. Right-click on media items for additional options");
+    
+    ve::log::info("New project created, previous project cleared");
 }
 void MainWindow::open_project() { ve::log::info("Open project requested"); }
 void MainWindow::save_project() { ve::log::info("Save project requested"); }
@@ -1107,8 +1206,8 @@ void MainWindow::undo() {
             update_actions();
         
         // Refresh timeline display
-        if (timeline_panel_) {
-            timeline_panel_->refresh();
+        if (timeline_dock_) {
+            timeline_dock_->refresh();
         }
         
         // Update status
@@ -1138,8 +1237,8 @@ void MainWindow::redo() {
             update_actions();
         
         // Refresh timeline display
-        if (timeline_panel_) {
-            timeline_panel_->refresh();
+        if (timeline_dock_) {
+            timeline_dock_->refresh();
         }
         
         // Update status
@@ -1174,9 +1273,9 @@ void MainWindow::stop() {
         playback_controller_->stop();
         playback_controller_->seek(0);
     }
-    if (timeline_panel_) {
-        timeline_panel_->set_current_time(us_to_tp(0));
-        timeline_panel_->update();
+    if (timeline_dock_) {
+        timeline_dock_->set_current_time(us_to_tp(0));
+        timeline_dock_->update();
     }
     if (time_label_) time_label_->setText(QString("Time: %1s").arg(0.0, 0, 'f', 2));
 }
@@ -1190,7 +1289,7 @@ void MainWindow::step_forward() {
     qint64 tgt = cur_us + frame_us; if(dur_us>0 && tgt>dur_us) tgt = dur_us;
     playback_controller_->seek(tgt);
     playback_controller_->step_once(); // decode one frame
-    if (timeline_panel_) { timeline_panel_->set_current_time(us_to_tp(tgt)); timeline_panel_->update(); }
+    if (timeline_dock_) { timeline_dock_->set_current_time(us_to_tp(tgt)); timeline_dock_->update(); }
     if (time_label_) time_label_->setText(QString("Time: %1s").arg(tgt / 1'000'000.0, 0, 'f', 2));
 }
 
@@ -1203,14 +1302,14 @@ void MainWindow::step_backward() {
     qint64 tgt = cur_us - frame_us; if(tgt < 0) tgt = 0;
     playback_controller_->seek(tgt);
     playback_controller_->step_once();
-    if (timeline_panel_) { timeline_panel_->set_current_time(us_to_tp(tgt)); timeline_panel_->update(); }
+    if (timeline_dock_) { timeline_dock_->set_current_time(us_to_tp(tgt)); timeline_dock_->update(); }
     if (time_label_) time_label_->setText(QString("Time: %1s").arg(tgt / 1'000'000.0, 0, 'f', 2));
 }
 
 void MainWindow::go_to_start() { 
     if (playback_controller_) {
         playback_controller_->seek(0);
-        if (timeline_panel_) timeline_panel_->set_current_time(ve::TimePoint{0, 1000000});
+        if (timeline_dock_) timeline_dock_->set_current_time(ve::TimePoint{0, 1000000});
         if (time_label_) time_label_->setText(QString("Time: %1s").arg(0.0, 0, 'f', 2));
     }
 }
@@ -1224,7 +1323,7 @@ void MainWindow::go_to_end() {
             int64_t target_time = duration - 1000; // Go to end minus 1ms
             ve::log::info("Going to end: " + std::to_string(target_time) + " us");
             playback_controller_->seek(target_time);
-            if (timeline_panel_) timeline_panel_->set_current_time(ve::TimePoint{target_time, 1000000});
+            if (timeline_dock_) timeline_dock_->set_current_time(ve::TimePoint{target_time, 1000000});
             if (time_label_) time_label_->setText(QString("Time: %1s").arg(target_time / 1000000.0, 0, 'f', 2));
         } else {
             ve::log::warn("Cannot go to end: duration is 0 or unknown");
@@ -1309,20 +1408,20 @@ void MainWindow::update_audio_levels() {
 }
 
 void MainWindow::zoom_in() { 
-    if (timeline_panel_) {
-        timeline_panel_->zoom_in();
+    if (timeline_dock_) {
+        timeline_dock_->zoom_in();
     }
 }
 
 void MainWindow::zoom_out() { 
-    if (timeline_panel_) {
-        timeline_panel_->zoom_out();
+    if (timeline_dock_) {
+        timeline_dock_->zoom_out();
     }
 }
 
 void MainWindow::zoom_fit() { 
-    if (timeline_panel_) {
-        timeline_panel_->zoom_fit();
+    if (timeline_dock_) {
+        timeline_dock_->zoom_fit();
     }
 }
 
@@ -1374,8 +1473,8 @@ void MainWindow::on_playback_time_changed(ve::TimePoint time) {
     time_label_->setText(time_str);
     
     // Update timeline
-    if (timeline_panel_) {
-        timeline_panel_->set_current_time(ve::TimePoint{time_us, 1000000});
+    if (timeline_dock_) {
+        timeline_dock_->set_current_time(ve::TimePoint{time_us, 1000000});
     }
 }
 
@@ -1504,8 +1603,8 @@ bool MainWindow::execute_command(std::unique_ptr<ve::commands::Command> command)
             update_actions();
         
         // Refresh timeline display
-        if (timeline_panel_) {
-            timeline_panel_->refresh();
+        if (timeline_dock_) {
+            timeline_dock_->refresh();
         }
         
         status_label_->setText("Command executed successfully");
@@ -1716,9 +1815,9 @@ void MainWindow::add_media_to_timeline(const QString& filePath, ve::TimePoint st
 }
 
 void MainWindow::update_playback_position() {
-    if (playback_controller_ && timeline_panel_) {
+    if (playback_controller_ && timeline_dock_) {
         auto current_time_us = playback_controller_->current_time_us();
-        timeline_panel_->set_current_time(ve::TimePoint{current_time_us, 1000000});
+        timeline_dock_->set_current_time(ve::TimePoint{current_time_us, 1000000});
         
         // Update time display in status bar
         if (time_label_) {
@@ -1783,8 +1882,8 @@ void MainWindow::create_test_timeline_content() {
     if(!audio_track->add_segment(audio_seg1)) ve::log::warn("Failed to add test audio segment 1");
         
         // Refresh the timeline display
-        if (timeline_panel_) {
-            timeline_panel_->refresh();
+        if (timeline_dock_) {
+            timeline_dock_->refresh();
         }
         
         ve::log::info("Created test timeline content with sample video and audio clips");
@@ -1935,13 +2034,65 @@ void MainWindow::flushTimelineBatch() {
             }
         };
 
-        if (info.has_video && info.has_audio) {
-            int video_track_index = ensure_track(info.track_index, ve::timeline::Track::Video);
-            int audio_track_index = ensure_track(video_track_index + 1, ve::timeline::Track::Audio);
-
-            add_segment_to_track(video_track_index, clip_name + " (Video)");
-            add_segment_to_track(audio_track_index, clip_name + " (Audio)");
+        // Check if this is a specific track placement (drag and drop) vs general "Add to Timeline"
+        bool isSpecificTrackPlacement = (info.track_index >= 0);
+        
+        if (isSpecificTrackPlacement) {
+            // Adobe Premiere style: User dragged to specific track - respect their choice
+            ve::log::info("Drag and drop to specific track " + std::to_string(info.track_index));
+            
+            // Ensure the target track exists
+            while (static_cast<int>(timeline_->tracks().size()) <= info.track_index) {
+                // Create tracks as needed, but determine type based on target track or media type
+                ve::timeline::Track::Type track_type = ve::timeline::Track::Video; // Default
+                if (info.track_index < static_cast<int>(timeline_->tracks().size())) {
+                    track_type = timeline_->tracks()[info.track_index]->type();
+                } else if (info.has_video && !info.has_audio) {
+                    track_type = ve::timeline::Track::Video;
+                } else if (!info.has_video && info.has_audio) {
+                    track_type = ve::timeline::Track::Audio;
+                } else {
+                    // Mixed media - use track naming to guess intent
+                    std::string track_name = "V" + std::to_string(timeline_->tracks().size() + 1);
+                    if (info.track_index >= 3) { // Assume audio tracks after first 3
+                        track_name = "A" + std::to_string(info.track_index - 2);
+                        track_type = ve::timeline::Track::Audio;
+                    }
+                    timeline_->add_track(track_type, track_name);
+                    continue;
+                }
+                
+                std::string auto_name = (track_type == ve::timeline::Track::Video ? "V" : "A") + 
+                                      std::to_string(timeline_->tracks().size() + 1);
+                timeline_->add_track(track_type, auto_name);
+            }
+            
+            // Get the target track
+            auto* target_track = timeline_->tracks()[info.track_index].get();
+            if (target_track) {
+                // Check if media is compatible with track type
+                bool canPlaceVideo = (target_track->type() == ve::timeline::Track::Video && info.has_video);
+                bool canPlaceAudio = (target_track->type() == ve::timeline::Track::Audio && info.has_audio);
+                
+                if (canPlaceVideo || canPlaceAudio) {
+                    // Create segment on this specific track
+                    add_segment_to_track(info.track_index, clip_name);
+                    ve::log::info("Created segment on specific track " + std::to_string(info.track_index));
+                } else {
+                    ve::log::warn("Media type incompatible with target track type");
+                }
+            }
+            
+        } else if (info.has_video && info.has_audio) {
+            // Adobe Premiere style: Do NOT automatically create both segments
+            // Let the user decide which tracks to use via drag/drop or manual placement
+            ve::log::info("Media contains both video and audio - user can choose which tracks to use");
+            
+            // For now, do nothing automatically. User will use drag/drop to place on desired tracks.
+            // This gives full control like Adobe Premiere.
+            
         } else {
+            // Single media type - only create if user specifically requests it
             ve::timeline::Track::Type track_type = info.has_video ? ve::timeline::Track::Video : ve::timeline::Track::Audio;
             int target_track_index = info.track_index;
 
@@ -1975,8 +2126,10 @@ void MainWindow::flushTimelineBatch() {
                 }
             }
 
-            target_track_index = ensure_track(target_track_index, track_type);
-            add_segment_to_track(target_track_index, clip_name);
+            // Only create segment if specifically requested (not for automatic "Add to Timeline")
+            // target_track_index = ensure_track(target_track_index, track_type);
+            // add_segment_to_track(target_track_index, clip_name);
+            ve::log::info("Media ready for manual placement on tracks - no automatic segments created");
         }
 
         processed++;
@@ -1990,21 +2143,21 @@ void MainWindow::flushTimelineBatch() {
     // Defer timeline UI update to prevent blocking (only update when batch is complete)
     bool should_update_ui = timeline_update_queue_.isEmpty();
 
-    if (timeline_panel_ && should_update_ui) {
+    if (timeline_dock_ && should_update_ui) {
         // Use QTimer::singleShot to defer the expensive UI update off the current call stack
         QTimer::singleShot(0, this, [this]() {
             SCOPE("deferred timeline UI update");
 
             // Update timeline panel data (lightweight operation)
-            timeline_panel_->set_timeline(timeline_);
+            timeline_dock_->set_timeline(timeline_);
 
             // Defer status update further to avoid UI thread congestion
             QTimer::singleShot(50, this, [this]() {
                 SCOPE("deferred status message");
-                status_label_->setText("Media added to timeline successfully!");
+                status_label_->setText("Media prepared for timeline - drag to desired tracks to place clips");
                 status_label_->setStyleSheet("color: green;");
 
-                ve::log::info("Timeline UI updated successfully");
+                ve::log::info("Media prepared for manual timeline placement (Adobe Premiere style)");
             });
         });
     }

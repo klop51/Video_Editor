@@ -21,6 +21,7 @@ add_library(ve_ui
     # Source files
     src/main_window.cpp
     src/timeline_panel.cpp
+    src/timeline_dock.cpp
     src/viewer_panel.cpp
     src/gl_video_widget.cpp
     
@@ -35,6 +36,7 @@ add_library(ve_ui
     # Headers with Q_OBJECT (for MOC processing)
     include/ui/main_window.hpp
     include/ui/timeline_panel.hpp
+    include/ui/timeline_dock.hpp
     include/ui/viewer_panel.hpp
     include/ui/gl_video_widget.hpp
     

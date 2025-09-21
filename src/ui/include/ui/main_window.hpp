@@ -2,6 +2,7 @@
 #include "../../core/include/core/time.hpp"
 #include "../../media_io/include/media_io/media_probe.hpp"
 #include "../../timeline/include/timeline/timeline.hpp"
+#include "timeline_dock.hpp"
 #include <QMainWindow>
 #include <QDockWidget>
 #include <QTimer>
@@ -184,8 +185,7 @@ private:
     ViewerPanel* viewer_panel_;
     
     // Dock widgets and their panels
-    QDockWidget* timeline_dock_;
-    TimelinePanel* timeline_panel_;
+    TimelineDock* timeline_dock_;
     
     QDockWidget* media_browser_dock_;
     QTreeWidget* media_browser_;
