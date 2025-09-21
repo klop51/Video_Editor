@@ -408,6 +408,163 @@ private:
     mutable size_t cached_hit_segment_index_;
     mutable size_t cached_hit_track_index_;
     mutable uint64_t cached_hit_timeline_version_;
+    
+    // ======= Phase 4: Memory & Threading Optimizations =======
+    
+    // Phase 4.1: Paint Object Memory Pool
+    struct PaintObjectPool {
+        // Pre-allocated objects to eliminate allocations during paint
+        std::vector<QColor> color_pool_;
+        std::vector<QPen> pen_pool_;
+        std::vector<QBrush> brush_pool_;
+        std::vector<QFont> font_pool_;
+        std::vector<QRect> rect_pool_;
+        
+        // Pool indices for current usage
+        mutable size_t color_index_ = 0;
+        mutable size_t pen_index_ = 0;
+        mutable size_t brush_index_ = 0;
+        mutable size_t font_index_ = 0;
+        mutable size_t rect_index_ = 0;
+        
+        // Pool statistics
+        mutable size_t max_colors_used_ = 0;
+        mutable size_t max_pens_used_ = 0;
+        mutable size_t max_brushes_used_ = 0;
+        mutable int total_allocations_saved_ = 0;
+        
+        void initialize_pools();
+        QColor* get_color(int r, int g, int b, int a = 255);
+        QPen* get_pen(const QColor& color, qreal width = 1.0, Qt::PenStyle style = Qt::SolidLine);
+        QBrush* get_brush(const QColor& color);
+        QFont* get_font(const QString& family, int size, int weight = QFont::Normal);
+        QRect* get_rect(int x, int y, int width, int height);
+        void reset_pools();
+        void print_pool_statistics() const;
+    };
+    mutable PaintObjectPool paint_object_pool_;
+    
+    // Phase 4.2: Advanced Performance Analytics
+    struct PerformanceAnalytics {
+        // Cache hit rate tracking
+        mutable int background_cache_hits_ = 0;
+        mutable int background_cache_misses_ = 0;
+        mutable int timecode_cache_hits_ = 0;
+        mutable int timecode_cache_misses_ = 0;
+        mutable int segment_cache_hits_ = 0;
+        mutable int segment_cache_misses_ = 0;
+        mutable int timeline_data_cache_hits_ = 0;
+        mutable int timeline_data_cache_misses_ = 0;
+        
+        // Paint performance tracking
+        mutable std::chrono::microseconds total_paint_time_{0};
+        mutable std::chrono::microseconds background_paint_time_{0};
+        mutable std::chrono::microseconds timecode_paint_time_{0};
+        mutable std::chrono::microseconds segments_paint_time_{0};
+        mutable int paint_event_count_ = 0;
+        
+        // Memory optimization tracking
+        mutable size_t peak_memory_usage_ = 0;
+        mutable size_t current_cache_memory_ = 0;
+        mutable int memory_allocations_saved_ = 0;
+        
+        // Progressive rendering analytics
+        mutable int progressive_renders_started_ = 0;
+        mutable int progressive_renders_completed_ = 0;
+        mutable std::chrono::microseconds avg_pass_time_{0};
+        
+        void reset_statistics();
+        void record_cache_hit(const std::string& cache_type);
+        void record_cache_miss(const std::string& cache_type);
+        void record_paint_time(const std::string& phase, std::chrono::microseconds time);
+        void record_memory_saved(size_t bytes);
+        void print_analytics() const;
+        double get_overall_cache_hit_rate() const;
+    };
+    mutable PerformanceAnalytics performance_analytics_;
+    
+    // Phase 4.3: Memory Container Optimizations
+    struct MemoryOptimizations {
+        // Pre-allocated containers for timeline processing
+        mutable std::vector<const ve::timeline::Segment*> visible_segments_buffer_;
+        mutable std::vector<QRect> segment_rects_buffer_;
+        mutable std::vector<QString> segment_names_buffer_;
+        mutable std::vector<QColor> segment_colors_buffer_;
+        
+        // Segment batching containers
+        struct SegmentBatch {
+            QColor color;
+            std::vector<QRect> rects;
+            std::vector<QString> names;
+        };
+        mutable std::vector<SegmentBatch> segment_batches_;
+        
+        // String pool for segment names to avoid QString allocations
+        mutable std::unordered_map<std::string, QString> string_pool_;
+        mutable size_t string_pool_hits_ = 0;
+        mutable size_t string_pool_misses_ = 0;
+        
+        void reserve_containers(size_t segment_count);
+        void clear_containers();
+        const QString& get_cached_string(const std::string& str);
+        void batch_segments_by_color(const std::vector<const ve::timeline::Segment*>& segments);
+        void print_memory_stats() const;
+    };
+    mutable MemoryOptimizations memory_optimizations_;
+    
+    // Phase 4.4: Advanced Paint State Management
+    struct AdvancedPaintStateCache {
+        // Current QPainter state tracking with deep comparison
+        struct PaintState {
+            QColor pen_color;
+            QColor brush_color;
+            qreal pen_width;
+            Qt::PenStyle pen_style;
+            QFont font;
+            QTransform transform;
+            QPainter::CompositionMode composition_mode;
+            bool antialiasing_enabled;
+            
+            bool operator==(const PaintState& other) const {
+                return pen_color == other.pen_color &&
+                       brush_color == other.brush_color &&
+                       std::abs(pen_width - other.pen_width) < 0.001 &&
+                       pen_style == other.pen_style &&
+                       font == other.font &&
+                       transform == other.transform &&
+                       composition_mode == other.composition_mode &&
+                       antialiasing_enabled == other.antialiasing_enabled;
+            }
+        };
+        
+        mutable PaintState current_state_;
+        mutable PaintState cached_state_;
+        mutable bool state_is_cached_ = false;
+        
+        // State change optimization counters
+        mutable int pen_changes_avoided_ = 0;
+        mutable int brush_changes_avoided_ = 0;
+        mutable int font_changes_avoided_ = 0;
+        mutable int transform_changes_avoided_ = 0;
+        mutable int total_state_changes_avoided_ = 0;
+        
+        void cache_current_state(QPainter& painter);
+        bool apply_pen_optimized(QPainter& painter, const QColor& color, qreal width = 1.0, Qt::PenStyle style = Qt::SolidLine);
+        bool apply_brush_optimized(QPainter& painter, const QColor& color);
+        bool apply_font_optimized(QPainter& painter, const QFont& font);
+        bool apply_transform_optimized(QPainter& painter, const QTransform& transform);
+        void reset_state_cache();
+        void print_state_optimization_stats() const;
+    };
+    mutable AdvancedPaintStateCache advanced_paint_state_;
+    
+    // Phase 4 Functions
+    void initialize_phase4_optimizations();
+    void update_memory_containers_for_paint() const;
+    void batch_similar_segments(const std::vector<const ve::timeline::Segment*>& segments) const;
+    void draw_segment_batch_optimized(QPainter& painter, const MemoryOptimizations::SegmentBatch& batch, int track_y) const;
+    void record_performance_metrics(const std::string& operation, std::chrono::microseconds duration) const;
+    void cleanup_phase4_resources() const;
 };
 
 } // namespace ve::ui
