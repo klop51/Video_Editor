@@ -89,9 +89,10 @@
 #### Before Suggesting Code Changes
 1. **Understand the context** - Read surrounding code and comments
 2. **Check existing patterns** - Follow established conventions in the codebase
-3. **Consider impact** - Think about performance, maintainability, and compatibility
-4. **Verify correctness** - Ensure suggested code actually compiles and works
-5. **Security review** - Check for potential vulnerabilities or resource leaks
+3. **Check for duplications** - Search the codebase for similar functionality before implementing new code
+4. **Consider impact** - Think about performance, maintainability, and compatibility
+5. **Verify correctness** - Ensure suggested code actually compiles and works
+6. **Security review** - Check for potential vulnerabilities or resource leaks
 
 #### Red Flags to Avoid
 - Suggesting code that doesn't match the existing style
