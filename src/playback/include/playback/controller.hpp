@@ -79,6 +79,10 @@ public:
     float get_master_volume() const { return master_volume_.load(); }
     bool set_master_volume(float volume) { master_volume_.store(std::clamp(volume, 0.0f, 1.0f)); return true; }
     
+    // Professional monitoring access
+    std::shared_ptr<ve::audio::ProfessionalAudioMonitoringSystem> get_monitoring_system() const;
+    bool enable_professional_monitoring();
+    
     // Timeline audio control methods
     bool initialize_timeline_audio();
     bool set_timeline_track_mute(ve::timeline::TrackId track_id, bool muted);

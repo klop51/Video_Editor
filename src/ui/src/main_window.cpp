@@ -442,6 +442,22 @@ void MainWindow::set_playback_controller(ve::playback::PlaybackController* contr
                 ve::log::warn("Failed to initialize timeline audio integration");
             }
             
+            // Initialize professional audio monitoring
+            if (controller->enable_professional_monitoring()) {
+                ve::log::info("Professional audio monitoring enabled");
+                
+                // Connect monitoring system to UI panel
+                auto monitoring_system = controller->get_monitoring_system();
+                if (monitoring_system && audio_monitoring_panel_) {
+                    audio_monitoring_panel_->set_monitoring_system(monitoring_system);
+                    ve::log::info("Monitoring system connected to UI panel");
+                } else {
+                    ve::log::warn("Failed to connect monitoring system to UI panel");
+                }
+            } else {
+                ve::log::warn("Failed to enable professional audio monitoring");
+            }
+            
             if (audio_status_label_) {
                 audio_status_label_->setText("Audio: Ready");
             }

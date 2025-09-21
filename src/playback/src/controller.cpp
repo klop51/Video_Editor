@@ -814,6 +814,37 @@ bool PlaybackController::initialize_audio_pipeline() {
     return true;
 }
 
+std::shared_ptr<ve::audio::ProfessionalAudioMonitoringSystem> PlaybackController::get_monitoring_system() const {
+    if (!audio_pipeline_) {
+        return nullptr;
+    }
+    return audio_pipeline_->get_monitoring_system();
+}
+
+bool PlaybackController::enable_professional_monitoring() {
+    if (!audio_pipeline_) {
+        ve::log::error("Cannot enable professional monitoring: audio pipeline not available");
+        return false;
+    }
+    
+    // Create default monitoring configuration
+    ve::audio::ProfessionalAudioMonitoringSystem::MonitoringConfig config;
+    config.target_platform = "EBU"; // Default to EBU R128
+    config.enable_loudness_monitoring = true;
+    config.enable_peak_rms_meters = true;
+    config.enable_audio_scopes = true;
+    config.update_rate_hz = 30;
+    config.reference_level_db = -20.0;
+    
+    bool result = audio_pipeline_->enable_professional_monitoring(config);
+    if (result) {
+        ve::log::info("Professional audio monitoring enabled");
+    } else {
+        ve::log::error("Failed to enable professional audio monitoring");
+    }
+    return result;
+}
+
 bool PlaybackController::initialize_timeline_audio() {
     if (!audio_pipeline_) {
         ve::log::error("Cannot initialize timeline audio: audio pipeline not available");
