@@ -866,7 +866,6 @@ void TimelinePanel::draw_segment_batch(QPainter& painter, const SegmentBatch& ba
                             } else {
                                 draw_cached_waveform(painter, rect, segment);
                             }
-                            }
                         }
                     }
                 }
@@ -1930,41 +1929,140 @@ void TimelinePanel::leaveEvent(QEvent* event) {
 }
 
 void TimelinePanel::draw_audio_waveform(QPainter& painter, const QRect& rect, const ve::timeline::Segment& segment) {
-    // Highly optimized placeholder waveform - minimal draw calls
-    painter.setPen(QPen(QColor(255, 255, 255, 80), 1)); // Lower opacity for subtlety
+    // Phase 2: Enhanced placeholder waveform with more realistic patterns
+    painter.setPen(QPen(QColor(120, 180, 255, 120), 1)); // More visible and slightly blue
     
     int center_y = rect.center().y();
-    int seed = static_cast<int>(segment.id % 5 + 2); // Reduced variation for consistency
+    int max_height = rect.height() * 0.6; // Use more vertical space
     
-    // Draw much fewer waveform "peaks" to reduce draw calls (every 16 pixels instead of 12)
-    for (int x = rect.left() + 8; x < rect.right() - 8; x += 16) {
-        int peak_height = ((x + seed) % 16) + 2; // Reduced variation
-        painter.drawLine(x, center_y - peak_height/2, x, center_y + peak_height/2);
+    // Create deterministic but varied pattern based on segment properties
+    int base_seed = static_cast<int>(segment.id * 13 + segment.start_time.to_rational().num / 1000);
+    
+    // Generate waveform with multiple frequency components for realism
+    for (int x = rect.left(); x < rect.right(); x += 8) {
+        int sample_index = (x - rect.left()) / 8;
+        int sample_seed = base_seed + sample_index;
+        
+        // Create multiple sine wave components for realistic waveform shape
+        float low_freq = std::sin(sample_seed * 0.05f) * 0.5f;
+        float mid_freq = std::sin(sample_seed * 0.12f) * 0.3f;
+        float high_freq = std::sin(sample_seed * 0.25f) * 0.15f;
+        
+        // Combine and apply amplitude variation
+        float amplitude = low_freq + mid_freq + high_freq;
+        amplitude *= (0.7f + (sample_seed % 50) / 100.0f); // Add variation
+        
+        // Convert to pixel height
+        int sample_height = static_cast<int>(std::abs(amplitude) * max_height);
+        sample_height = std::max(2, std::min(sample_height, max_height)); // Ensure visible minimum
+        
+        // Draw waveform line with proper amplitude direction
+        if (amplitude >= 0) {
+            painter.drawLine(x, center_y, x, center_y - sample_height);
+        } else {
+            painter.drawLine(x, center_y, x, center_y + sample_height);
+        }
+    }
+    
+    // Add subtle center reference line for longer segments
+    if (rect.width() > 80) {
+        painter.setPen(QPen(QColor(120, 180, 255, 30), 1));
+        painter.drawLine(rect.left(), center_y, rect.right(), center_y);
     }
 }
 
 void TimelinePanel::draw_cached_waveform(QPainter& painter, const QRect& rect, const ve::timeline::Segment& segment) {
-    // Ultra-fast waveform placeholder - optimized for performance over visual detail
+    // Phase 2: Enhanced waveform rendering with file-aware patterns
     if (!timeline_) {
         draw_audio_waveform(painter, rect, segment);
         return;
     }
     
-    // Get the clip for this segment to use file path for deterministic waveform
+    // Get the clip for this segment to use file path for enhanced waveform generation
     const auto* clip = timeline_->get_clip(segment.clip_id);
-    if (!clip || !clip->source) {
+    if (!clip || !clip->source || clip->source->path.empty()) {
         draw_audio_waveform(painter, rect, segment);
         return;
     }
     
-    // Use simple hash for deterministic pattern
+    // Phase 2: Generate file-specific waveform pattern using path hash
     std::hash<std::string> hasher;
-    size_t path_hash = hasher(clip->source->path);
+    size_t file_hash = hasher(clip->source->path);
     
-    painter.setPen(QPen(QColor(120, 200, 255, 120), 1));
+    // Extract audio file characteristics from path for realistic patterns
+    std::string path = clip->source->path;
+    std::transform(path.begin(), path.end(), path.begin(), ::tolower);
+    
+    // Phase 2: Determine waveform characteristics based on likely audio content
+    float base_amplitude = 0.6f;
+    float variation_factor = 0.8f;
+    int sample_density = 8; // pixels between samples
+    
+    // Enhance pattern based on file type hints
+    if (path.find("music") != std::string::npos || path.find("song") != std::string::npos) {
+        base_amplitude = 0.8f; // Music tends to have higher dynamic range
+        variation_factor = 1.2f;
+        sample_density = 6; // Denser sampling for music
+    } else if (path.find("voice") != std::string::npos || path.find("speech") != std::string::npos) {
+        base_amplitude = 0.5f; // Speech typically has lower peaks
+        variation_factor = 0.6f;
+        sample_density = 10; // Less dense for speech
+    } else if (path.find("drums") != std::string::npos || path.find("beat") != std::string::npos) {
+        base_amplitude = 0.9f; // Drums have sharp peaks
+        variation_factor = 1.5f;
+        sample_density = 4; // Very dense for percussive content
+    }
+    
+    // Phase 2: Render enhanced waveform with realistic amplitude variation
+    painter.setPen(QPen(QColor(120, 200, 255, 160), 1)); // Slightly more visible
     
     int center_y = rect.center().y();
-    int max_height = rect.height() / 2 - 4;
+    int max_height = rect.height() * 0.7; // Use more of available height
+    
+    // Generate waveform samples across the segment width
+    for (int x = rect.left(); x < rect.right(); x += sample_density) {
+        // Create pseudo-random but deterministic waveform pattern
+        int sample_seed = static_cast<int>(file_hash + x + segment.id * 37);
+        
+        // Generate multiple frequency components for realistic look
+        float low_freq = std::sin(sample_seed * 0.02f) * 0.4f;
+        float mid_freq = std::sin(sample_seed * 0.08f) * 0.3f;
+        float high_freq = std::sin(sample_seed * 0.15f) * 0.2f;
+        
+        // Combine frequencies with amplitude envelope
+        float amplitude = (low_freq + mid_freq + high_freq) * base_amplitude;
+        amplitude *= (1.0f + (sample_seed % 100) / 100.0f * variation_factor);
+        
+        // Apply realistic amplitude clipping
+        amplitude = std::max(-1.0f, std::min(1.0f, amplitude));
+        
+        int sample_height = static_cast<int>(std::abs(amplitude) * max_height);
+        
+        // Draw positive and negative waveform components
+        if (amplitude >= 0) {
+            painter.drawLine(x, center_y, x, center_y - sample_height);
+        } else {
+            painter.drawLine(x, center_y, x, center_y + sample_height);
+        }
+        
+        // Add subtle stereo effect for wider segments
+        if (rect.width() > 200 && sample_density <= 6) {
+            int stereo_offset = static_cast<int>((sample_seed % 3) - 1);
+            int stereo_height = sample_height * 0.7;
+            painter.drawLine(x + 1, center_y - stereo_offset, x + 1, center_y - stereo_offset - stereo_height);
+        }
+    }
+    
+    // Phase 2: Add center line for reference
+    if (rect.width() > 100) {
+        painter.setPen(QPen(QColor(120, 200, 255, 40), 1));
+        painter.drawLine(rect.left(), center_y, rect.right(), center_y);
+    }
+    
+    std::hash<std::string> path_hasher;
+    size_t path_hash = path_hasher(clip->source->path);
+    
+    painter.setPen(QPen(QColor(120, 200, 255, 120), 1));
     
     // Ultra-fast block-based waveform - no expensive math
     int block_width = std::max(2, rect.width() / 50); // Much fewer blocks
@@ -2114,11 +2212,12 @@ QPixmap* TimelinePanel::get_cached_segment(uint32_t segment_id, const QRect& rec
 }
 
 void TimelinePanel::cache_segment(uint32_t segment_id, const QRect& rect, const QPixmap& pixmap) const {
-    // Limit cache size to prevent memory issues
-    if (segment_cache_.size() > 100) {
-        segment_cache_.erase(segment_cache_.begin(), segment_cache_.begin() + 50); // Remove first half
-    }
+    // Remove old cache entries if cache is too large
+    segment_cache_.erase(std::remove_if(segment_cache_.begin(), segment_cache_.end(),
+        [this](const SegmentCacheEntry& entry) { return segment_cache_.size() > 50; }), 
+        segment_cache_.end());
     
+    // Create new cache entry
     int current_zoom = static_cast<int>(zoom_factor_ * 100);
     SegmentCacheEntry entry;
     entry.segment_id = segment_id;
@@ -2133,74 +2232,71 @@ void TimelinePanel::clear_segment_cache() const {
     segment_cache_.clear();
 }
 
-// ======= Phase 1 Performance Optimizations =======
-
+// Paint object initialization
 void TimelinePanel::init_paint_objects() const {
     if (paint_objects_initialized_) return;
     
-    // Pre-allocate all paint objects to avoid allocation during paint events
-    cached_video_color_ = QColor(80, 120, 180);
-    cached_audio_color_ = QColor(120, 180, 80);
-    cached_selected_color_ = QColor(200, 140, 100);
-    cached_text_color_ = QColor(220, 220, 220);
+    cached_video_color_ = QColor(70, 130, 180);  // Steel blue
+    cached_audio_color_ = QColor(100, 149, 237); // Cornflower blue
+    cached_selected_color_ = QColor(255, 215, 0); // Gold
+    cached_text_color_ = QColor(255, 255, 255);  // White
     
-    cached_border_pen_ = QPen(Qt::white, 1);
-    cached_grid_pen_ = QPen(QColor(70, 70, 70), 1);
+    cached_border_pen_ = QPen(QColor(255, 255, 255, 100), 1);
+    cached_grid_pen_ = QPen(QColor(255, 255, 255, 30), 1);
     
     cached_segment_brush_ = QBrush(cached_video_color_);
     
-    cached_name_font_ = QFont("Arial", 8);
+    cached_name_font_ = QFont("Arial", 9);
     cached_small_font_ = QFont("Arial", 7);
     cached_font_metrics_ = QFontMetrics(cached_name_font_);
     
     paint_objects_initialized_ = true;
 }
 
-void TimelinePanel::set_heavy_operation_mode(bool enabled) {
-    if (heavy_operation_mode_ == enabled) return;
+// Performance mode management
+void TimelinePanel::set_heavy_operation_mode(bool heavy_mode) {
+    if (heavy_operation_mode_ == heavy_mode) return;
     
-    heavy_operation_mode_ = enabled;
-    ve::log::info(enabled ? "Timeline entering heavy operation mode (15fps)" : "Timeline returning to normal mode (60fps)");
+    heavy_operation_mode_ = heavy_mode;
     
-    // Clear any pending paint requests when switching modes
-    if (paint_throttle_timer_->isActive()) {
+    // Adjust paint throttling
+    if (paint_throttle_timer_) {
         paint_throttle_timer_->stop();
     }
-    pending_paint_request_ = false;
     
-    // Force immediate update when exiting heavy mode to show final state
-    if (!enabled) {
-        QWidget::update();
-    }
+    pending_paint_request_ = false;
 }
+
+// ======= Phase 1 Performance Optimizations Implementation =======
 
 void TimelinePanel::request_throttled_update() {
     if (pending_paint_request_) return; // Already have a pending request
     
-    int throttle_interval = heavy_operation_mode_ ? (1000 / HEAVY_OPERATION_FPS) : (1000 / NORMAL_FPS);
-    
     pending_paint_request_ = true;
-    paint_throttle_timer_->start(throttle_interval);
+    
+    if (paint_throttle_timer_ && !paint_throttle_timer_->isActive()) {
+        int throttle_interval = heavy_operation_mode_ ? (1000 / HEAVY_OPERATION_FPS) : (1000 / NORMAL_FPS);
+        paint_throttle_timer_->start(throttle_interval);
+    } else {
+        QWidget::update();
+    }
 }
 
 bool TimelinePanel::should_skip_expensive_features() const {
-    return heavy_operation_mode_ || segments_being_added_ > 0 || g_timeline_busy.load(std::memory_order_acquire);
+    return heavy_operation_mode_ || segments_being_added_ > 0;
 }
 
 void TimelinePanel::draw_minimal_timeline(QPainter& painter) {
     // Ultra-fast minimal timeline for heavy operations
-    init_paint_objects();
-    
-    // Simple background
     painter.fillRect(rect(), QColor(45, 45, 45));
     
     // Basic timecode ruler
-    painter.setPen(cached_grid_pen_);
+    painter.setPen(QColor(100, 100, 100));
     painter.drawLine(0, TIMECODE_HEIGHT, width(), TIMECODE_HEIGHT);
     
     if (!timeline_) return;
     
-    // Draw basic track structure only
+    // Draw basic track structure only - no details
     const auto& tracks = timeline_->tracks();
     int y = TIMECODE_HEIGHT;
     
@@ -2208,18 +2304,18 @@ void TimelinePanel::draw_minimal_timeline(QPainter& painter) {
         const auto& track = *tracks[i];
         
         // Track separator
-        painter.setPen(cached_grid_pen_);
+        painter.setPen(QColor(70, 70, 70));
         painter.drawLine(0, y, width(), y);
         
-        // Very basic segments - just colored rectangles, no details
+        // Very basic segments - just colored rectangles
         const auto& segments = track.segments();
         QColor track_color = (track.type() == ve::timeline::Track::Video) ? 
-                            cached_video_color_ : cached_audio_color_;
+                            QColor(80, 120, 180) : QColor(120, 180, 80);
         
-        // Limit segments for performance
+        // Limit segments for performance (only first 5 per track)
         int segments_drawn = 0;
         for (const auto& segment : segments) {
-            if (segments_drawn >= 5) break; // Only draw first 5 segments per track
+            if (segments_drawn >= 5) break;
             
             int start_x = time_to_pixel(segment.start_time);
             int end_x = time_to_pixel(segment.end_time());
@@ -2241,13 +2337,13 @@ void TimelinePanel::draw_minimal_timeline(QPainter& painter) {
     painter.drawLine(playhead_x, 0, playhead_x, height());
 }
 
-// ======= Phase 2 Performance Optimizations =======
-
 void TimelinePanel::invalidate_region(const QRect& rect, bool needs_full_redraw) {
     if (rect.isEmpty()) return;
     
-    // Check if this region overlaps with existing dirty regions
+    // Phase 2: Smart dirty region tracking
     bool merged = false;
+    
+    // Try to merge with existing dirty regions
     for (auto& dirty : dirty_regions_) {
         if (dirty.rect.intersects(rect)) {
             // Merge overlapping regions
@@ -2258,11 +2354,12 @@ void TimelinePanel::invalidate_region(const QRect& rect, bool needs_full_redraw)
         }
     }
     
+    // If not merged, add as new dirty region
     if (!merged) {
         dirty_regions_.emplace_back(rect, needs_full_redraw);
     }
     
-    // Update total dirty rect
+    // Update total dirty rect for efficient bounds checking
     if (has_dirty_regions_) {
         total_dirty_rect_ = total_dirty_rect_.united(rect);
     } else {
@@ -2270,40 +2367,75 @@ void TimelinePanel::invalidate_region(const QRect& rect, bool needs_full_redraw)
         has_dirty_regions_ = true;
     }
     
-    // Limit dirty regions to prevent memory bloat
-    if (dirty_regions_.size() > 20) {
-        // Merge all regions into one large region
-        QRect combined;
-        for (const auto& dirty : dirty_regions_) {
-            combined = combined.united(dirty.rect);
-        }
-        dirty_regions_.clear();
-        dirty_regions_.emplace_back(combined, true);
+    // Limit dirty regions to prevent memory bloat (keep most recent)
+    if (dirty_regions_.size() > 50) {
+        dirty_regions_.erase(dirty_regions_.begin(), dirty_regions_.begin() + 25);
     }
+    
+    // Schedule actual Qt update for the combined region
+    QWidget::update(total_dirty_rect_);
 }
+
+void TimelinePanel::clear_dirty_regions() {
+    // Phase 2: Clear all dirty region tracking
+    dirty_regions_.clear();
+    has_dirty_regions_ = false;
+    total_dirty_rect_ = QRect();
+}
+
+TimelinePanel::DetailLevel TimelinePanel::calculate_detail_level(int visible_width, double zoom_factor) const {
+    // Simple detail level calculation for Phase 1
+    if (heavy_operation_mode_) return DetailLevel::MINIMAL;
+    if (zoom_factor < 0.1) return DetailLevel::MINIMAL;
+    if (zoom_factor < 0.5) return DetailLevel::BASIC;
+    if (zoom_factor < 2.0) return DetailLevel::NORMAL;
+    return DetailLevel::DETAILED;
+}
+
+void TimelinePanel::apply_pen_if_needed(QPainter& painter, const QColor& color, double width, Qt::PenStyle style) const {
+    painter.setPen(QPen(color, width, style));
+}
+
+void TimelinePanel::apply_brush_if_needed(QPainter& painter, const QColor& color) const {
+    painter.setBrush(QBrush(color));
+}
+
+void TimelinePanel::apply_font_if_needed(QPainter& painter, const QFont& font) const {
+    painter.setFont(font);
+}
+
+void TimelinePanel::reset_paint_state_cache() const {
+    // Simple implementation for Phase 1
+    // No paint state cache to reset yet
+}
+
+// ======= Phase 2 Additional Functions =======
 
 void TimelinePanel::invalidate_track(size_t track_index) {
     if (!timeline_ || track_index >= timeline_->tracks().size()) return;
     
-    int track_y = track_y_position(track_index);
+    // Calculate track bounds
+    int track_y = TIMECODE_HEIGHT + static_cast<int>(track_index) * (TRACK_HEIGHT + TRACK_SPACING);
     QRect track_rect(0, track_y, width(), TRACK_HEIGHT);
+    
     invalidate_region(track_rect, true);
 }
 
 void TimelinePanel::invalidate_segment(uint32_t segment_id) {
     if (!timeline_) return;
     
-    // Find the segment and invalidate its visual area
-    const auto& tracks = timeline_->tracks();
-    for (size_t i = 0; i < tracks.size(); ++i) {
-        const auto& track = *tracks[i];
-        for (const auto& segment : track.segments()) {
+    // Find segment and calculate its bounds
+    for (size_t track_idx = 0; track_idx < timeline_->tracks().size(); ++track_idx) {
+        const auto& track = *timeline_->tracks()[track_idx];
+        const auto& segments = track.segments();
+        
+        for (const auto& segment : segments) {
             if (segment.id == segment_id) {
                 int start_x = time_to_pixel(segment.start_time);
                 int end_x = time_to_pixel(segment.end_time());
-                int track_y = track_y_position(i);
+                int track_y = TIMECODE_HEIGHT + static_cast<int>(track_idx) * (TRACK_HEIGHT + TRACK_SPACING);
                 
-                QRect segment_rect(start_x - 5, track_y, end_x - start_x + 10, TRACK_HEIGHT);
+                QRect segment_rect(start_x - 2, track_y, end_x - start_x + 4, TRACK_HEIGHT);
                 invalidate_region(segment_rect, false);
                 return;
             }
@@ -2311,69 +2443,234 @@ void TimelinePanel::invalidate_segment(uint32_t segment_id) {
     }
 }
 
-void TimelinePanel::clear_dirty_regions() {
-    dirty_regions_.clear();
-    has_dirty_regions_ = false;
-    total_dirty_rect_ = QRect();
-}
-
 bool TimelinePanel::is_region_dirty(const QRect& rect) const {
     if (!has_dirty_regions_) return false;
     
+    // Quick bounds check first
+    if (!total_dirty_rect_.intersects(rect)) return false;
+    
+    // Check individual dirty regions
     for (const auto& dirty : dirty_regions_) {
-        if (dirty.rect.intersects(rect)) {
-            return true;
-        }
+        if (dirty.rect.intersects(rect)) return true;
     }
+    
     return false;
 }
 
-// Phase 2: Level-of-detail rendering
-TimelinePanel::DetailLevel TimelinePanel::calculate_detail_level(int segment_width, double zoom_factor) const {
-    if (segment_width < 5) return DetailLevel::MINIMAL;     // Just a colored line
-    if (segment_width < 20) return DetailLevel::BASIC;      // Colored rectangle with border
-    if (segment_width < 60) return DetailLevel::NORMAL;     // + segment name
-    return DetailLevel::DETAILED;                           // + duration, waveforms, etc.
-}
+// ======= Phase 3 Advanced Optimizations Implementation =======
 
-// Phase 4: Advanced paint state caching system
-void TimelinePanel::apply_pen_if_needed(QPainter& painter, const QColor& color, qreal width, Qt::PenStyle style) const {
-    if (!paint_state_cache_.has_valid_state || 
-        paint_state_cache_.current_pen_color != color || 
-        paint_state_cache_.current_pen_width != width ||
-        paint_state_cache_.current_pen_style != style) {
+void TimelinePanel::update_timeline_data_cache() const {
+    if (!timeline_) return;
+    
+    auto now = std::chrono::steady_clock::now();
+    uint64_t current_version = 1; // TODO: Get actual timeline version
+    
+    // Check if cache needs updating
+    if (timeline_data_cache_.timeline_version == current_version &&
+        !timeline_data_cache_.cached_tracks.empty()) {
+        return; // Cache is valid
+    }
+    
+    // Prevent concurrent updates
+    if (timeline_data_cache_.is_updating) return;
+    timeline_data_cache_.is_updating = true;
+    
+    timeline_data_cache_.cached_tracks.clear();
+    timeline_data_cache_.cached_tracks.reserve(timeline_->tracks().size());
+    
+    const auto& tracks = timeline_->tracks();
+    for (size_t track_idx = 0; track_idx < tracks.size(); ++track_idx) {
+        const auto& track = *tracks[track_idx];
         
-        painter.setPen(QPen(color, width, style));
-        paint_state_cache_.current_pen_color = color;
-        paint_state_cache_.current_pen_width = width;
-        paint_state_cache_.current_pen_style = style;
-        ++paint_state_cache_.pen_changes;
-        ++paint_state_cache_.total_state_changes;
+        CachedTrackData cached_track;
+        cached_track.version = current_version;
+        cached_track.zoom_level = zoom_factor_;
+        cached_track.scroll_x = scroll_x_;
+        cached_track.last_update = now;
+        
+        // Calculate track bounds
+        int track_y = TIMECODE_HEIGHT + static_cast<int>(track_idx) * (TRACK_HEIGHT + TRACK_SPACING);
+        cached_track.bounds = QRect(0, track_y, width(), TRACK_HEIGHT);
+        
+        // Cache visible segments for this track
+        const auto& segments = track.segments();
+        cached_track.visible_segments.reserve(segments.size());
+        
+        for (const auto& segment : segments) {
+            int start_x = time_to_pixel(segment.start_time);
+            int end_x = time_to_pixel(segment.end_time());
+            
+            // Only cache segments that might be visible
+            if (end_x >= scroll_x_ && start_x <= scroll_x_ + width()) {
+                cached_track.visible_segments.push_back(&segment);
+            }
+        }
+        
+        timeline_data_cache_.cached_tracks.push_back(std::move(cached_track));
+    }
+    
+    timeline_data_cache_.timeline_version = current_version;
+    timeline_data_cache_.last_full_update = now;
+    timeline_data_cache_.is_updating = false;
+}
+
+const TimelinePanel::CachedTrackData* TimelinePanel::get_cached_track_data(size_t track_index) const {
+    update_timeline_data_cache();
+    
+    if (track_index >= timeline_data_cache_.cached_tracks.size()) {
+        return nullptr;
+    }
+    
+    const auto& cached_track = timeline_data_cache_.cached_tracks[track_index];
+    
+    // Validate cache entry
+    if (!cached_track.is_valid(timeline_data_cache_.timeline_version, zoom_factor_, scroll_x_)) {
+        return nullptr;
+    }
+    
+    return &cached_track;
+}
+
+void TimelinePanel::invalidate_background_cache() {
+    background_cache_valid_ = false;
+    cached_background_zoom_ = -1.0;
+    cached_background_scroll_ = -1;
+}
+
+void TimelinePanel::invalidate_timecode_cache() {
+    timecode_cache_valid_ = false;
+}
+
+void TimelinePanel::invalidate_segment_cache(uint32_t segment_id) {
+    auto it = segment_pixmap_cache_.find(segment_id);
+    if (it != segment_pixmap_cache_.end()) {
+        segment_pixmap_cache_.erase(it);
     }
 }
 
-void TimelinePanel::apply_brush_if_needed(QPainter& painter, const QColor& color) const {
-    if (!paint_state_cache_.has_valid_state || paint_state_cache_.current_brush_color != color) {
-        painter.setBrush(QBrush(color));
-        paint_state_cache_.current_brush_color = color;
-        ++paint_state_cache_.brush_changes;
-        ++paint_state_cache_.total_state_changes;
-    }
+void TimelinePanel::ProgressiveRenderer::start_progressive_render(const QRect& region) {
+    render_region = region;
+    current_pass = RenderPass::BACKGROUND;
+    is_active = true;
+    pass_start_time = std::chrono::steady_clock::now();
+    
+    // Define pass order for complex timelines
+    remaining_passes = {
+        RenderPass::BACKGROUND,
+        RenderPass::TIMECODE,
+        RenderPass::TRACK_STRUCTURE,
+        RenderPass::SEGMENTS_BASIC,
+        RenderPass::SEGMENTS_DETAILED,
+        RenderPass::WAVEFORMS,
+        RenderPass::OVERLAYS
+    };
 }
 
-void TimelinePanel::apply_font_if_needed(QPainter& painter, const QFont& font) const {
-    if (!paint_state_cache_.has_valid_state || paint_state_cache_.current_font != font) {
-        painter.setFont(font);
-        paint_state_cache_.current_font = font;
-        ++paint_state_cache_.font_changes;
-        ++paint_state_cache_.total_state_changes;
+bool TimelinePanel::ProgressiveRenderer::advance_to_next_pass() {
+    if (remaining_passes.empty()) {
+        is_active = false;
+        return false;
     }
+    
+    remaining_passes.erase(remaining_passes.begin());
+    if (!remaining_passes.empty()) {
+        current_pass = remaining_passes[0];
+        pass_start_time = std::chrono::steady_clock::now();
+        return true;
+    }
+    
+    is_active = false;
+    return false;
 }
 
-void TimelinePanel::reset_paint_state_cache() const {
-    paint_state_cache_.reset();
+bool TimelinePanel::ProgressiveRenderer::is_render_complete() const {
+    return !is_active && remaining_passes.empty();
+}
+
+void TimelinePanel::ProgressiveRenderer::reset() {
+    is_active = false;
+    remaining_passes.clear();
+    current_pass = RenderPass::BACKGROUND;
+}
+
+bool TimelinePanel::render_next_progressive_pass(QPainter& painter) {
+    if (!progressive_renderer_.is_active) return false;
+    
+    auto pass_start = std::chrono::high_resolution_clock::now();
+    constexpr int MAX_PASS_TIME_MS = 8; // 8ms per pass for 120fps capability
+    
+    switch (progressive_renderer_.current_pass) {
+        case RenderPass::BACKGROUND:
+            if (!background_cache_valid_ || 
+                std::abs(cached_background_zoom_ - zoom_factor_) > 0.001 ||
+                cached_background_scroll_ != scroll_x_) {
+                
+                background_cache_ = QPixmap(size());
+                QPainter cache_painter(&background_cache_);
+                draw_background(cache_painter);
+                
+                background_cache_valid_ = true;
+                cached_background_zoom_ = zoom_factor_;
+                cached_background_scroll_ = scroll_x_;
+            }
+            painter.drawPixmap(0, 0, background_cache_);
+            break;
+            
+        case RenderPass::TIMECODE:
+            if (!timecode_cache_valid_) {
+                timecode_cache_ = QPixmap(width(), TIMECODE_HEIGHT);
+                QPainter cache_painter(&timecode_cache_);
+                draw_timecode_ruler(cache_painter);
+                timecode_cache_valid_ = true;
+            }
+            painter.drawPixmap(0, 0, timecode_cache_);
+            break;
+            
+        case RenderPass::TRACK_STRUCTURE:
+            // Draw basic track structure quickly
+            painter.setPen(QColor(70, 70, 70));
+            for (size_t i = 0; timeline_ && i < timeline_->tracks().size(); ++i) {
+                int track_y = TIMECODE_HEIGHT + static_cast<int>(i) * (TRACK_HEIGHT + TRACK_SPACING);
+                painter.drawLine(0, track_y, width(), track_y);
+            }
+            break;
+            
+        case RenderPass::SEGMENTS_BASIC:
+            // Draw basic segment rectangles only
+            if (timeline_) {
+                for (size_t track_idx = 0; track_idx < timeline_->tracks().size(); ++track_idx) {
+                    const auto* cached_track = get_cached_track_data(track_idx);
+                    if (!cached_track) continue;
+                    
+                    const auto& track = *timeline_->tracks()[track_idx];
+                    QColor track_color = (track.type() == ve::timeline::Track::Video) ? 
+                                        QColor(80, 120, 180) : QColor(120, 180, 80);
+                    
+                    painter.fillRect(cached_track->bounds, track_color.darker(150));
+                }
+            }
+            break;
+            
+        case RenderPass::SEGMENTS_DETAILED:
+        case RenderPass::WAVEFORMS:
+        case RenderPass::OVERLAYS:
+            // These passes would implement detailed rendering
+            // For now, just complete quickly
+            break;
+    }
+    
+    auto pass_end = std::chrono::high_resolution_clock::now();
+    auto pass_duration = std::chrono::duration_cast<std::chrono::milliseconds>(pass_end - pass_start);
+    
+    // Move to next pass
+    bool has_more = progressive_renderer_.advance_to_next_pass();
+    
+    // If we took too much time, yield to next frame
+    if (pass_duration.count() > MAX_PASS_TIME_MS) {
+        return has_more;
+    }
+    
+    return has_more;
 }
 
 } // namespace ve::ui
-
-// Removed explicit moc include; handled by AUTOMOC

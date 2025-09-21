@@ -11,6 +11,8 @@
 #include <memory>
 #include <functional>
 #include <limits>
+#include <unordered_map>
+#include <chrono>
 
 // Forward declarations
 namespace ve::commands { class Command; }
@@ -315,6 +317,76 @@ private:
     void apply_brush_if_needed(QPainter& painter, const QColor& color) const;
     void apply_font_if_needed(QPainter& painter, const QFont& font) const;
     void reset_paint_state_cache() const;
+    
+    // Phase 3: Advanced caching and progressive rendering
+    struct CachedTrackData {
+        std::vector<const ve::timeline::Segment*> visible_segments;
+        QRect bounds;
+        uint64_t version;
+        double zoom_level;
+        int scroll_x;
+        std::chrono::steady_clock::time_point last_update;
+        
+        bool is_valid(uint64_t timeline_version, double current_zoom, int current_scroll) const {
+            return version == timeline_version && 
+                   std::abs(zoom_level - current_zoom) < 0.001 &&
+                   scroll_x == current_scroll;
+        }
+    };
+    
+    struct TimelineDataCache {
+        std::vector<CachedTrackData> cached_tracks;
+        uint64_t timeline_version = 0;
+        bool is_updating = false;
+        std::chrono::steady_clock::time_point last_full_update;
+        
+        void invalidate() {
+            timeline_version = 0;
+            cached_tracks.clear();
+        }
+    };
+    
+    enum class RenderPass {
+        BACKGROUND,
+        TIMECODE,
+        TRACK_STRUCTURE,
+        SEGMENTS_BASIC,
+        SEGMENTS_DETAILED,
+        WAVEFORMS,
+        OVERLAYS
+    };
+    
+    struct ProgressiveRenderer {
+        RenderPass current_pass = RenderPass::BACKGROUND;
+        bool is_active = false;
+        QRect render_region;
+        std::chrono::steady_clock::time_point pass_start_time;
+        std::vector<RenderPass> remaining_passes;
+        
+        void start_progressive_render(const QRect& region);
+        bool advance_to_next_pass();
+        bool is_render_complete() const;
+        void reset();
+    };
+    
+    // Phase 3 cache instances
+    mutable TimelineDataCache timeline_data_cache_;
+    mutable QPixmap background_cache_;
+    mutable QPixmap timecode_cache_;
+    mutable bool background_cache_valid_;
+    mutable bool timecode_cache_valid_;
+    mutable double cached_background_zoom_;
+    mutable int cached_background_scroll_;
+    mutable std::unordered_map<uint32_t, QPixmap> segment_pixmap_cache_;
+    mutable ProgressiveRenderer progressive_renderer_;
+    
+    // Phase 3 functions
+    void update_timeline_data_cache() const;
+    const CachedTrackData* get_cached_track_data(size_t track_index) const;
+    void invalidate_background_cache();
+    void invalidate_timecode_cache();
+    void invalidate_segment_cache(uint32_t segment_id);
+    bool render_next_progressive_pass(QPainter& painter);
     
     // Phase 2: Dirty region tracking for optimized repainting
     struct DirtyRegion {

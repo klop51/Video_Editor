@@ -1,0 +1,16 @@
+cmake_minimum_required(VERSION 3.20)
+
+# Simple test executable for Phase 3 validation
+add_executable(phase3_validation_test phase3_validation_test.cpp)
+
+# Set C++17 standard
+target_compile_features(phase3_validation_test PRIVATE cxx_std_17)
+
+# Find required system libraries
+find_package(Threads REQUIRED)
+target_link_libraries(phase3_validation_test PRIVATE Threads::Threads)
+
+# Ensure it builds in the same directory
+set_target_properties(phase3_validation_test PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
