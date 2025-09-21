@@ -2,9 +2,37 @@
 #include <QApplication>
 #include "app/application.hpp"
 #include <iostream>
+#include <exception>
+#ifdef _MSC_VER
+#include <crtdbg.h>
+#endif
+
+
+namespace {
+void ve_terminate_handler() {
+    std::cerr << "std::terminate invoked" << std::endl;
+    if (auto current = std::current_exception()) {
+        try {
+            std::rethrow_exception(current);
+        } catch (const std::exception& e) {
+            std::cerr << "  exception: " << e.what() << std::endl;
+        } catch (...) {
+            std::cerr << "  exception: unknown" << std::endl;
+        }
+    } else {
+        std::cerr << "  no current exception" << std::endl;
+    }
+    std::abort();
+}
+}
 
 int main(int argc, char** argv) {
     std::cout << "Video Editor Main starting..." << std::endl;
+    std::set_terminate(ve_terminate_handler);
+#ifdef _MSC_VER
+    _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
+    _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
+#endif
     std::cout.flush();
     
     // Apply DPI rounding policy BEFORE any Qt application creation - must be very first Qt call

@@ -14,6 +14,7 @@
 #include "gfx/vk_device.hpp"
 #include "ui/gl_video_widget.hpp"
 #include "core/profiling.hpp"
+#include <algorithm>
 #include "core/log.hpp"
 #include <algorithm>
 #include <QVBoxLayout>
@@ -294,15 +295,56 @@ void ViewerPanel::on_step_backward_clicked() { if (!playback_controller_) return
 bool ViewerPanel::load_media(const QString& filePath) {
     ve::log::info("Loading media: " + filePath.toStdString());
 
+    // Check if this is an MP4 file that might have hardware acceleration issues
+    std::string filename = filePath.toStdString();
+    std::transform(filename.begin(), filename.end(), filename.begin(), 
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    bool is_mp4 = filename.find(".mp4") != std::string::npos;
+
     auto decoder = ve::decode::create_decoder();
     if (!decoder) { ve::log::error("Failed to create decoder"); return false; }
 
-    ve::decode::OpenParams params; params.filepath = filePath.toStdString(); params.video = true; params.audio = false;
+    ve::decode::OpenParams params; 
+    params.filepath = filePath.toStdString(); 
+    params.video = true; 
+    params.audio = false;
+    
+    // Set hardware acceleration based on file type
+    if (is_mp4) {
+        params.hw_accel = false; // Force software decoding for MP4 to prevent crashes
+        ve::log::info("MP4 file detected - using software decoding to prevent crashes: " + params.filepath);
+    } else {
+        params.hw_accel = true; // Try hardware acceleration for other formats
+        ve::log::info("Non-MP4 file - attempting hardware acceleration: " + params.filepath);
+    }
+    
     ve::log::info("Attempting to open decoder with file: " + params.filepath);
     if (!decoder->open(params)) {
-        QMessageBox::warning(this, "Media Load Failed", QString("Could not load media file:\n%1").arg(QFileInfo(filePath).fileName()));
-        ve::log::warn("Failed to open decoder for: " + filePath.toStdString());
-        return false;
+        if (!is_mp4) {
+            // For non-MP4 files, try software fallback if hardware fails
+            ve::log::warn("Hardware acceleration failed, trying software fallback");
+            params.hw_accel = false;
+            decoder = ve::decode::create_decoder();
+            if (!decoder) { ve::log::error("Failed to create decoder for software fallback"); return false; }
+            
+            if (!decoder->open(params)) {
+                QMessageBox::warning(this, "Media Load Failed", QString("Could not load media file:\n%1").arg(QFileInfo(filePath).fileName()));
+                ve::log::warn("Both hardware and software decoding failed for: " + filePath.toStdString());
+                return false;
+            } else {
+                ve::log::info("Software decoding fallback successful");
+            }
+        } else {
+            QMessageBox::warning(this, "Media Load Failed", QString("Could not load media file:\n%1").arg(QFileInfo(filePath).fileName()));
+            ve::log::warn("Software decoding failed for MP4: " + filePath.toStdString());
+            return false;
+        }
+    } else {
+        if (is_mp4) {
+            ve::log::info("MP4 software decoding successful");
+        } else {
+            ve::log::info("Hardware accelerated decoding successful");
+        }
     }
     ve::log::info("Decoder opened successfully");
     ve::log::info("Attempting to read first video frame...");

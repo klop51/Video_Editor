@@ -1,0 +1,518 @@
+Opened log file 'C:\Users\braul\Desktop\Video_Editor\cdb_log.txt'
+
+************* Preparing the environment for Debugger Extensions Gallery repositories **************
+   ExtensionRepository : Implicit
+   UseExperimentalFeatureForNugetShare : true
+   AllowNugetExeUpdate : true
+   NonInteractiveNuget : true
+   AllowNugetMSCredentialProviderInstall : true
+   AllowParallelInitializationOfLocalRepositories : true
+
+   EnableRedirectToV8JsProvider : false
+
+   -- Configuring repositories
+      ----> Repository : LocalInstalled, Enabled: true
+      ----> Repository : UserExtensions, Enabled: true
+
+>>>>>>>>>>>>> Preparing the environment for Debugger Extensions Gallery repositories completed, duration 0.000 seconds
+
+************* Waiting for Debugger Extensions Gallery to Initialize **************
+
+>>>>>>>>>>>>> Waiting for Debugger Extensions Gallery to Initialize completed, duration 0.000 seconds
+   ----> Repository : UserExtensions, Enabled: true, Packages count: 0
+   ----> Repository : LocalInstalled, Enabled: true, Packages count: 29
+
+Microsoft (R) Windows Debugger Version 10.0.26100.4948 AMD64
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+CommandLine: C:\Users\braul\Desktop\Video_Editor\build\qt-debug\src\tools\video_editor\Debug\video_editor.exe
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\atlmfc.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\ObjectiveC.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\concurrency.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\cpp_rest.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\stl.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Data.Json.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Geolocation.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Sensors.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Media.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\windows.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\winrt.natvis'
+
+************* Path validation summary **************
+Response                         Time (ms)     Location
+Deferred                                       srv*
+Symbol search path is: srv*
+Executable search path is: 
+
++------------------------------------------------------------------------+
+| This target supports Hardware-enforced Stack Protection. A HW based    |
+| "Shadow Stack" may be available to assist in debugging and analysis.   |
+| See aka.ms/userhsp for more info.                                      |
+|                                                                        |
+| dps @ssp                                                               |
+|                                                                        |
++------------------------------------------------------------------------+
+
+ModLoad: 00007ff7`86130000 00007ff7`864c5000   video_editor.exe
+ModLoad: 00007fff`00af0000 00007fff`00ce8000   ntdll.dll
+ModLoad: 00007ffe`ff500000 00007ffe`ff5c2000   C:\Windows\System32\KERNEL32.DLL
+ModLoad: 00007ffe`fe3a0000 00007ffe`fe696000   C:\Windows\System32\KERNELBASE.dll
+ModLoad: 00007ffe`ffed0000 00007ffe`ffffb000   C:\Windows\System32\ole32.dll
+ModLoad: 00007ffe`fe6a0000 00007ffe`fe7a0000   C:\Windows\System32\ucrtbase.dll
+ModLoad: 00007ffe`74410000 00007ffe`754d7000   C:\Users\braul\Desktop\Video_Editor\build\qt-debug\src\tools\video_editor\Debug\Qt6Widgetsd.dll
+ModLoad: 00007ffe`ffc10000 00007ffe`ffd30000   C:\Windows\System32\RPCRT4.dll
+ModLoad: 00007ffe`fef90000 00007ffe`ff2e3000   C:\Windows\System32\combase.dll
+ModLoad: 00007ffe`ff4d0000 00007ffe`ff4fb000   C:\Windows\System32\GDI32.dll
+ModLoad: 00007ffe`fe370000 00007ffe`fe392000   C:\Windows\System32\win32u.dll
+ModLoad: 00007ffe`fea00000 00007ffe`feb19000   C:\Windows\System32\gdi32full.dll
+ModLoad: 00007ffe`fe830000 00007ffe`fe8cd000   C:\Windows\System32\msvcp_win.dll
+ModLoad: 00007ffe`ffd30000 00007ffe`ffecd000   C:\Windows\System32\USER32.dll
+ModLoad: 00000190`e8680000 00000190`e881d000   C:\Windows\System32\USER32.dll
+ModLoad: 00007ffe`faf20000 00007ffe`faf4e000   C:\Windows\SYSTEM32\dwmapi.dll
+ModLoad: 00007ffe`fac90000 00007ffe`fad2e000   C:\Windows\SYSTEM32\UxTheme.dll
+ModLoad: 00007ffe`ff6b0000 00007ffe`ff74e000   C:\Windows\System32\msvcrt.dll
+ModLoad: 00000190`e8680000 00000190`e871e000   C:\Windows\System32\msvcrt.dll
+ModLoad: 00007ffe`72fa0000 00007ffe`74404000   C:\Users\braul\Desktop\Video_Editor\build\qt-debug\src\tools\video_editor\Debug\Qt6Guid.dll
+ModLoad: 00007ffe`72030000 00007ffe`72f97000   C:\Users\braul\Desktop\Video_Editor\build\qt-debug\src\tools\video_editor\Debug\Qt6Cored.dll
+ModLoad: 00007ffe`c33f0000 00007ffe`c34d1000   C:\Windows\SYSTEM32\MSVCP140D.dll
+ModLoad: 00007ffe`ee330000 00007ffe`ee33a000   C:\Windows\SYSTEM32\MSVCP140_1D.dll
+ModLoad: 00007fff`00010000 00007fff`00780000   C:\Windows\System32\SHELL32.dll
+ModLoad: 00007ffe`e25c0000 00007ffe`e25f0000   C:\Windows\SYSTEM32\VCRUNTIME140D.dll
+ModLoad: 00007ffe`edf30000 00007ffe`edf3f000   C:\Windows\SYSTEM32\VCRUNTIME140_1D.dll
+ModLoad: 00007ffe`ff9a0000 00007ffe`ffa51000   C:\Windows\System32\ADVAPI32.dll
+ModLoad: 00007ffe`ffb70000 00007ffe`ffc0f000   C:\Windows\System32\sechost.dll
+ModLoad: 00007ffe`fc9a0000 00007ffe`fc9aa000   C:\Windows\SYSTEM32\AVRT.dll
+ModLoad: 00007ffe`fe980000 00007ffe`fe9a7000   C:\Windows\System32\bcrypt.dll
+ModLoad: 00007ffe`b80a0000 00007ffe`b82a4000   C:\Windows\SYSTEM32\ucrtbased.dll
+ModLoad: 00007ffe`7ce10000 00007ffe`7d0cc000   C:\Users\braul\Desktop\Video_Editor\build\qt-debug\src\tools\video_editor\Debug\avformat-61.dll
+ModLoad: 00007ffe`ff920000 00007ffe`ff98b000   C:\Windows\System32\WS2_32.dll
+ModLoad: 00007ffe`5b9f0000 00007ffe`5ceea000   C:\Users\braul\Desktop\Video_Editor\build\qt-debug\src\tools\video_editor\Debug\avcodec-61.dll
+ModLoad: 00007ffe`1c210000 00007ffe`1d65b000   C:\Users\braul\Desktop\Video_Editor\build\qt-debug\src\tools\video_editor\Debug\avutil-59.dll
+ModLoad: 00007fff`009e0000 00007fff`00aad000   C:\Windows\System32\OLEAUT32.dll
+ModLoad: 00007ffe`c3310000 00007ffe`c33e1000   C:\Users\braul\Desktop\Video_Editor\build\qt-debug\src\tools\video_editor\Debug\swscale-8.dll
+ModLoad: 00007ffe`e2550000 00007ffe`e257a000   C:\Users\braul\Desktop\Video_Editor\build\qt-debug\src\tools\video_editor\Debug\Qt6OpenGLWidgetsd.dll
+ModLoad: 00007ffe`71b20000 00007ffe`72024000   C:\Users\braul\Desktop\Video_Editor\build\qt-debug\src\tools\video_editor\Debug\Qt6OpenGLd.dll
+ModLoad: 00007ffe`c2fd0000 00007ffe`c3143000   C:\Users\braul\Desktop\Video_Editor\build\qt-debug\src\tools\video_editor\Debug\spdlogd.dll
+ModLoad: 00007ffe`f63a0000 00007ffe`f67fd000   C:\Windows\SYSTEM32\D3DCOMPILER_47.dll
+ModLoad: 00007ffe`fc730000 00007ffe`fc994000   C:\Windows\SYSTEM32\d3d11.dll
+ModLoad: 00000190`e8680000 00000190`e88e4000   C:\Windows\SYSTEM32\d3d11.dll
+ModLoad: 00007ffe`fca20000 00007ffe`fcb16000   C:\Windows\SYSTEM32\dxgi.dll
+ModLoad: 00007ffe`e2320000 00007ffe`e2345000   C:\Windows\SYSTEM32\d3d12.dll
+ModLoad: 00007ffe`fc180000 00007ffe`fc3ff000   C:\Windows\SYSTEM32\DWrite.dll
+ModLoad: 00007ffe`d2ee0000 00007ffe`d2f4e000   C:\Users\braul\Desktop\Video_Editor\build\qt-debug\src\tools\video_editor\Debug\libpng16d.dll
+ModLoad: 00007ffe`7caf0000 00007ffe`7ce04000   C:\Users\braul\Desktop\Video_Editor\build\qt-debug\src\tools\video_editor\Debug\harfbuzz.dll
+ModLoad: 00007ffe`90c00000 00007ffe`90d7d000   C:\Users\braul\Desktop\Video_Editor\build\qt-debug\src\tools\video_editor\Debug\freetyped.dll
+ModLoad: 00007ffe`d3110000 00007ffe`d3148000   C:\Users\braul\Desktop\Video_Editor\build\qt-debug\src\tools\video_editor\Debug\zlibd1.dll
+ModLoad: 00007ffe`caea0000 00007ffe`caf11000   C:\Windows\SYSTEM32\MSVCP140_2D.dll
+ModLoad: 00007ffe`f4b90000 00007ffe`f4bad000   C:\Windows\SYSTEM32\MPR.dll
+ModLoad: 00007ffe`fe080000 00007ffe`fe0ae000   C:\Windows\SYSTEM32\USERENV.dll
+ModLoad: 00007ffe`fcef0000 00007ffe`fcf3f000   C:\Windows\SYSTEM32\AUTHZ.dll
+ModLoad: 00007ffe`f4bb0000 00007ffe`f4bc9000   C:\Windows\SYSTEM32\NETAPI32.dll
+ModLoad: 00007ffe`f3660000 00007ffe`f366a000   C:\Windows\SYSTEM32\VERSION.dll
+ModLoad: 00007ffe`f8d50000 00007ffe`f8d77000   C:\Windows\SYSTEM32\WINMM.dll
+ModLoad: 00007ffe`ef960000 00007ffe`ef96c000   C:\Windows\SYSTEM32\Secur32.dll
+ModLoad: 00007ffe`616a0000 00007ffe`61c0d000   C:\Users\braul\Desktop\Video_Editor\build\qt-debug\src\tools\video_editor\Debug\icuind74.dll
+ModLoad: 00007ffe`7b1f0000 00007ffe`7b554000   C:\Users\braul\Desktop\Video_Editor\build\qt-debug\src\tools\video_editor\Debug\icuucd74.dll
+ModLoad: 00007ffe`e1e00000 00007ffe`e1e2e000   C:\Users\braul\Desktop\Video_Editor\build\qt-debug\src\tools\video_editor\Debug\swresample-5.dll
+ModLoad: 00007ffe`cddc0000 00007ffe`cde06000   C:\Users\braul\Desktop\Video_Editor\build\qt-debug\src\tools\video_editor\Debug\double-conversion.dll
+ModLoad: 00007ffe`8d3a0000 00007ffe`8d4e9000   C:\Users\braul\Desktop\Video_Editor\build\qt-debug\src\tools\video_editor\Debug\pcre2-16d.dll
+ModLoad: 00007ffe`87560000 00007ffe`87716000   C:\Users\braul\Desktop\Video_Editor\build\qt-debug\src\tools\video_editor\Debug\zstd.dll
+ModLoad: 00007ffe`fdb10000 00007ffe`fdb28000   C:\Windows\SYSTEM32\CRYPTSP.dll
+ModLoad: 00007ffe`c9ce0000 00007ffe`c9d57000   C:\Users\braul\Desktop\Video_Editor\build\qt-debug\src\tools\video_editor\Debug\fmtd.dll
+ModLoad: 00007ffe`fc9d0000 00007ffe`fc9e2000   C:\Windows\SYSTEM32\kernel.appcore.dll
+ModLoad: 00007ffe`df760000 00007ffe`df784000   C:\Users\braul\Desktop\Video_Editor\build\qt-debug\src\tools\video_editor\Debug\brotlidec.dll
+ModLoad: 00007ffe`ce5e0000 00007ffe`ce613000   C:\Users\braul\Desktop\Video_Editor\build\qt-debug\src\tools\video_editor\Debug\bz2d.dll
+ModLoad: 00000190`e86c0000 00000190`ea41e000   C:\Users\braul\Desktop\Video_Editor\build\qt-debug\src\tools\video_editor\Debug\icudtd74.dll
+ModLoad: 00007ffe`fe040000 00007ffe`fe072000   C:\Windows\SYSTEM32\SSPICLI.DLL
+ModLoad: 00007ffe`fdb30000 00007ffe`fdb3c000   C:\Windows\SYSTEM32\CRYPTBASE.DLL
+ModLoad: 00007ffe`c6100000 00007ffe`c6138000   C:\Users\braul\Desktop\Video_Editor\build\qt-debug\src\tools\video_editor\Debug\brotlicommon.dll
+ModLoad: 00007ffe`f45d0000 00007ffe`f45f8000   C:\Windows\SYSTEM32\SRVCLI.DLL
+ModLoad: 00007ffe`fd5f0000 00007ffe`fd5fc000   C:\Windows\SYSTEM32\NETUTILS.DLL
+ModLoad: 00000190`ea440000 00000190`ec19e000   C:\Users\braul\Desktop\Video_Editor\build\qt-debug\src\tools\video_editor\Debug\icudtd74.dll
+ModLoad: 00007ffe`ff2f0000 00007ffe`ff31f000   C:\Windows\System32\IMM32.DLL
+ModLoad: 00007ffe`fe7a0000 00007ffe`fe822000   C:\Windows\System32\bcryptPrimitives.dll
+ModLoad: 00007ffe`fb400000 00007ffe`fbba5000   C:\Windows\SYSTEM32\windows.storage.dll
+ModLoad: 00007ffe`fdbc0000 00007ffe`fdbeb000   C:\Windows\SYSTEM32\Wldp.dll
+ModLoad: 00007fff`00780000 00007fff`0082d000   C:\Windows\System32\SHCORE.dll
+ModLoad: 00007ffe`ff8c0000 00007ffe`ff91b000   C:\Windows\System32\shlwapi.dll
+ModLoad: 00007ffe`fe0c0000 00007ffe`fe0e4000   C:\Windows\SYSTEM32\profapi.dll
+setHighDpiScaleFactorRoundingPolicy must be called before creating the QGuiApplication instance
+ModLoad: 00007ffe`6aac0000 00007ffe`6aec9000   C:\Users\braul\Desktop\Video_Editor\build\qt-debug\src\tools\video_editor\Debug\platforms\qwindowsd.dll
+ModLoad: 00007ffe`feb20000 00007ffe`fef90000   C:\Windows\System32\SETUPAPI.dll
+ModLoad: 00007ffe`fe9b0000 00007ffe`fe9fe000   C:\Windows\System32\cfgmgr32.dll
+ModLoad: 00007ffe`ff5d0000 00007ffe`ff6aa000   C:\Windows\System32\COMDLG32.dll
+ModLoad: 00007ffe`f8fd0000 00007ffe`f8fe4000   C:\Windows\SYSTEM32\WTSAPI32.dll
+ModLoad: 00007ffe`e0790000 00007ffe`e0840000   C:\Windows\WinSxS\amd64_microsoft.windows.common-controls_6595b64144ccf1df_5.82.19041.6280_none_792d7c952443c49a\COMCTL32.dll
+ModLoad: 00007ffe`dea70000 00007ffe`dec41000   C:\Windows\SYSTEM32\d3d9.dll
+ModLoad: 00007ffe`dd870000 00007ffe`ddb64000   C:\Windows\SYSTEM32\UIAutomationCore.DLL
+ModLoad: 00007ffe`fa560000 00007ffe`fa654000   C:\Windows\SYSTEM32\PROPSYS.dll
+ModLoad: 00007ffe`fd6d0000 00007ffe`fd71b000   C:\Windows\SYSTEM32\powrprof.dll
+ModLoad: 00007ffe`fd590000 00007ffe`fd5a2000   C:\Windows\SYSTEM32\UMPDC.dll
+ModLoad: 00007ffe`ff320000 00007ffe`ff435000   C:\Windows\System32\MSCTF.dll
+ModLoad: 00007ffe`fdf20000 00007ffe`fdf53000   C:\Windows\SYSTEM32\DEVOBJ.dll
+ModLoad: 00007ffe`fe190000 00007ffe`fe203000   C:\Windows\System32\WINTRUST.dll
+ModLoad: 00007ffe`fe210000 00007ffe`fe36d000   C:\Windows\System32\CRYPT32.dll
+ModLoad: 00007ffe`fdd50000 00007ffe`fdd62000   C:\Windows\SYSTEM32\MSASN1.dll
+ModLoad: 00007ffe`ff810000 00007ffe`ff8b9000   C:\Windows\System32\clbcatq.dll
+ModLoad: 00007ffe`e9aa0000 00007ffe`e9bdf000   C:\Windows\System32\Windows.UI.dll
+ModLoad: 00007ffe`e99a0000 00007ffe`e9a99000   C:\Windows\System32\TextInputFramework.dll
+ModLoad: 00007ffe`e9840000 00007ffe`e9992000   C:\Windows\System32\InputHost.dll
+ModLoad: 00007ffe`f3a90000 00007ffe`f3b31000   C:\Windows\System32\WindowManagementAPI.dll
+ModLoad: 00007ffe`f70d0000 00007ffe`f742b000   C:\Windows\System32\CoreUIComponents.dll
+ModLoad: 00007ffe`f76b0000 00007ffe`f77a2000   C:\Windows\System32\CoreMessaging.dll
+ModLoad: 00007ffe`f9e70000 00007ffe`f9fc7000   C:\Windows\SYSTEM32\wintypes.dll
+ModLoad: 00000190`ecc30000 00000190`ecd87000   C:\Windows\SYSTEM32\wintypes.dll
+ModLoad: 00007ffe`f9990000 00007ffe`f9b93000   C:\Windows\SYSTEM32\twinapi.appcore.dll
+ModLoad: 00007ffe`fd420000 00007ffe`fd453000   C:\Windows\SYSTEM32\ntmarta.dll
+ModLoad: 00007ffe`ea140000 00007ffe`ea278000   C:\Windows\System32\Windows.UI.Immersive.dll
+ModLoad: 00007ffe`b7f90000 00007ffe`b8095000   C:\Users\braul\Desktop\Video_Editor\build\qt-debug\src\tools\video_editor\Debug\styles\qmodernwindowsstyled.dll
+ModLoad: 00007ffe`f6150000 00007ffe`f61d5000   C:\Windows\System32\MMDevApi.dll
+ModLoad: 00007ffe`f68e0000 00007ffe`f6a61000   C:\Windows\SYSTEM32\AUDIOSES.DLL
+ModLoad: 00007ffe`fae20000 00007ffe`fae34000   C:\Windows\SYSTEM32\resourcepolicyclient.dll
+avcore\audiocore\client\audioclient\audioclientcore.cpp(1501)\AUDIOSES.DLL!00007FFEF6917925: (caller: 00007FFEF68F4FA5) ReturnHr(1) tid(ac44) 887C0034 ModLoad: 00007ffe`ef490000 00007ffe`ef551000   C:\Windows\System32\DriverStore\FileRepository\nvmdi.inf_amd64_978a3b585e321cd9\nvldumdx.dll
+ModLoad: 00007ffe`f59f0000 00007ffe`f5a21000   C:\Windows\SYSTEM32\cryptnet.dll
+ModLoad: 00007ffe`f3800000 00007ffe`f3947000   C:\Windows\SYSTEM32\drvstore.dll
+ModLoad: 00007ffe`ffb50000 00007ffe`ffb6d000   C:\Windows\System32\imagehlp.dll
+ModLoad: 00007ffe`fd1d0000 00007ffe`fd208000   C:\Windows\system32\rsaenh.dll
+ModLoad: 00007ffe`eb130000 00007ffe`ed11e000   C:\Windows\System32\DriverStore\FileRepository\nvmdi.inf_amd64_978a3b585e321cd9\nvgpucomp64.dll
+ModLoad: 00007ffe`859a0000 00007ffe`87434000   C:\Windows\System32\DriverStore\FileRepository\nvmdi.inf_amd64_978a3b585e321cd9\nvd3dumx.dll
+ModLoad: 00007ffe`dd4c0000 00007ffe`dd4fe000   C:\Windows\system32\dataexchange.dll
+ModLoad: 00007ffe`f6b60000 00007ffe`f6d44000   C:\Windows\system32\dcomp.dll
+ModLoad: 00007ffe`e9c90000 00007ffe`e9cf6000   C:\Windows\system32\Oleacc.dll
+ModLoad: 00007ffe`fdf90000 00007ffe`fe032000   C:\Windows\SYSTEM32\sxs.dll
+mincore\com\oleaut32\dispatch\ups.cpp(2122)\OLEAUT32.dll!00007FFF009EA726: (caller: 00007FFF009E9B39) ReturnHr(1) tid(ac44) 8002801D Library not registered.
+ModLoad: 00007ffe`dd660000 00007ffe`dd6df000   C:\Windows\System32\OneCoreCommonProxyStub.dll
+ModLoad: 00007ffe`f3b40000 00007ffe`f3b49000   C:\Windows\system32\IconCodecService.dll
+ModLoad: 00007ffe`faa40000 00007ffe`fabf6000   C:\Windows\SYSTEM32\WindowsCodecs.dll
+ModLoad: 00007ffe`d6750000 00007ffe`d6776000   C:\Windows\SYSTEM32\winmmbase.dll
+ModLoad: 00007ffe`b8970000 00007ffe`b89b6000   C:\Windows\SYSTEM32\wdmaud.drv
+ModLoad: 00007ffe`f9120000 00007ffe`f9129000   C:\Windows\SYSTEM32\ksuser.dll
+ModLoad: 00007ffe`f26f0000 00007ffe`f26fd000   C:\Windows\SYSTEM32\msacm32.drv
+ModLoad: 00007ffe`c9470000 00007ffe`c948e000   C:\Windows\SYSTEM32\MSACM32.dll
+ModLoad: 00007ffe`eeb70000 00007ffe`eeb7b000   C:\Windows\SYSTEM32\midimap.dll
+ModLoad: 00007ffe`c5a60000 00007ffe`c5c0e000   C:\Windows\SYSTEM32\DUI70.dll
+ModLoad: 00007ffe`e2ec0000 00007ffe`e315b000   C:\Windows\WinSxS\amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.19041.6280_none_60bc30a171f2f3f3\Comctl32.dll
+ModLoad: 00007ffe`dfdc0000 00007ffe`dfe55000   C:\Windows\SYSTEM32\DUser.dll
+ModLoad: 00007ffe`dfa10000 00007ffe`dfab9000   C:\Program Files\Common Files\microsoft shared\ink\tiptsf.dll
+ModLoad: 00007ffe`f9130000 00007ffe`f913d000   C:\Windows\SYSTEM32\atlthunk.dll
+ModLoad: 00007ffe`df440000 00007ffe`df4ec000   C:\Windows\SYSTEM32\TextShaping.dll
+ModLoad: 00007ffe`c90f0000 00007ffe`c9114000   C:\Windows\SYSTEM32\edputil.dll
+ModLoad: 00007ffe`b7300000 00007ffe`b7558000   C:\Windows\system32\explorerframe.dll
+ModLoad: 00007ffe`fbbc0000 00007ffe`fc180000   C:\Windows\system32\d2d1.dll
+ModLoad: 00007ffe`d2830000 00007ffe`d2897000   C:\Windows\System32\thumbcache.dll
+ModLoad: 00007ffe`fa490000 00007ffe`fa531000   C:\Windows\SYSTEM32\policymanager.dll
+ModLoad: 00007ffe`fd260000 00007ffe`fd2ea000   C:\Windows\SYSTEM32\msvcp110_win.dll
+ModLoad: 00007ffe`d98f0000 00007ffe`d9c3c000   C:\Windows\SYSTEM32\MsftEdit.dll
+ModLoad: 00007ffe`e0590000 00007ffe`e0736000   C:\Windows\System32\Windows.Globalization.dll
+ModLoad: 00007ffe`e9570000 00007ffe`e959d000   C:\Windows\System32\bcp47mrm.dll
+ModLoad: 00007ffe`e9f50000 00007ffe`e9fab000   C:\Windows\System32\Bcp47Langs.dll
+ModLoad: 00007ffe`f6010000 00007ffe`f6035000   C:\Windows\SYSTEM32\globinputhost.dll
+ModLoad: 00007ffe`f8ff0000 00007ffe`f9026000   C:\Windows\system32\xmllite.dll
+ModLoad: 00007ffe`dd750000 00007ffe`dd7f6000   C:\Windows\System32\StructuredQuery.dll
+ModLoad: 00007ffe`c8f00000 00007ffe`c8f64000   C:\Windows\System32\Windows.FileExplorer.Common.dll
+ModLoad: 00007ffe`f2140000 00007ffe`f23fe000   C:\Windows\System32\iertutil.dll
+ModLoad: 00007ffe`c9e30000 00007ffe`c9ef7000   C:\Windows\system32\Windows.Storage.Search.dll
+ModLoad: 00007ffe`d9050000 00007ffe`d9196000   C:\Windows\System32\Windows.StateRepositoryPS.dll
+ModLoad: 00007ffe`ff440000 00007ffe`ff4b9000   C:\Windows\System32\coml2.dll
+ModLoad: 00007ffe`dfe80000 00007ffe`dfe8b000   C:\Windows\System32\drprov.dll
+ModLoad: 00007ffe`fce50000 00007ffe`fceab000   C:\Windows\System32\WINSTA.dll
+ModLoad: 00007ffe`7b560000 00007ffe`7b57f000   C:\Windows\System32\ntlanman.dll
+ModLoad: 00007ffe`7c240000 00007ffe`7c25e000   C:\Windows\System32\davclnt.dll
+ModLoad: 00007ffe`dfa00000 00007ffe`dfa0d000   C:\Windows\System32\DAVHLPR.dll
+ModLoad: 00007ffe`fd2f0000 00007ffe`fd309000   C:\Windows\System32\wkscli.dll
+ModLoad: 00007ffe`cde70000 00007ffe`cde7d000   C:\Windows\SYSTEM32\LINKINFO.dll
+ModLoad: 00007ffe`d6ae0000 00007ffe`d6af2000   C:\Windows\SYSTEM32\cscapi.dll
+(53b4.1f60): Unknown exception - code 000006ba (first chance)
+ModLoad: 00007ffe`e0c30000 00007ffe`e0cd8000   C:\Windows\System32\twinapi.dll
+ModLoad: 00007ffe`f8270000 00007ffe`f8304000   C:\Windows\SYSTEM32\apphelp.dll
+ModLoad: 00007ffe`b5b00000 00007ffe`b5b56000   C:\Windows\System32\dlnashext.dll
+ModLoad: 00007ffe`c1170000 00007ffe`c11d4000   C:\Windows\System32\PlayToDevice.dll
+ModLoad: 00007ffe`f8b60000 00007ffe`f8b80000   C:\Windows\System32\DevDispItemProvider.dll
+ModLoad: 00007ffe`b8800000 00007ffe`b88a1000   C:\Windows\system32\wpdshext.dll
+ModLoad: 00007ffe`e91a0000 00007ffe`e9348000   C:\Windows\WinSxS\amd64_microsoft.windows.gdiplus_6595b64144ccf1df_1.1.19041.6216_none_919f98d0cc8c5626\gdiplus.dll
+ModLoad: 00007ffe`8e100000 00007ffe`8e1a3000   C:\Windows\System32\PortableDeviceApi.dll
+ModLoad: 00007ffe`d0f80000 00007ffe`d0fb2000   C:\Windows\System32\PortableDeviceTypes.dll
+ModLoad: 00007ffe`9ba20000 00007ffe`9bc16000   C:\Program Files\Microsoft OneDrive\25.164.0824.0003\FileSyncShell64.dll
+ModLoad: 00007ffe`d61c0000 00007ffe`d6696000   C:\Windows\SYSTEM32\WININET.dll
+ModLoad: 00007ffe`d7990000 00007ffe`d79c7000   C:\Windows\System32\EhStorShell.dll
+ModLoad: 00007ffe`de840000 00007ffe`de866000   C:\Windows\System32\EhStorAPI.dll
+ModLoad: 00007ffe`d6b00000 00007ffe`d6b65000   C:\Windows\SYSTEM32\mscoree.dll
+ModLoad: 00007ffe`d5620000 00007ffe`d56bb000   C:\Windows\Microsoft.NET\Framework64\v4.0.30319\mscoreei.dll
+ModLoad: 00007ffe`c82d0000 00007ffe`c8c74000   C:\Windows\Microsoft.NET\Framework64\v4.0.30319\clr.dll
+ModLoad: 00007ffe`c9440000 00007ffe`c945b000   C:\Windows\SYSTEM32\VCRUNTIME140_CLR0400.dll
+ModLoad: 00007ffe`cdd40000 00007ffe`cdd4c000   C:\Windows\SYSTEM32\VCRUNTIME140_1_CLR0400.dll
+ModLoad: 00007ffe`c9370000 00007ffe`c943d000   C:\Windows\SYSTEM32\ucrtbase_clr0400.dll
+(53b4.a7d4): Unknown exception - code 04242420 (first chance)
+ModLoad: 00007ffe`ff4c0000 00007ffe`ff4c8000   C:\Windows\System32\psapi.dll
+ModLoad: 00007ffe`c6cc0000 00007ffe`c82cf000   C:\Windows\assembly\NativeImages_v4.0.30319_64\mscorlib\8967064a93c70884749ad00de74dd7a1\mscorlib.ni.dll
+(53b4.a7d4): C++ EH exception - code e06d7363 (first chance)
+(53b4.a7d4): C++ EH exception - code e06d7363 (first chance)
+(53b4.a7d4): C++ EH exception - code e06d7363 (first chance)
+(53b4.a7d4): C++ EH exception - code e06d7363 (first chance)
+(53b4.a7d4): C++ EH exception - code e06d7363 (first chance)
+(53b4.a7d4): C++ EH exception - code e06d7363 (first chance)
+(53b4.a7d4): C++ EH exception - code e06d7363 (first chance)
+ModLoad: 00007ffe`bf830000 00007ffe`bf8fd000   C:\Windows\System32\cscui.dll
+(53b4.5d30): C++ EH exception - code e06d7363 (first chance)
+(53b4.5d30): C++ EH exception - code e06d7363 (first chance)
+(53b4.5d30): C++ EH exception - code e06d7363 (first chance)
+(53b4.5d30): C++ EH exception - code e06d7363 (first chance)
+(53b4.5d30): C++ EH exception - code e06d7363 (first chance)
+(53b4.5d30): C++ EH exception - code e06d7363 (first chance)
+(53b4.5d30): C++ EH exception - code e06d7363 (first chance)
+(53b4.8628): C++ EH exception - code e06d7363 (first chance)
+(53b4.8628): C++ EH exception - code e06d7363 (first chance)
+(53b4.8628): C++ EH exception - code e06d7363 (first chance)
+(53b4.8628): C++ EH exception - code e06d7363 (first chance)
+(53b4.8628): C++ EH exception - code e06d7363 (first chance)
+(53b4.8628): C++ EH exception - code e06d7363 (first chance)
+(53b4.8628): C++ EH exception - code e06d7363 (first chance)
+ModLoad: 00007ffe`cee60000 00007ffe`ceedd000   C:\Windows\SYSTEM32\ntshrui.dll
+ModLoad: 00007ffe`f2400000 00007ffe`f25f1000   C:\Windows\System32\urlmon.dll
+ModLoad: 00007ffe`f2d90000 00007ffe`f2e32000   C:\Windows\System32\ActXPrxy.dll
+ModLoad: 00007ffe`6b4a0000 00007ffe`6b6a5000   C:\Windows\System32\mfmp4srcsnk.dll
+ModLoad: 00007ffe`f8c60000 00007ffe`f8c94000   C:\Windows\System32\RTWorkQ.DLL
+ModLoad: 00007ffe`f8da0000 00007ffe`f8f5c000   C:\Windows\System32\MFPlat.DLL
+ModLoad: 00007ffe`f9270000 00007ffe`f9287000   C:\Windows\system32\NetworkExplorer.dll
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.ac44): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+(53b4.3f48): C++ EH exception - code e06d7363 (first chance)
+ModLoad: 00007ffe`ef490000 00007ffe`ef551000   C:\Windows\System32\DriverStore\FileRepository\nvmdi.inf_amd64_978a3b585e321cd9\nvldumdx.dll
+ModLoad: 00007ffe`f3800000 00007ffe`f3947000   C:\Windows\SYSTEM32\drvstore.dll
+ModLoad: 00007ffe`eb130000 00007ffe`ed11e000   C:\Windows\System32\DriverStore\FileRepository\nvmdi.inf_amd64_978a3b585e321cd9\nvgpucomp64.dll
+ModLoad: 00007ffe`e3160000 00007ffe`e727c000   C:\Windows\System32\DriverStore\FileRepository\nvmdi.inf_amd64_978a3b585e321cd9\nvwgf2umx.dll
+ModLoad: 00007ffe`c5490000 00007ffe`c55d7000   C:\Windows\system32\nvspcap64.dll
+ModLoad: 00007ffe`f0e50000 00007ffe`f0e8b000   C:\Windows\SYSTEM32\dxcore.dll
+ModLoad: 00007ffe`c3c60000 00007ffe`c3db5000   C:\Windows\System32\DriverStore\FileRepository\nvmdi.inf_amd64_978a3b585e321cd9\nvppex.dll
+(53b4.19ec): C++ EH exception - code e06d7363 (first chance)
+Debug Error!
+
+Program: ...\build\qt-debug\src\tools\video_editor\Debug\video_editor.exe
+
+abort() has been called
+
+(Press Retry to debug the application)
+(53b4.19ec): Break instruction exception - code 80000003 (first chance)
+ucrtbased!_threadid+0x65:
+00007ffe`b8124805 cc              int     3
+0:006> g
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\atlmfc.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\ObjectiveC.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\concurrency.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\cpp_rest.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\stl.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Data.Json.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Geolocation.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Sensors.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Media.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\windows.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\winrt.natvis'

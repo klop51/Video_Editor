@@ -82,6 +82,12 @@ PlaybackController::~PlaybackController() {
 bool PlaybackController::load_media(const std::string& path) {
     ve::log::info("Loading media: " + path);
     
+    // Check if this is an MP4 file that might have hardware acceleration issues
+    std::string filename = path;
+    std::transform(filename.begin(), filename.end(), filename.begin(), 
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    bool is_mp4 = filename.find(".mp4") != std::string::npos;
+    
     decoder_ = decode::create_decoder();
     if (!decoder_) {
         ve::log::error("Failed to create decoder");
@@ -93,10 +99,53 @@ bool PlaybackController::load_media(const std::string& path) {
     params.video = true;
     params.audio = true;
     
-    if (!decoder_->open(params)) {
-        ve::log::error("Failed to open media file: " + path);
-        decoder_.reset();
-        return false;
+    bool success = false;
+    
+    if (is_mp4) {
+        // For MP4 files, use software decoding to prevent crashes
+        ve::log::info("MP4 file detected - using software decoding to prevent crashes: " + path);
+        params.hw_accel = false;
+        success = decoder_->open(params);
+        
+        if (success) {
+            ve::log::info("MP4 software decoding successful");
+        } else {
+            ve::log::error("MP4 software decoding failed for: " + path);
+            decoder_.reset();
+            return false;
+        }
+    } else {
+        // For non-MP4 files, try hardware acceleration first
+        params.hw_accel = true; // Try hardware acceleration first
+        
+        // First attempt: try with hardware acceleration
+        success = decoder_->open(params);
+        
+        if (!success) {
+            ve::log::warn("Hardware acceleration failed, trying software decoding fallback");
+            
+            // Reset decoder for clean retry
+            decoder_.reset();
+            decoder_ = decode::create_decoder();
+            if (!decoder_) {
+                ve::log::error("Failed to create decoder for software fallback");
+                return false;
+            }
+            
+            // Second attempt: disable hardware acceleration
+            params.hw_accel = false;
+            success = decoder_->open(params);
+            
+            if (!success) {
+                ve::log::error("Both hardware and software decoding failed for: " + path);
+                decoder_.reset();
+                return false;
+            } else {
+                ve::log::info("Software decoding fallback successful");
+            }
+        } else {
+            ve::log::info("Hardware accelerated decoding successful");
+        }
     }
     
     // Get duration from media probe
@@ -403,7 +452,7 @@ void PlaybackController::playback_thread_main() {
             // Read video frame (decode path)
             VE_PROFILE_SCOPE_UNIQ("playback.decode_video");
             auto video_frame = decoder_->read_video();
-            VE_DEBUG_ONLY(ve::log::info(std::string("Called decoder_->read_video(), result: ") + (video_frame ? "got frame" : "no frame")));
+            
             if (video_frame) {
                 // Future: traverse snapshot (immutable) to determine which clip/segment is active
                 // For now we rely solely on decoder PTS ordering.
@@ -417,7 +466,17 @@ void PlaybackController::playback_thread_main() {
                                              ", size=" + std::to_string(cf.width) + "x" + std::to_string(cf.height)));
                 frame_cache_.put(putKey, std::move(cf));
                 VE_DEBUG_ONLY(ve::log::info("Cache size now=" + std::to_string(frame_cache_.size())));
+                
                 current_time_us_.store(video_frame->pts);
+
+                // Advance time for next frame (matching cache hit logic)
+                int64_t delta = step_.next_delta_us();
+                int64_t next_pts = video_frame->pts + delta;
+                if (duration_us_ > 0 && next_pts >= duration_us_) {
+                    // Don't advance beyond end of stream, let next iteration handle EOF
+                } else {
+                    current_time_us_.store(next_pts);
+                }
 
                 { // video callback dispatch (profiling removed to avoid variable shadow warning on MSVC)
                     std::vector<CallbackEntry<VideoFrameCallback>> copy;
@@ -497,6 +556,28 @@ void PlaybackController::playback_thread_main() {
                 if ((stats_.frames_displayed % 30) == 0) {
                     ve::log::debug("Playback frames displayed=" + std::to_string(stats_.frames_displayed));
                 }
+            } else {
+                // Handle null video frame - could be EOF, memory error, or decode failure
+                ve::log::warn("decoder_->read_video() returned null frame - checking if end of stream");
+                
+                // Handle end-of-stream and avoid busy loop when decoder has no more frames
+                int64_t cur = current_time_us_.load();
+                int64_t delta = step_.next_delta_us();
+                int64_t next_pts = cur + delta;
+                
+                if (duration_us_ > 0 && next_pts >= duration_us_) {
+                    current_time_us_.store(duration_us_);
+                    set_state(ve::playback::PlaybackState::Stopped);
+                    ve::log::info("Reached end of stream (null video frame) at: " + std::to_string(duration_us_) + " us - stopping");
+                    continue;
+                } else {
+                    // Not end of stream, advance time anyway to prevent hang
+                    current_time_us_.store(next_pts);
+                    ve::log::warn("Advanced time to: " + std::to_string(next_pts) + " (null video frame - possible decode error)");
+                    
+                    // Add a small delay to prevent busy loop
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
             }
             
             // Read audio frame
@@ -523,22 +604,8 @@ void PlaybackController::playback_thread_main() {
                 // Process timeline audio tracks at current position
                 // This will mix audio from multiple timeline tracks and send to audio pipeline
                 timeline_audio_manager_->process_timeline_audio(current_pos, 1024);  // Standard frame size
-            } else {
-                // Handle end-of-stream and avoid busy loop when decoder has no more frames
-                int64_t cur = current_time_us_.load();
-                int64_t delta = step_.next_delta_us();
-                int64_t next_pts = cur + delta;
-                if (duration_us_ > 0 && next_pts >= duration_us_) {
-                    current_time_us_.store(duration_us_);
-                    set_state(ve::playback::PlaybackState::Stopped);
-                    ve::log::info("Reached end of stream (decoder no frame) at: " + std::to_string(duration_us_) + " us - stopping");
-                    continue;
-                }
-                current_time_us_.store(next_pts);
-                VE_DEBUG_ONLY(ve::log::info("Advanced time to: " + std::to_string(next_pts) + " (no-frame path)"));
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
-                } // End single-media playback mode
+        } // End single-media playback mode
             } // End has_content check
         } else {
             // Not playing, sleep longer

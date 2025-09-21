@@ -495,16 +495,21 @@ void MainWindow::set_playback_controller(ve::playback::PlaybackController* contr
     if (controller) {
         controller->add_state_callback([this](ve::playback::PlaybackState state) {
             if (state == ve::playback::PlaybackState::Playing) {
+                ve::log::info("Playback state changed to Playing - starting position update timer");
                 if (position_update_timer_) {
                     // Adapt UI update rate to the media frame duration (cap to 10-100ms)
                     int64_t us = playback_controller_->frame_duration_guess_us();
                     int interval_ms = static_cast<int>(us > 0 ? (us / 1000) : 33);
                     if (interval_ms < 10) interval_ms = 10;
                     if (interval_ms > 100) interval_ms = 100;
+                    ve::log::info("Position update timer starting with interval: " + std::to_string(interval_ms) + "ms");
                     position_update_timer_->setInterval(interval_ms);
                     position_update_timer_->start();
+                } else {
+                    ve::log::error("Position update timer is null!");
                 }
             } else {
+                ve::log::info("Playback state changed to: " + std::to_string(static_cast<int>(state)) + " - stopping position update timer");
                 if (position_update_timer_) position_update_timer_->stop();
             }
         });
@@ -1258,24 +1263,44 @@ void MainWindow::paste() { ve::log::info("Paste requested"); }
 void MainWindow::delete_selection() { ve::log::info("Delete requested"); }
 
 void MainWindow::play_pause() { 
-    if (!playback_controller_) return;
+    if (!playback_controller_) {
+        ve::log::warn("No playback controller available");
+        return;
+    }
     
     // Check if we have timeline content to play
     if (timeline_ && !timeline_->tracks().empty()) {
         // Look for the first video segment in the timeline
         std::string timeline_media_path;
-        for (const auto& track : timeline_->tracks()) {
-            if (track->type() == ve::timeline::Track::Video) {
-                const auto& segments = track->segments();
-                if (!segments.empty()) {
-                    // Get the media path from the clip
-                    const auto* clip = timeline_->get_clip(segments[0].clip_id);
-                    if (clip && clip->source) {
-                        timeline_media_path = clip->source->path;
+        ve::timeline::ClipId clip_id = 0;
+        
+        try {
+            for (const auto& track : timeline_->tracks()) {
+                if (track && track->type() == ve::timeline::Track::Video) {
+                    const auto& segments = track->segments();
+                    if (!segments.empty()) {
+                        clip_id = segments[0].clip_id;
                         break;
                     }
                 }
             }
+            
+            // If we found a clip, get its media path safely
+            if (clip_id != 0) {
+                const auto* clip = timeline_->get_clip(clip_id);
+                if (clip && clip->source && !clip->source->path.empty()) {
+                    timeline_media_path = clip->source->path;
+                    ve::log::info("Found timeline media: " + timeline_media_path);
+                } else {
+                    ve::log::warn("Invalid clip or source found in timeline");
+                }
+            }
+        } catch (const std::exception& e) {
+            ve::log::error("Exception accessing timeline: " + std::string(e.what()));
+            return;
+        } catch (...) {
+            ve::log::error("Unknown exception accessing timeline");
+            return;
         }
         
         // If we found timeline media, make sure it's loaded in playback controller
@@ -1284,24 +1309,52 @@ void MainWindow::play_pause() {
             static std::string current_loaded_media;
             if (current_loaded_media != timeline_media_path) {
                 ve::log::info("Loading timeline media for playback: " + timeline_media_path);
-                if (playback_controller_->load_media(timeline_media_path)) {
-                    current_loaded_media = timeline_media_path;
-                    ve::log::info("Timeline media loaded successfully");
-                } else {
-                    ve::log::warn("Failed to load timeline media: " + timeline_media_path);
+                try {
+                    // Load timeline media (MP4 detection and software fallback handled in playback controller)
+                    if (playback_controller_->load_media(timeline_media_path)) {
+                        current_loaded_media = timeline_media_path;
+                        ve::log::info("Timeline media loaded successfully");
+                    } else {
+                        ve::log::warn("Failed to load timeline media");
+                        ve::log::info("Timeline media loading failed - this could be due to format compatibility issues");
+                        ve::log::info("Timeline playback may have compatibility issues with this video format");
+                        
+                        // For now, don't attempt software fallback as it may still cause issues
+                        // The user should try playing from the viewer instead
+                        ve::log::info("Please try playing the video from the viewer panel instead of timeline");
+                        return;
+                    }
+                } catch (const std::exception& e) {
+                    ve::log::error("Exception loading timeline media (hardware acceleration issue): " + std::string(e.what()));
+                    ve::log::info("This is likely due to hardware acceleration compatibility issues with this video format");
+                    return;
+                } catch (...) {
+                    ve::log::error("Unknown exception loading timeline media (hardware acceleration issue)");
+                    ve::log::info("This is likely due to hardware acceleration compatibility issues with this video format");
                     return;
                 }
+            } else {
+                ve::log::info("Timeline media already loaded");
             }
         } else {
             ve::log::info("No video segments found in timeline for playback");
         }
     }
     
-    // Now handle play/pause
-    if (playback_controller_->state() == ve::playback::PlaybackState::Playing) {
-        playback_controller_->pause();
-    } else {
-        playback_controller_->play();
+    // Now handle play/pause safely
+    try {
+        auto current_state = playback_controller_->state();
+        if (current_state == ve::playback::PlaybackState::Playing) {
+            ve::log::info("Pausing playback");
+            playback_controller_->pause();
+        } else {
+            ve::log::info("Starting playback");
+            playback_controller_->play();
+        }
+    } catch (const std::exception& e) {
+        ve::log::error("Exception during play/pause: " + std::string(e.what()));
+    } catch (...) {
+        ve::log::error("Unknown exception during play/pause");
     }
 }
 
@@ -1855,6 +1908,7 @@ void MainWindow::add_media_to_timeline(const QString& filePath, ve::TimePoint st
 void MainWindow::update_playback_position() {
     if (playback_controller_ && timeline_dock_) {
         auto current_time_us = playback_controller_->current_time_us();
+        // Removed verbose logging to prevent crash investigation interference
         timeline_dock_->set_current_time(ve::TimePoint{current_time_us, 1000000});
         
         // Update time display in status bar

@@ -176,7 +176,22 @@ bool copy_frame_data(AVFrame* frame, VideoFrame& vf) {
         return false;
     }
 
-    vf.data.resize(static_cast<size_t>(buf_size));
+    // Add additional safety check for extremely large buffers
+    const size_t max_safe_buffer = 256 * 1024 * 1024; // 256MB max
+    if (static_cast<size_t>(buf_size) > max_safe_buffer) {
+        ve::log::error("Buffer size too large for safe allocation: " + std::to_string(buf_size) + " bytes (max: " + std::to_string(max_safe_buffer) + ")");
+        return false;
+    }
+
+    try {
+        vf.data.resize(static_cast<size_t>(buf_size));
+    } catch (const std::bad_alloc& e) {
+        ve::log::error("Failed to allocate frame buffer: " + std::string(e.what()) + " (size: " + std::to_string(buf_size) + " bytes)");
+        return false;
+    } catch (const std::exception& e) {
+        ve::log::error("Exception during frame buffer allocation: " + std::string(e.what()));
+        return false;
+    }
 
     // Use simple memcpy approach for common formats
     if (fmt == AV_PIX_FMT_YUV420P) {
@@ -397,8 +412,15 @@ public:
         // Set custom log callback to suppress hardware acceleration warnings
         av_log_set_callback(custom_ffmpeg_log_callback);
         
-        // Initialize hardware acceleration
-        hw_accel_ctx_.hw_type = hw_accel::detect_best_hw_device();
+        // Initialize hardware acceleration only if requested
+        if (params.hw_accel) {
+            hw_accel_ctx_.hw_type = hw_accel::detect_best_hw_device();
+            ve::log::info("Hardware acceleration enabled, detected device type: " + 
+                         std::to_string(static_cast<int>(hw_accel_ctx_.hw_type)));
+        } else {
+            hw_accel_ctx_.hw_type = AV_HWDEVICE_TYPE_NONE;
+            ve::log::info("Hardware acceleration disabled - using software decoding");
+        }
         
         if(avformat_open_input(&fmt_, params.filepath.c_str(), nullptr, nullptr) < 0) {
             ve::log::error("FFmpegDecoder: open_input failed");
@@ -473,6 +495,10 @@ public:
 
     std::optional<VideoFrame> read_video() override {
         if(!video_codec_ctx_) return std::nullopt;
+        
+        static int consecutive_failures = 0;
+        const int max_consecutive_failures = 10; // Prevent infinite loops
+        
         while(true) {
             if(av_read_frame(fmt_, packet_) < 0) return std::nullopt; // EOF
             if(packet_->stream_index != video_stream_index_) {
@@ -482,6 +508,43 @@ public:
             }
             if(decode_packet(video_codec_ctx_, packet_)) {
                 av_packet_unref(packet_);
+                
+                // Add frame size safety checks
+                if (frame_->width <= 0 || frame_->height <= 0) {
+                    ve::log::error("Invalid frame dimensions: " + std::to_string(frame_->width) + "x" + std::to_string(frame_->height));
+                    consecutive_failures++;
+                    if (consecutive_failures >= max_consecutive_failures) {
+                        ve::log::error("Too many consecutive frame decode failures, aborting");
+                        return std::nullopt;
+                    }
+                    continue;
+                }
+                
+                // Check for extremely large frames that might cause memory issues
+                const int max_dimension = 8192; // 8K max
+                if (frame_->width > max_dimension || frame_->height > max_dimension) {
+                    ve::log::error("Frame too large for safe processing: " + std::to_string(frame_->width) + "x" + std::to_string(frame_->height));
+                    consecutive_failures++;
+                    if (consecutive_failures >= max_consecutive_failures) {
+                        ve::log::error("Too many consecutive oversized frames, aborting");
+                        return std::nullopt;
+                    }
+                    continue;
+                }
+                
+                // Estimate memory requirements
+                size_t estimated_size = static_cast<size_t>(frame_->width) * static_cast<size_t>(frame_->height) * 4; // Conservative estimate
+                const size_t max_frame_size = 256 * 1024 * 1024; // 256MB max per frame
+                if (estimated_size > max_frame_size) {
+                    ve::log::error("Frame estimated size too large: " + std::to_string(estimated_size) + " bytes");
+                    consecutive_failures++;
+                    if (consecutive_failures >= max_consecutive_failures) {
+                        ve::log::error("Too many consecutive oversized frame estimates, aborting");
+                        return std::nullopt;
+                    }
+                    continue;
+                }
+                
                 VideoFrame vf;
                 vf.width = frame_->width;
                 vf.height = frame_->height;
@@ -545,23 +608,47 @@ public:
                     // }
                     // Fallback to software copy for stability
                     if (!copy_frame_data(frame_, vf)) {
-                        ve::log::error("Failed to copy frame data");
-                        return std::nullopt;
+                        ve::log::error("Failed to copy D3D11 frame data");
+                        consecutive_failures++;
+                        if (consecutive_failures >= max_consecutive_failures) {
+                            ve::log::error("Too many consecutive frame copy failures, aborting");
+                            return std::nullopt;
+                        }
+                        continue; // Try next frame
                     }
                 } else {
                     // Normal software frame copy
                     if (!copy_frame_data(frame_, vf)) {
-                        ve::log::error("Failed to copy frame data");
-                        return std::nullopt;
+                        ve::log::error("Failed to copy software frame data");
+                        consecutive_failures++;
+                        if (consecutive_failures >= max_consecutive_failures) {
+                            ve::log::error("Too many consecutive frame copy failures, aborting");
+                            return std::nullopt;
+                        }
+                        continue; // Try next frame
                     }
                 }
 #else
                 if (!copy_frame_data(frame_, vf)) {
                     ve::log::error("Failed to copy frame data");
-                    return std::nullopt;
+                    consecutive_failures++;
+                    if (consecutive_failures >= max_consecutive_failures) {
+                        ve::log::error("Too many consecutive frame copy failures, aborting");
+                        return std::nullopt;
+                    }
+                    continue; // Try next frame
                 }
 #endif
+                
+                // Success - reset failure counter
+                consecutive_failures = 0;
                 stats_.video_frames_decoded++;
+                
+                // Add frame size logging for debugging
+                ve::log::debug("Successfully decoded frame: " + std::to_string(vf.width) + "x" + std::to_string(vf.height) + 
+                              ", format: " + std::to_string(static_cast<int>(vf.format)) + 
+                              ", data size: " + std::to_string(vf.data.size()) + " bytes");
+                
                 return vf;
             }
             av_packet_unref(packet_);

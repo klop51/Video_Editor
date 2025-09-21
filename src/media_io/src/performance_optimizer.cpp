@@ -64,10 +64,14 @@ struct MediaFrame {
 // LockFreeDecodeQueue Implementation
 //=============================================================================
 
-LockFreeDecodeQueue::LockFreeDecodeQueue(size_t capacity) 
-    : buffer_mask_(capacity - 1), capacity_(capacity) {
-    // Ensure capacity is power of 2
-    assert((capacity & (capacity - 1)) == 0 && "Capacity must be power of 2");
+LockFreeDecodeQueue::LockFreeDecodeQueue(size_t capacity) {
+    // Ensure capacity is power of 2 - round up to nearest power of 2 if needed
+    size_t rounded_capacity = 1;
+    while (rounded_capacity < capacity) {
+        rounded_capacity <<= 1;
+    }
+    capacity_ = rounded_capacity;
+    buffer_mask_ = capacity_ - 1;
     
     buffer_ = std::unique_ptr<Node[]>(new Node[capacity]);
     for (size_t i = 0; i < capacity; ++i) {
