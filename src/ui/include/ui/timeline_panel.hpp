@@ -282,6 +282,40 @@ private:
     mutable QFontMetrics cached_font_metrics_;
     mutable bool paint_objects_initialized_;
     
+    // Phase 4: Advanced paint state caching system
+    struct PaintStateCache {
+        // Current QPainter state tracking
+        QColor current_pen_color;
+        QColor current_brush_color;
+        qreal current_pen_width;
+        Qt::PenStyle current_pen_style;
+        QFont current_font;
+        bool has_valid_state;
+        
+        // State change counters for optimization analysis
+        mutable int pen_changes;
+        mutable int brush_changes;
+        mutable int font_changes;
+        mutable int total_state_changes;
+        
+        PaintStateCache() : current_pen_width(1.0), current_pen_style(Qt::SolidLine), 
+                           has_valid_state(false), pen_changes(0), brush_changes(0), 
+                           font_changes(0), total_state_changes(0) {}
+                           
+        void reset() {
+            has_valid_state = false;
+            pen_changes = brush_changes = font_changes = total_state_changes = 0;
+        }
+    };
+    mutable PaintStateCache paint_state_cache_;
+    
+    // Smart state management methods
+    void apply_pen_if_needed(QPainter& painter, const QColor& color, qreal width = 1.0, 
+                            Qt::PenStyle style = Qt::SolidLine) const;
+    void apply_brush_if_needed(QPainter& painter, const QColor& color) const;
+    void apply_font_if_needed(QPainter& painter, const QFont& font) const;
+    void reset_paint_state_cache() const;
+    
     // Phase 2: Dirty region tracking for optimized repainting
     struct DirtyRegion {
         QRect rect;

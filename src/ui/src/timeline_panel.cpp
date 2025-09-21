@@ -233,6 +233,9 @@ void TimelinePanel::paintEvent(QPaintEvent* event) {
     // Performance monitoring - track paint timing
     auto paint_start = std::chrono::high_resolution_clock::now();
     
+    // Phase 4: Reset paint state cache for new paint session
+    reset_paint_state_cache();
+    
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, false); // Crisp lines for timeline
     
@@ -320,7 +323,11 @@ void TimelinePanel::paintEvent(QPaintEvent* event) {
                      "ms (background: " + std::to_string(background_time.count()) + 
                      "ms, timecode: " + std::to_string(timecode_time.count()) + 
                      "ms, tracks: " + std::to_string(tracks_time.count()) + 
-                     "ms, rect: " + std::to_string(event->rect().width()) + "x" + std::to_string(event->rect().height()) + ")");
+                     "ms, rect: " + std::to_string(event->rect().width()) + "x" + std::to_string(event->rect().height()) + 
+                     ") Phase 4 state changes: " + std::to_string(paint_state_cache_.total_state_changes) + 
+                     " (pen: " + std::to_string(paint_state_cache_.pen_changes) + 
+                     ", brush: " + std::to_string(paint_state_cache_.brush_changes) + 
+                     ", font: " + std::to_string(paint_state_cache_.font_changes) + ")");
         last_warning = now;
     }
 }
@@ -775,7 +782,7 @@ void TimelinePanel::create_segment_batches(const std::vector<const ve::timeline:
 void TimelinePanel::draw_segment_batch(QPainter& painter, const SegmentBatch& batch) {
     if (batch.segments.empty()) return;
     
-    // Set up painter state once for the entire batch
+    // Phase 4: Optimized state management with caching
     static QColor cached_text_color(255, 255, 255);
     static QFont cached_small_font;
     static QFont cached_name_font;
@@ -790,38 +797,44 @@ void TimelinePanel::draw_segment_batch(QPainter& painter, const SegmentBatch& ba
         fonts_initialized = true;
     }
     
-    // Phase 3: Batch draw all rectangles with same color
+    // Mark paint state as valid for the session
+    paint_state_cache_.has_valid_state = true;
+    
+    // Phase 4: Batch draw all rectangles with optimized state changes
     for (size_t i = 0; i < batch.segments.size(); ++i) {
         const auto& segment = *batch.segments[i];
         const QRect& rect = batch.rects[i];
         
-        // Handle different detail levels efficiently
+        // Handle different detail levels with smart state caching
         switch (batch.detail_level) {
             case DetailLevel::MINIMAL:
                 // Just fill with lighter color for minimal segments
-                painter.fillRect(rect, batch.color.lighter(120));
+                apply_brush_if_needed(painter, batch.color.lighter(120));
+                painter.fillRect(rect, painter.brush());
                 break;
                 
             case DetailLevel::BASIC:
                 // Fill + border for basic segments
-                painter.fillRect(rect, batch.color.lighter(110));
-                painter.setPen(cached_border_pen_);
+                apply_brush_if_needed(painter, batch.color.lighter(110));
+                painter.fillRect(rect, painter.brush());
+                apply_pen_if_needed(painter, cached_border_pen_.color(), cached_border_pen_.widthF(), cached_border_pen_.style());
                 painter.drawRect(rect);
                 break;
                 
             case DetailLevel::NORMAL:
             case DetailLevel::DETAILED:
                 // Full rendering for normal/detailed segments
-                painter.fillRect(rect, batch.color);
-                painter.setPen(cached_border_pen_);
+                apply_brush_if_needed(painter, batch.color);
+                painter.fillRect(rect, painter.brush());
+                apply_pen_if_needed(painter, cached_border_pen_.color(), cached_border_pen_.widthF(), cached_border_pen_.style());
                 painter.drawRect(rect);
                 
                 // Add text/details if not in heavy operation mode
                 if (!should_skip_expensive_features()) {
                     // Add segment name for NORMAL and above
                     if (batch.detail_level >= DetailLevel::NORMAL) {
-                        painter.setFont(cached_name_font);
-                        painter.setPen(cached_text_color);
+                        apply_font_if_needed(painter, cached_name_font);
+                        apply_pen_if_needed(painter, cached_text_color);
                         
                         QRect text_rect = rect.adjusted(5, 2, -5, -18);
                         QString segment_name = QString::fromStdString(segment.name);
@@ -839,8 +852,8 @@ void TimelinePanel::draw_segment_batch(QPainter& painter, const SegmentBatch& ba
                         double duration_seconds = static_cast<double>(duration.num) / duration.den;
                         QString duration_text = QString("%1s").arg(duration_seconds, 0, 'f', 1);
                         
-                        painter.setFont(cached_small_font);
-                        painter.setPen(cached_text_color);
+                        apply_font_if_needed(painter, cached_small_font);
+                        apply_pen_if_needed(painter, cached_text_color);
                         
                         QRect duration_rect = rect.adjusted(3, rect.height() - 15, -3, -2);
                         painter.drawText(duration_rect, Qt::AlignRight | Qt::AlignBottom, duration_text);
@@ -852,6 +865,7 @@ void TimelinePanel::draw_segment_batch(QPainter& painter, const SegmentBatch& ba
                                 draw_video_thumbnail(painter, rect, segment);
                             } else {
                                 draw_cached_waveform(painter, rect, segment);
+                            }
                             }
                         }
                     }
@@ -940,13 +954,14 @@ std::vector<const ve::timeline::Segment*> TimelinePanel::cull_segments_optimized
 void TimelinePanel::draw_playhead(QPainter& painter) {
     int x = time_to_pixel(current_time_);
     
-    painter.setPen(QPen(playhead_color_, PLAYHEAD_WIDTH));
+    // Phase 4: Use smart state caching for playhead
+    apply_pen_if_needed(painter, playhead_color_, PLAYHEAD_WIDTH);
     painter.drawLine(x, 0, x, height());
     
     // Playhead handle
     QPolygon handle;
     handle << QPoint(x - 5, 0) << QPoint(x + 5, 0) << QPoint(x, 10);
-    painter.setBrush(playhead_color_);
+    apply_brush_if_needed(painter, playhead_color_);
     painter.drawPolygon(handle);
 }
 
@@ -960,7 +975,8 @@ void TimelinePanel::draw_selection(QPainter& painter) {
         QRect selection_rect(start_x, TIMECODE_HEIGHT, end_x - start_x, height() - TIMECODE_HEIGHT);
         painter.fillRect(selection_rect, QColor(255, 255, 255, 50));
         
-        painter.setPen(QPen(QColor(255, 255, 255), 1, Qt::DashLine));
+        // Phase 4: Use smart state caching for selection
+        apply_pen_if_needed(painter, QColor(255, 255, 255), 1.0, Qt::DashLine);
         painter.drawRect(selection_rect);
     }
 }
@@ -2318,6 +2334,44 @@ TimelinePanel::DetailLevel TimelinePanel::calculate_detail_level(int segment_wid
     if (segment_width < 20) return DetailLevel::BASIC;      // Colored rectangle with border
     if (segment_width < 60) return DetailLevel::NORMAL;     // + segment name
     return DetailLevel::DETAILED;                           // + duration, waveforms, etc.
+}
+
+// Phase 4: Advanced paint state caching system
+void TimelinePanel::apply_pen_if_needed(QPainter& painter, const QColor& color, qreal width, Qt::PenStyle style) const {
+    if (!paint_state_cache_.has_valid_state || 
+        paint_state_cache_.current_pen_color != color || 
+        paint_state_cache_.current_pen_width != width ||
+        paint_state_cache_.current_pen_style != style) {
+        
+        painter.setPen(QPen(color, width, style));
+        paint_state_cache_.current_pen_color = color;
+        paint_state_cache_.current_pen_width = width;
+        paint_state_cache_.current_pen_style = style;
+        ++paint_state_cache_.pen_changes;
+        ++paint_state_cache_.total_state_changes;
+    }
+}
+
+void TimelinePanel::apply_brush_if_needed(QPainter& painter, const QColor& color) const {
+    if (!paint_state_cache_.has_valid_state || paint_state_cache_.current_brush_color != color) {
+        painter.setBrush(QBrush(color));
+        paint_state_cache_.current_brush_color = color;
+        ++paint_state_cache_.brush_changes;
+        ++paint_state_cache_.total_state_changes;
+    }
+}
+
+void TimelinePanel::apply_font_if_needed(QPainter& painter, const QFont& font) const {
+    if (!paint_state_cache_.has_valid_state || paint_state_cache_.current_font != font) {
+        painter.setFont(font);
+        paint_state_cache_.current_font = font;
+        ++paint_state_cache_.font_changes;
+        ++paint_state_cache_.total_state_changes;
+    }
+}
+
+void TimelinePanel::reset_paint_state_cache() const {
+    paint_state_cache_.reset();
 }
 
 } // namespace ve::ui
