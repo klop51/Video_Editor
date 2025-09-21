@@ -1258,12 +1258,50 @@ void MainWindow::paste() { ve::log::info("Paste requested"); }
 void MainWindow::delete_selection() { ve::log::info("Delete requested"); }
 
 void MainWindow::play_pause() { 
-    if (playback_controller_) {
-        if (playback_controller_->state() == ve::playback::PlaybackState::Playing) {
-            playback_controller_->pause();
-        } else {
-            playback_controller_->play();
+    if (!playback_controller_) return;
+    
+    // Check if we have timeline content to play
+    if (timeline_ && !timeline_->tracks().empty()) {
+        // Look for the first video segment in the timeline
+        std::string timeline_media_path;
+        for (const auto& track : timeline_->tracks()) {
+            if (track->type() == ve::timeline::Track::Video) {
+                const auto& segments = track->segments();
+                if (!segments.empty()) {
+                    // Get the media path from the clip
+                    const auto* clip = timeline_->get_clip(segments[0].clip_id);
+                    if (clip && clip->source) {
+                        timeline_media_path = clip->source->path;
+                        break;
+                    }
+                }
+            }
         }
+        
+        // If we found timeline media, make sure it's loaded in playback controller
+        if (!timeline_media_path.empty()) {
+            // Check if this media is already loaded
+            static std::string current_loaded_media;
+            if (current_loaded_media != timeline_media_path) {
+                ve::log::info("Loading timeline media for playback: " + timeline_media_path);
+                if (playback_controller_->load_media(timeline_media_path)) {
+                    current_loaded_media = timeline_media_path;
+                    ve::log::info("Timeline media loaded successfully");
+                } else {
+                    ve::log::warn("Failed to load timeline media: " + timeline_media_path);
+                    return;
+                }
+            }
+        } else {
+            ve::log::info("No video segments found in timeline for playback");
+        }
+    }
+    
+    // Now handle play/pause
+    if (playback_controller_->state() == ve::playback::PlaybackState::Playing) {
+        playback_controller_->pause();
+    } else {
+        playback_controller_->play();
     }
 }
 
@@ -2031,6 +2069,12 @@ void MainWindow::flushTimelineBatch() {
 
             if (!track->add_segment(segment)) {
                 ve::log::warn("Failed to add segment to track index " + std::to_string(track_index));
+            } else {
+                // If this is the first video segment, prepare it for timeline playback
+                if (track->type() == ve::timeline::Track::Video && playback_controller_) {
+                    ve::log::info("Video segment added to timeline track " + std::to_string(track_index));
+                    // Media will be loaded when play is pressed for better performance
+                }
             }
         };
 
