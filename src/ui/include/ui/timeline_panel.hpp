@@ -124,6 +124,45 @@ private:
     void draw_minimal_timeline(QPainter& painter);     // Ultra-fast minimal timeline
     bool should_skip_expensive_features() const;       // Check if we should skip expensive rendering
     
+    // Phase 2 performance optimizations
+    void invalidate_region(const QRect& rect, bool needs_full_redraw = false);  // Mark region as dirty
+    void invalidate_track(size_t track_index);         // Mark entire track as dirty
+    void invalidate_segment(uint32_t segment_id);      // Mark specific segment as dirty
+    
+    // Level-of-detail rendering enum (needed for batching)
+    enum class DetailLevel { MINIMAL, BASIC, NORMAL, DETAILED };
+    
+    // Phase 3 performance optimizations - Segment batching
+    struct SegmentBatch {
+        QColor color;                              // Shared color for batch
+        DetailLevel detail_level;                  // Shared detail level
+        bool is_selected;                         // Selection state
+        std::vector<const ve::timeline::Segment*> segments; // Segments in this batch
+        std::vector<QRect> rects;                 // Corresponding rectangles
+    };
+    void draw_segments_batched(QPainter& painter, const ve::timeline::Track& track, int track_y);
+    void create_segment_batches(const std::vector<const ve::timeline::Segment*>& visible_segments, 
+                               const ve::timeline::Track& track, int track_y,
+                               std::vector<SegmentBatch>& batches);
+    void draw_segment_batch(QPainter& painter, const SegmentBatch& batch);
+    
+    // Enhanced viewport culling optimizations
+    struct ViewportInfo {
+        int left_x, right_x;           // Viewport boundaries in pixels
+        ve::TimePoint start_time, end_time;  // Viewport boundaries in time
+        int top_y, bottom_y;           // Vertical viewport boundaries
+        double time_to_pixel_ratio;    // Cached conversion ratio
+    };
+    ViewportInfo calculate_viewport_info() const;
+    bool is_track_visible(int track_y, const ViewportInfo& viewport) const;
+    std::vector<const ve::timeline::Segment*> cull_segments_optimized(
+        const std::vector<ve::timeline::Segment>& segments, const ViewportInfo& viewport) const;
+    void clear_dirty_regions();                       // Clear all dirty regions
+    bool is_region_dirty(const QRect& rect) const;   // Check if region needs repaint
+    
+    // Level-of-detail calculation method
+    DetailLevel calculate_detail_level(int segment_width, double zoom_factor) const;
+    
     // Coordinate conversion
     ve::TimePoint pixel_to_time(int x) const;
     int time_to_pixel(ve::TimePoint time) const;
@@ -242,6 +281,21 @@ private:
     mutable QFont cached_small_font_;
     mutable QFontMetrics cached_font_metrics_;
     mutable bool paint_objects_initialized_;
+    
+    // Phase 2: Dirty region tracking for optimized repainting
+    struct DirtyRegion {
+        QRect rect;
+        bool needs_full_redraw = false;
+        bool needs_text_update = false;
+        bool needs_waveform_update = false;
+        std::chrono::steady_clock::time_point created_time;
+        
+        DirtyRegion(const QRect& r, bool full = false) 
+            : rect(r), needs_full_redraw(full), created_time(std::chrono::steady_clock::now()) {}
+    };
+    mutable std::vector<DirtyRegion> dirty_regions_;
+    mutable bool has_dirty_regions_;
+    mutable QRect total_dirty_rect_;  // Bounding box of all dirty regions
 
     // Cached hit-test state to cut down repeated scans
     mutable ve::timeline::SegmentId cached_hit_segment_id_;

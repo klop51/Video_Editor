@@ -60,6 +60,7 @@ TimelinePanel::TimelinePanel(QWidget* parent)
     , cache_zoom_level_(-1) // Invalid zoom level initially
     , cached_font_metrics_(QFont()) // Phase 1: Initialize with default font
     , paint_objects_initialized_(false) // Phase 1: Objects not initialized yet
+    , has_dirty_regions_(false) // Phase 2: No dirty regions initially
     , cached_hit_segment_id_(0)
     , cached_hit_segment_index_(std::numeric_limits<size_t>::max())
     , cached_hit_track_index_(std::numeric_limits<size_t>::max())
@@ -155,6 +156,9 @@ void TimelinePanel::set_timeline(ve::timeline::Timeline* timeline) {
         return;
     }
     
+    // Phase 2: Invalidate full timeline when adding segments
+    invalidate_region(QRect(0, 0, width(), height()), true);
+    
     // Normal operation for single timeline updates
     if (!update_timer_->isActive()) {
         update_timer_->start();
@@ -167,10 +171,18 @@ void TimelinePanel::set_command_executor(CommandExecutor executor) {
 
 void TimelinePanel::set_zoom(double zoom_factor) {
     zoom_factor_ = std::clamp(zoom_factor, 0.1, 10.0);
+    // Phase 2: Invalidate full timeline on zoom change
+    invalidate_region(QRect(0, 0, width(), height()), true);
     update();
 }
 
 void TimelinePanel::set_current_time(ve::TimePoint time) {
+    // Phase 2: Invalidate old and new playhead positions
+    int old_x = time_to_pixel(current_time_);
+    int new_x = time_to_pixel(time);
+    invalidate_region(QRect(old_x - 5, 0, 10, height()));
+    invalidate_region(QRect(new_x - 5, 0, 10, height()));
+    
     current_time_ = time;
     update();
 }
@@ -245,20 +257,51 @@ void TimelinePanel::paintEvent(QPaintEvent* event) {
     }
     
     // Full detailed timeline rendering
-    painter.setClipRect(event->rect());
+    QRect paint_rect = event->rect();
+    painter.setClipRect(paint_rect);
+    
+    // Phase 2: Smart dirty region rendering
+    bool use_dirty_regions = has_dirty_regions_ && !heavy_operation_mode_;
+    QRect actual_paint_rect = paint_rect;
+    
+    if (use_dirty_regions) {
+        // Only paint areas that actually need updating
+        actual_paint_rect = total_dirty_rect_.intersected(paint_rect);
+        if (actual_paint_rect.isEmpty()) {
+            // Nothing dirty in the paint area - skip expensive rendering
+            clear_dirty_regions();
+            return;
+        }
+        painter.setClipRect(actual_paint_rect);
+        ve::log::info("Dirty region paint: " + std::to_string(actual_paint_rect.width()) + "x" + 
+                     std::to_string(actual_paint_rect.height()) + " vs full " + 
+                     std::to_string(paint_rect.width()) + "x" + std::to_string(paint_rect.height()));
+    }
     
     // Draw all timeline components in order
     auto after_background = std::chrono::high_resolution_clock::now();
     draw_background(painter);
     
     auto after_timecode = std::chrono::high_resolution_clock::now();
-    draw_timecode_ruler(painter);
+    // Only draw timecode if it intersects the paint area
+    if (actual_paint_rect.top() <= TIMECODE_HEIGHT) {
+        draw_timecode_ruler(painter);
+    }
     
     auto after_tracks = std::chrono::high_resolution_clock::now();
-    draw_tracks(painter);
+    // Only draw tracks if they intersect the paint area
+    if (actual_paint_rect.bottom() > TIMECODE_HEIGHT) {
+        draw_tracks(painter);
+    }
     
+    // Only draw overlays if they intersect the paint area
     draw_playhead(painter);
     draw_selection(painter);
+    
+    // Clear dirty regions after successful paint
+    if (use_dirty_regions) {
+        clear_dirty_regions();
+    }
     
     // Performance monitoring - detailed timing breakdown
     auto paint_end = std::chrono::high_resolution_clock::now();
@@ -594,8 +637,17 @@ void TimelinePanel::draw_timecode_ruler(QPainter& painter) {
 void TimelinePanel::draw_tracks(QPainter& painter) {
     const auto& tracks = timeline_->tracks();
     
+    // Enhanced viewport culling: Calculate viewport info once
+    ViewportInfo viewport = calculate_viewport_info();
+    
     for (size_t i = 0; i < tracks.size(); ++i) {
         int track_y = track_y_position(i);
+        
+        // Enhanced viewport culling: Skip tracks completely outside viewport
+        if (!is_track_visible(track_y, viewport)) {
+            continue;
+        }
+        
         draw_track(painter, *tracks[i], track_y);
     }
 }
@@ -624,50 +676,106 @@ void TimelinePanel::draw_track(QPainter& painter, const ve::timeline::Track& tra
 }
 
 void TimelinePanel::draw_segments(QPainter& painter, const ve::timeline::Track& track, int track_y) {
-    const auto& segments = track.segments();
-    
-    // Enhanced viewport culling for better performance
-    int viewport_left = -scroll_x_;
-    int viewport_right = viewport_left + width();
-    double viewport_margin = 50.0; // Pixels margin for smooth scrolling
-    
-    // Quick exit if no segments
-    if (segments.empty()) return;
-    
-    // Pre-filter segments to only those potentially visible
-    std::vector<const ve::timeline::Segment*> visible_segments;
-    visible_segments.reserve(segments.size());
-    
-    const int viewport_margin_pixels = static_cast<int>(viewport_margin);
-    const int viewport_right_with_margin = viewport_right + viewport_margin_pixels;
-    const int viewport_left_with_margin = viewport_left - viewport_margin_pixels;
+    // Phase 3: Use batched rendering for better performance
+    draw_segments_batched(painter, track, track_y);
+}
 
-    for (const auto& segment : segments) {
-        int start_x = time_to_pixel(segment.start_time);
-        if (start_x > viewport_right_with_margin) {
-            break;
-        }
-
-        int end_x = time_to_pixel(segment.end_time());
-
-        // Skip segments that are completely outside viewport with margin
-        if (end_x < viewport_left_with_margin) {
-            continue;
-        }
-
-        visible_segments.push_back(&segment);
-    }
+void TimelinePanel::draw_segments_batched(QPainter& painter, const ve::timeline::Track& track, int track_y) {
+    // Enhanced viewport culling: Get optimized segment list
+    ViewportInfo viewport = calculate_viewport_info();
+    std::vector<const ve::timeline::Segment*> visible_segments = cull_segments_optimized(track.segments(), viewport);
     
     // Early exit if no visible segments
     if (visible_segments.empty()) return;
     
     // Performance circuit breaker - limit number of segments processed per paint event
-    static int max_segments_per_paint = 40;  // Reduced limit for better performance
-    int segments_drawn = 0;
+    static int max_segments_per_paint = 40;
+    if (visible_segments.size() > static_cast<size_t>(max_segments_per_paint)) {
+        visible_segments.resize(max_segments_per_paint);
+        static auto last_warning = std::chrono::steady_clock::time_point{};
+        auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_warning).count() > 1000) {
+            ve::log::warn("Timeline: Segment limit reached, using batched rendering");
+            last_warning = now;
+        }
+    }
     
-    // Pre-calculate common values - much brighter colors for better visibility
-    static QColor cached_video_color(150, 200, 255);  // Very bright blue for video segments
-    static QColor cached_audio_color(150, 255, 200);  // Very bright green for audio segments
+    // Phase 3: Create batches for similar segments
+    std::vector<SegmentBatch> batches;
+    create_segment_batches(visible_segments, track, track_y, batches);
+    
+    // Phase 3: Draw each batch with minimal state changes
+    for (const auto& batch : batches) {
+        draw_segment_batch(painter, batch);
+    }
+}
+
+// Phase 3: Create segment batches for optimized rendering
+void TimelinePanel::create_segment_batches(const std::vector<const ve::timeline::Segment*>& visible_segments, 
+                                           const ve::timeline::Track& track, int track_y,
+                                           std::vector<SegmentBatch>& batches) {
+    batches.clear();
+    batches.reserve(8); // Reserve space for common batch count
+    
+    bool is_video_track = (track.type() == ve::timeline::Track::Video);
+    static QColor cached_video_color(150, 200, 255);
+    static QColor cached_audio_color(150, 255, 200);
+    QColor base_color = is_video_track ? cached_video_color : cached_audio_color;
+    
+    // Group segments by rendering characteristics
+    for (const auto* segment_ptr : visible_segments) {
+        const auto& segment = *segment_ptr;
+        
+        // Skip segments being dragged (they show preview instead)
+        if (show_drag_preview_ && segment.id == dragged_segment_id_) {
+            continue;
+        }
+        
+        int start_x = time_to_pixel(segment.start_time);
+        int end_x = time_to_pixel(segment.end_time());
+        int segment_width = end_x - start_x;
+        
+        // Skip tiny segments
+        if (segment_width < 2) continue;
+        
+        QRect segment_rect(start_x, track_y + 5, segment_width, TRACK_HEIGHT - 10);
+        
+        // Calculate rendering characteristics for batching
+        bool is_selected = std::find(selected_segments_.begin(), selected_segments_.end(), 
+                                   segment.id) != selected_segments_.end();
+        QColor segment_color = is_selected ? cached_selected_color_ : base_color;
+        DetailLevel detail_level = calculate_detail_level(segment_width, zoom_factor_);
+        
+        // Find existing batch or create new one
+        bool found_batch = false;
+        for (auto& batch : batches) {
+            if (batch.color == segment_color && 
+                batch.detail_level == detail_level && 
+                batch.is_selected == is_selected) {
+                batch.segments.push_back(segment_ptr);
+                batch.rects.push_back(segment_rect);
+                found_batch = true;
+                break;
+            }
+        }
+        
+        if (!found_batch) {
+            SegmentBatch new_batch;
+            new_batch.color = segment_color;
+            new_batch.detail_level = detail_level;
+            new_batch.is_selected = is_selected;
+            new_batch.segments.push_back(segment_ptr);
+            new_batch.rects.push_back(segment_rect);
+            batches.push_back(std::move(new_batch));
+        }
+    }
+}
+
+// Phase 3: Draw a batch of segments with shared characteristics
+void TimelinePanel::draw_segment_batch(QPainter& painter, const SegmentBatch& batch) {
+    if (batch.segments.empty()) return;
+    
+    // Set up painter state once for the entire batch
     static QColor cached_text_color(255, 255, 255);
     static QFont cached_small_font;
     static QFont cached_name_font;
@@ -682,132 +790,151 @@ void TimelinePanel::draw_segments(QPainter& painter, const ve::timeline::Track& 
         fonts_initialized = true;
     }
     
-    bool is_video_track = (track.type() == ve::timeline::Track::Video);
-    QColor base_color = is_video_track ? cached_video_color : cached_audio_color;
-    
-    for (const auto* segment_ptr : visible_segments) {
-        const auto& segment = *segment_ptr;
+    // Phase 3: Batch draw all rectangles with same color
+    for (size_t i = 0; i < batch.segments.size(); ++i) {
+        const auto& segment = *batch.segments[i];
+        const QRect& rect = batch.rects[i];
         
-        // Performance circuit breaker
-        if (segments_drawn >= max_segments_per_paint) {
-            static auto last_segment_limit_warning = std::chrono::steady_clock::time_point{};
-            auto now = std::chrono::steady_clock::now();
-            if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_segment_limit_warning).count() > 1000) {
-                ve::log::warn("Timeline: Segment limit reached (" + std::to_string(max_segments_per_paint) + "), skipping remaining segments");
-                last_segment_limit_warning = now;
-            }
+        // Handle different detail levels efficiently
+        switch (batch.detail_level) {
+            case DetailLevel::MINIMAL:
+                // Just fill with lighter color for minimal segments
+                painter.fillRect(rect, batch.color.lighter(120));
+                break;
+                
+            case DetailLevel::BASIC:
+                // Fill + border for basic segments
+                painter.fillRect(rect, batch.color.lighter(110));
+                painter.setPen(cached_border_pen_);
+                painter.drawRect(rect);
+                break;
+                
+            case DetailLevel::NORMAL:
+            case DetailLevel::DETAILED:
+                // Full rendering for normal/detailed segments
+                painter.fillRect(rect, batch.color);
+                painter.setPen(cached_border_pen_);
+                painter.drawRect(rect);
+                
+                // Add text/details if not in heavy operation mode
+                if (!should_skip_expensive_features()) {
+                    // Add segment name for NORMAL and above
+                    if (batch.detail_level >= DetailLevel::NORMAL) {
+                        painter.setFont(cached_name_font);
+                        painter.setPen(cached_text_color);
+                        
+                        QRect text_rect = rect.adjusted(5, 2, -5, -18);
+                        QString segment_name = QString::fromStdString(segment.name);
+                        
+                        if (!heavy_operation_mode_ && cached_font_metrics_.horizontalAdvance(segment_name) > text_rect.width()) {
+                            segment_name = cached_font_metrics_.elidedText(segment_name, Qt::ElideRight, text_rect.width());
+                        }
+                        
+                        painter.drawText(text_rect, Qt::AlignLeft | Qt::AlignTop, segment_name);
+                    }
+                    
+                    // Add duration for DETAILED level
+                    if (batch.detail_level == DetailLevel::DETAILED) {
+                        auto duration = segment.duration.to_rational();
+                        double duration_seconds = static_cast<double>(duration.num) / duration.den;
+                        QString duration_text = QString("%1s").arg(duration_seconds, 0, 'f', 1);
+                        
+                        painter.setFont(cached_small_font);
+                        painter.setPen(cached_text_color);
+                        
+                        QRect duration_rect = rect.adjusted(3, rect.height() - 15, -3, -2);
+                        painter.drawText(duration_rect, Qt::AlignRight | Qt::AlignBottom, duration_text);
+                        
+                        // Draw waveforms/thumbnails for largest segments
+                        if (rect.width() > 120) {
+                            bool is_video_track = (segment.name.find("video") != std::string::npos); // Simple heuristic
+                            if (is_video_track) {
+                                draw_video_thumbnail(painter, rect, segment);
+                            } else {
+                                draw_cached_waveform(painter, rect, segment);
+                            }
+                        }
+                    }
+                }
+                
+                // Draw segment handles for selected segments
+                if (batch.is_selected && batch.detail_level >= DetailLevel::BASIC) {
+                    draw_segment_handles(painter, rect);
+                }
+                break;
+        }
+    }
+}
+
+// Enhanced viewport culling: Calculate viewport information once per paint
+TimelinePanel::ViewportInfo TimelinePanel::calculate_viewport_info() const {
+    ViewportInfo viewport;
+    
+    // Pixel boundaries with margins for smooth scrolling
+    const int margin = 50;
+    viewport.left_x = -scroll_x_ - margin;
+    viewport.right_x = -scroll_x_ + width() + margin;
+    viewport.top_y = 0;
+    viewport.bottom_y = height();
+    
+    // Time boundaries
+    viewport.start_time = pixel_to_time(viewport.left_x);
+    viewport.end_time = pixel_to_time(viewport.right_x);
+    
+    // Cached conversion ratio for performance
+    viewport.time_to_pixel_ratio = zoom_factor_ * MIN_PIXELS_PER_SECOND;
+    
+    return viewport;
+}
+
+// Enhanced viewport culling: Check if track is visible
+bool TimelinePanel::is_track_visible(int track_y, const ViewportInfo& viewport) const {
+    return (track_y + TRACK_HEIGHT > viewport.top_y) && (track_y < viewport.bottom_y);
+}
+
+// Enhanced viewport culling: Optimized segment filtering
+std::vector<const ve::timeline::Segment*> TimelinePanel::cull_segments_optimized(
+    const std::vector<ve::timeline::Segment>& segments, const ViewportInfo& viewport) const {
+    
+    std::vector<const ve::timeline::Segment*> visible_segments;
+    
+    if (segments.empty()) {
+        return visible_segments;
+    }
+    
+    visible_segments.reserve(std::min(segments.size(), size_t(50))); // Reserve reasonable size
+    
+    // Use binary search to find first potentially visible segment
+    size_t start_idx = 0;
+    size_t end_idx = segments.size();
+    
+    // Find first segment that might be visible (binary search on start_time)
+    auto first_visible = std::lower_bound(segments.begin(), segments.end(), viewport.start_time,
+        [](const ve::timeline::Segment& segment, ve::TimePoint time) {
+            return segment.end_time() <= time;
+        });
+    
+    if (first_visible != segments.end()) {
+        start_idx = static_cast<size_t>(std::distance(segments.begin(), first_visible));
+    }
+    
+    // Process only segments that could be visible
+    for (size_t i = start_idx; i < segments.size(); ++i) {
+        const auto& segment = segments[i];
+        
+        // Early exit: segments are sorted by start_time, so if this one starts after viewport, we're done
+        if (segment.start_time >= viewport.end_time) {
             break;
         }
         
-        // Skip drawing the segment being dragged to show preview instead
-        if (show_drag_preview_ && segment.id == dragged_segment_id_) {
-            continue;
+        // Check if segment overlaps with viewport time range
+        ve::TimePoint segment_end = segment.end_time();
+        if (segment_end > viewport.start_time && segment.start_time < viewport.end_time) {
+            visible_segments.push_back(&segment);
         }
-        
-        int start_x = time_to_pixel(segment.start_time);
-        int end_x = time_to_pixel(segment.end_time());
-        int segment_width = end_x - start_x;
-        
-        // Skip very small segments that would be barely visible
-        if (segment_width < 2) continue;
-        
-        QRect segment_rect(start_x, track_y + 5, segment_width, TRACK_HEIGHT - 10);
-        
-        // Try to use cached segment rendering for better performance
-        QPixmap* cached_pixmap = get_cached_segment(segment.id, segment_rect);
-        if (cached_pixmap && !cached_pixmap->isNull()) {
-            painter.drawPixmap(segment_rect.topLeft(), *cached_pixmap);
-            segments_drawn++;
-            continue;
-        }
-        
-        // For now, disable caching to avoid QPainter conflicts
-        // TODO: Implement caching in a separate render pass
-        // Create a pixmap to cache this segment rendering
-        // QPixmap segment_pixmap(segment_rect.size());
-        // segment_pixmap.fill(Qt::transparent);
-        // QPainter cache_painter(&segment_pixmap);
-        QRect local_rect = segment_rect; // Use original rect instead of local rect
-        
-        // Check if segment is selected (cache this lookup)
-        bool is_selected = std::find(selected_segments_.begin(), selected_segments_.end(), 
-                                   segment.id) != selected_segments_.end();
-        
-        // Phase 1: Use pre-allocated colors instead of creating new ones
-        QColor segment_color = is_selected ? cached_selected_color_ : 
-                              (is_video_track ? cached_video_color_ : cached_audio_color_);
-        
-        // For very small segments, use simple solid fill with stronger color
-        if (segment_width < 20) {
-            painter.fillRect(local_rect, segment_color.lighter(110));  // Even brighter for small segments
-            // Add white border for small segments too
-            painter.setPen(cached_border_pen_);
-            painter.drawRect(local_rect);
-            
-            segments_drawn++;
-            continue;
-        }
-        
-        // Draw segment background - use solid color instead of gradient for better performance
-        painter.fillRect(local_rect, segment_color);
-        
-        // Simple border for better performance
-        painter.setPen(cached_border_pen_);
-        painter.drawRect(local_rect);
-        
-        // Phase 1: Skip expensive features during heavy operations
-        if (!should_skip_expensive_features() && segment_width >= 40) {  // Draw details for larger segments
-            
-            // Draw clip duration indicator only for larger segments
-            if (segment_width > 60) {  // Only show duration for larger segments
-                auto duration = segment.duration.to_rational();
-                double duration_seconds = static_cast<double>(duration.num) / duration.den;
-                QString duration_text = QString("%1s").arg(duration_seconds, 0, 'f', 1);
-                
-                painter.setPen(cached_text_color_);
-                painter.setFont(cached_small_font_);
-                
-                QRect duration_rect = local_rect.adjusted(3, local_rect.height() - 15, -3, -2);
-                painter.drawText(duration_rect, Qt::AlignRight | Qt::AlignBottom, duration_text);
-            }
-            
-            // Segment name (if wide enough) - Phase 1: Skip expensive font metrics during heavy operations
-            if (segment_width > 80) {  // Increased threshold for text rendering
-                painter.setFont(cached_name_font_);
-                
-                QRect text_rect = local_rect.adjusted(5, 2, -5, -18);
-                QString segment_name = QString::fromStdString(segment.name);
-                
-                // Phase 1: Skip expensive font metrics calculation during heavy operations
-                if (!heavy_operation_mode_ && cached_font_metrics_.horizontalAdvance(segment_name) > text_rect.width()) {
-                    segment_name = cached_font_metrics_.elidedText(segment_name, Qt::ElideRight, text_rect.width());
-                }
-                
-                painter.drawText(text_rect, Qt::AlignLeft | Qt::AlignTop, segment_name);
-            }
-            
-            // Only draw waveforms for larger segments to improve performance
-            if (segment_width > 120) {  // Increased threshold - only for large segments
-                if (is_video_track) {
-                    // For direct painter, we use the full rect
-                    draw_video_thumbnail(painter, local_rect, segment);
-                } else {
-                    draw_cached_waveform(painter, local_rect, segment);
-                }
-            }
-        }
-        
-        // Skip caching for now to avoid QPainter conflicts
-        // cache_segment(segment.id, segment_rect, segment_pixmap);
-        // painter.drawPixmap(segment_rect.topLeft(), segment_pixmap);
-        
-        // Draw segment handles for resizing (if selected)
-        if (is_selected && segment_width > 20) {
-            draw_segment_handles(painter, segment_rect);
-        }
-        
-        segments_drawn++;  // Count processed segments
     }
+    
+    return visible_segments;
 }
 
 void TimelinePanel::draw_playhead(QPainter& painter) {
@@ -2096,6 +2223,101 @@ void TimelinePanel::draw_minimal_timeline(QPainter& painter) {
     int playhead_x = time_to_pixel(current_time_);
     painter.setPen(QPen(Qt::red, 2));
     painter.drawLine(playhead_x, 0, playhead_x, height());
+}
+
+// ======= Phase 2 Performance Optimizations =======
+
+void TimelinePanel::invalidate_region(const QRect& rect, bool needs_full_redraw) {
+    if (rect.isEmpty()) return;
+    
+    // Check if this region overlaps with existing dirty regions
+    bool merged = false;
+    for (auto& dirty : dirty_regions_) {
+        if (dirty.rect.intersects(rect)) {
+            // Merge overlapping regions
+            dirty.rect = dirty.rect.united(rect);
+            dirty.needs_full_redraw = dirty.needs_full_redraw || needs_full_redraw;
+            merged = true;
+            break;
+        }
+    }
+    
+    if (!merged) {
+        dirty_regions_.emplace_back(rect, needs_full_redraw);
+    }
+    
+    // Update total dirty rect
+    if (has_dirty_regions_) {
+        total_dirty_rect_ = total_dirty_rect_.united(rect);
+    } else {
+        total_dirty_rect_ = rect;
+        has_dirty_regions_ = true;
+    }
+    
+    // Limit dirty regions to prevent memory bloat
+    if (dirty_regions_.size() > 20) {
+        // Merge all regions into one large region
+        QRect combined;
+        for (const auto& dirty : dirty_regions_) {
+            combined = combined.united(dirty.rect);
+        }
+        dirty_regions_.clear();
+        dirty_regions_.emplace_back(combined, true);
+    }
+}
+
+void TimelinePanel::invalidate_track(size_t track_index) {
+    if (!timeline_ || track_index >= timeline_->tracks().size()) return;
+    
+    int track_y = track_y_position(track_index);
+    QRect track_rect(0, track_y, width(), TRACK_HEIGHT);
+    invalidate_region(track_rect, true);
+}
+
+void TimelinePanel::invalidate_segment(uint32_t segment_id) {
+    if (!timeline_) return;
+    
+    // Find the segment and invalidate its visual area
+    const auto& tracks = timeline_->tracks();
+    for (size_t i = 0; i < tracks.size(); ++i) {
+        const auto& track = *tracks[i];
+        for (const auto& segment : track.segments()) {
+            if (segment.id == segment_id) {
+                int start_x = time_to_pixel(segment.start_time);
+                int end_x = time_to_pixel(segment.end_time());
+                int track_y = track_y_position(i);
+                
+                QRect segment_rect(start_x - 5, track_y, end_x - start_x + 10, TRACK_HEIGHT);
+                invalidate_region(segment_rect, false);
+                return;
+            }
+        }
+    }
+}
+
+void TimelinePanel::clear_dirty_regions() {
+    dirty_regions_.clear();
+    has_dirty_regions_ = false;
+    total_dirty_rect_ = QRect();
+}
+
+bool TimelinePanel::is_region_dirty(const QRect& rect) const {
+    if (!has_dirty_regions_) return false;
+    
+    for (const auto& dirty : dirty_regions_) {
+        if (dirty.rect.intersects(rect)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Phase 2: Level-of-detail rendering
+TimelinePanel::DetailLevel TimelinePanel::calculate_detail_level(int segment_width, double zoom_factor) const {
+    if (segment_width < 5) return DetailLevel::MINIMAL;     // Just a colored line
+    if (segment_width < 20) return DetailLevel::BASIC;      // Colored rectangle with border
+    if (segment_width < 60) return DetailLevel::NORMAL;     // + segment name
+    return DetailLevel::DETAILED;                           // + duration, waveforms, etc.
 }
 
 } // namespace ve::ui
