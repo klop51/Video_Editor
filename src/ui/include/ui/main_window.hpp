@@ -37,6 +37,7 @@ class TimelinePanel;
 class ViewerPanel;
 class MediaProcessingWorker;
 class TimelineProcessingWorker;
+class ProfessionalAudioMonitoringPanel;
 
 // Forward declarations for worker result structs
 struct MediaInfo {
@@ -191,6 +192,9 @@ private:
     
     QDockWidget* properties_dock_;
     QLabel* property_panel_;
+    
+    QDockWidget* audio_monitoring_dock_;
+    ProfessionalAudioMonitoringPanel* audio_monitoring_panel_;
     
     // Menu actions
     QAction* new_action_;

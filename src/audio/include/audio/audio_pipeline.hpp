@@ -18,6 +18,7 @@
 #include "audio/audio_frame.hpp"
 #include "audio/simple_mixer.hpp"
 #include "audio/audio_output.hpp"
+#include "audio/professional_monitoring.hpp"
 #include "core/time.hpp"
 
 namespace ve::audio {
@@ -60,6 +61,10 @@ struct AudioPipelineConfig {
     uint32_t max_channels = 16;
     bool enable_clipping_protection = true;
     bool enable_output = true;
+    
+    // Professional monitoring configuration
+    bool enable_professional_monitoring = false;
+    ProfessionalAudioMonitoringSystem::MonitoringConfig monitoring_config;
 };
 
 /**
@@ -114,6 +119,14 @@ public:
     const AudioPipelineConfig& get_config() const { return config_; }
     bool set_config(const AudioPipelineConfig& config);
 
+    // Professional monitoring integration
+    std::shared_ptr<ProfessionalAudioMonitoringSystem> get_monitoring_system() const { 
+        return monitoring_system_; 
+    }
+    bool enable_professional_monitoring(const ProfessionalAudioMonitoringSystem::MonitoringConfig& config = {});
+    void disable_professional_monitoring();
+    bool is_monitoring_enabled() const { return monitoring_enabled_; }
+
     // Error handling
     std::string get_last_error() const;
     void clear_error();
@@ -149,6 +162,10 @@ private:
     // Error handling
     mutable std::mutex error_mutex_;
     std::string last_error_;
+
+    // Professional monitoring system
+    std::shared_ptr<ProfessionalAudioMonitoringSystem> monitoring_system_;
+    std::atomic<bool> monitoring_enabled_{false};
 
     // Helper methods
     void set_state(AudioPipelineState new_state);

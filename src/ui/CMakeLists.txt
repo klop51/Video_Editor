@@ -29,6 +29,9 @@ add_library(ve_ui
     src/minimal_audio_track_widget.cpp
     src/minimal_audio_meters_widget.cpp
     
+    # Phase 2 Professional Audio Monitoring UI
+    src/professional_audio_monitoring_ui.cpp
+    
     # Headers with Q_OBJECT (for MOC processing)
     include/ui/main_window.hpp
     include/ui/timeline_panel.hpp

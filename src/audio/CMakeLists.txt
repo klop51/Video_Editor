@@ -25,6 +25,7 @@ add_library(ve_audio STATIC
     src/loudness_monitor.cpp           # Week 10: Real-time loudness monitoring (EBU R128)
     src/audio_meters.cpp               # Week 10: Professional audio meters with broadcast ballistics
     src/quality_dashboard.cpp          # Week 10: Quality analysis dashboard and compliance monitoring
+    src/professional_monitoring.cpp    # Phase 2: Professional audio monitoring system integration
     # Keep existing audio_engine.cpp if it exists
     $<$<BOOL:${CMAKE_CURRENT_SOURCE_DIR}/src/audio_engine.cpp>:src/audio_engine.cpp>
 )

@@ -14,6 +14,12 @@
 
 #pragma once
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#endif
+
 #include "audio/audio_frame.hpp"
 #include "core/time.hpp"
 #include <vector>
@@ -24,6 +30,7 @@
 #include <memory>
 #include <cmath>
 #include <algorithm>
+#include <limits>
 
 namespace ve::audio {
 
@@ -171,7 +178,7 @@ public:
                 // Start decay from peak hold
                 double decay_time_since_hold = hold_elapsed_ms - ballistics_.hold_time_ms;
                 double decay_factor = 1.0 - std::exp(-decay_time_since_hold / ballistics_.decay_time_ms);
-                double target_level = std::max(level_db, current_level_db_);
+                double target_level = (std::max)(level_db, current_level_db_);
                 peak_hold_level_db_ = peak_hold_level_db_ + decay_factor * (target_level - peak_hold_level_db_);
             }
         }
@@ -393,15 +400,15 @@ private:
         integrated_sample_count_++;
         
         // Update peak meters with original (unweighted) samples
-        double left_db = 20.0 * std::log10(std::max(std::abs(left), 1e-10f));
-        double right_db = 20.0 * std::log10(std::max(std::abs(right), 1e-10f));
+        double left_db = 20.0 * std::log10((std::max)(std::abs(left), 1e-10f));
+        double right_db = 20.0 * std::log10((std::max)(std::abs(right), 1e-10f));
         
         peak_meter_left_.update(left_db);
         peak_meter_right_.update(right_db);
         
         // Update RMS meters
-        double left_rms_db = 20.0 * std::log10(std::max(std::sqrt(left * left), 1e-10f));
-        double right_rms_db = 20.0 * std::log10(std::max(std::sqrt(right * right), 1e-10f));
+        double left_rms_db = 20.0 * std::log10((std::max)(std::sqrt(left * left), 1e-10f));
+        double right_rms_db = 20.0 * std::log10((std::max)(std::sqrt(right * right), 1e-10f));
         
         rms_meter_left_.update(left_rms_db);
         rms_meter_right_.update(right_rms_db);

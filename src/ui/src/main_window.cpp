@@ -6,6 +6,7 @@
 
 #include "ui/main_window.hpp"
 #include "ui/timeline_panel.hpp"
+#include "ui/professional_audio_monitoring_ui.hpp"
 #include "ui/viewer_panel.hpp"
 #include "timeline/timeline.hpp"
 #include "playback/controller.hpp"
@@ -261,6 +262,8 @@ MainWindow::MainWindow(QWidget* parent)
     , media_browser_(nullptr)
     , properties_dock_(nullptr)
     , property_panel_(nullptr)
+    , audio_monitoring_dock_(nullptr)
+    , audio_monitoring_panel_(nullptr)
     , timeline_(nullptr)
     , playback_controller_(nullptr)
     , command_history_(std::make_unique<ve::commands::CommandHistory>())
@@ -792,6 +795,17 @@ void MainWindow::create_dock_widgets() {
     properties_dock_->setWidget(property_panel_);
     properties_dock_->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
     addDockWidget(Qt::RightDockWidgetArea, properties_dock_);
+    
+    // Audio monitoring dock
+    audio_monitoring_dock_ = new QDockWidget("Audio Monitoring", this);
+    audio_monitoring_dock_->setObjectName("AudioMonitoringDock");
+    audio_monitoring_panel_ = new ProfessionalAudioMonitoringPanel();
+    audio_monitoring_dock_->setWidget(audio_monitoring_panel_);
+    audio_monitoring_dock_->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    addDockWidget(Qt::RightDockWidgetArea, audio_monitoring_dock_);
+    
+    // Tabify audio monitoring with properties
+    tabifyDockWidget(properties_dock_, audio_monitoring_dock_);
 }
 
 void MainWindow::setup_layout() {

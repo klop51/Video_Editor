@@ -106,6 +106,11 @@ bool AudioPipeline::process_audio_frame(std::shared_ptr<AudioFrame> frame) {
         return true; // Skip empty frames
     }
 
+    // Process through professional monitoring system if enabled
+    if (monitoring_enabled_.load() && monitoring_system_) {
+        monitoring_system_->process_audio_frame(*frame);
+    }
+
     // Add frame to buffer
     {
         std::lock_guard<std::mutex> lock(buffer_mutex_);
@@ -427,6 +432,39 @@ void AudioPipeline::processing_thread_main() {
     }
 
     ve::log::info("Audio pipeline processing thread ended");
+}
+
+// Professional monitoring system integration
+bool AudioPipeline::enable_professional_monitoring(const ProfessionalAudioMonitoringSystem::MonitoringConfig& config) {
+    try {
+        if (!monitoring_system_) {
+            monitoring_system_ = std::make_shared<ProfessionalAudioMonitoringSystem>(config);
+        }
+        
+        if (!monitoring_system_->initialize(config_.sample_rate, config_.channel_count)) {
+            set_error("Failed to initialize professional monitoring system");
+            return false;
+        }
+        
+        monitoring_enabled_.store(true);
+        ve::log::info("Professional audio monitoring enabled");
+        return true;
+        
+    } catch (const std::exception& e) {
+        set_error("Exception enabling professional monitoring: " + std::string(e.what()));
+        return false;
+    }
+}
+
+void AudioPipeline::disable_professional_monitoring() {
+    monitoring_enabled_.store(false);
+    
+    if (monitoring_system_) {
+        monitoring_system_->shutdown();
+        monitoring_system_.reset();
+    }
+    
+    ve::log::info("Professional audio monitoring disabled");
 }
 
 } // namespace ve::audio

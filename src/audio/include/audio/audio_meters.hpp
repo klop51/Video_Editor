@@ -14,6 +14,12 @@
 
 #pragma once
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#endif
+
 #include "audio/loudness_monitor.hpp"
 #include "audio/audio_frame.hpp"
 #include "core/time.hpp"
@@ -182,17 +188,17 @@ public:
         for (size_t i = 0; i < count; ++i) {
             double sample = std::abs(samples[i]);
             sum_squares += sample * sample;
-            peak = std::max(peak, sample);
+            peak = (std::max)(peak, sample);
         }
         
         double level_db;
         if (config_.scale == MeterScale::VU_STANDARD) {
             // VU meter uses RMS
             double rms = std::sqrt(sum_squares / count);
-            level_db = 20.0 * std::log10(std::max(rms, 1e-10));
+            level_db = 20.0 * std::log10((std::max)(rms, 1e-10));
         } else {
             // PPM and digital meters use peak
-            level_db = 20.0 * std::log10(std::max(peak, 1e-10));
+            level_db = 20.0 * std::log10((std::max)(peak, 1e-10));
         }
         
         update(level_db);
