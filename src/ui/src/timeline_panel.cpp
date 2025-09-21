@@ -50,6 +50,11 @@ TimelinePanel::TimelinePanel(QWidget* parent)
     , selecting_range_(false)
     , selection_start_(ve::TimePoint{0})
     , selection_end_(ve::TimePoint{0})
+    // Advanced Timeline Features (Phase 2)
+    , snap_enabled_(true)
+    , grid_size_(ve::TimeDuration{1, 10}) // 0.1 second grid by default
+    , ripple_mode_(false)
+    , rubber_band_selecting_(false)
     , update_timer_(nullptr)  // Initialize update timer to null
     , throttle_timer_(nullptr) // Initialize throttle timer
     , pending_heavy_update_(false) // No pending updates initially
@@ -82,6 +87,8 @@ TimelinePanel::TimelinePanel(QWidget* parent)
     playhead_color_ = QColor(255, 0, 0);
     background_color_ = QColor(45, 45, 45);
     grid_color_ = QColor(70, 70, 70);
+    snap_guide_color_ = QColor(255, 255, 0, 180);  // Semi-transparent yellow
+    rubber_band_color_ = QColor(100, 150, 255, 80); // Semi-transparent blue
     
     // WaveformGenerator and WaveformCache integration placeholder
     // TODO: Implement actual WaveformGenerator when audio engine is complete
@@ -368,6 +375,14 @@ void TimelinePanel::paintEvent(QPaintEvent* event) {
         
         last_warning = now;
     }
+    
+    // Draw rubber band selection if active
+    if (rubber_band_selecting_ && !rubber_band_rect_.isEmpty()) {
+        QPainter painter(this);
+        painter.setPen(QPen(rubber_band_color_, 1, Qt::SolidLine));
+        painter.setBrush(QBrush(rubber_band_color_));
+        painter.drawRect(rubber_band_rect_);
+    }
 }
 
 void TimelinePanel::mousePressEvent(QMouseEvent* event) {
@@ -443,6 +458,20 @@ void TimelinePanel::mouseMoveEvent(QMouseEvent* event) {
     
     if (!timeline_) return;
     
+    // Handle rubber band selection
+    if (rubber_band_selecting_) {
+        rubber_band_rect_ = QRect(rubber_band_start_, event->pos()).normalized();
+        
+        // Throttle rubber band updates
+        if (time_since_last.count() >= 16) {  // ~60fps for rubber band
+            update();
+            last_update = now;
+        }
+        
+        last_mouse_pos_ = event->pos();
+        return;
+    }
+    
     // Check if we need to start dragging (if segment operations are prepared but not yet dragging)
     if ((dragging_segment_ || resizing_segment_) && !dragging_) {
         // Start actual dragging if mouse moved enough - higher threshold for stability
@@ -484,6 +513,28 @@ void TimelinePanel::mouseMoveEvent(QMouseEvent* event) {
 
 void TimelinePanel::mouseReleaseEvent(QMouseEvent* event) {
     // Removed debug logging for performance - mouse release events during active editing
+    
+    // Handle rubber band selection completion
+    if (rubber_band_selecting_) {
+        rubber_band_selecting_ = false;
+        
+        // Select all segments within rubber band rectangle
+        rubber_band_rect_ = QRect(rubber_band_start_, event->pos()).normalized();
+        
+        if (!(QApplication::keyboardModifiers() & Qt::ControlModifier)) {
+            selected_segments_.clear();
+        }
+        
+        select_segments_in_range(
+            pixel_to_time(rubber_band_rect_.left()),
+            pixel_to_time(rubber_band_rect_.right())
+        );
+        
+        rubber_band_rect_ = QRect(); // Clear rectangle
+        emit selection_changed();
+        update();
+        return;
+    }
     
     if (dragging_) {
         // Complete any ongoing operations with command system
@@ -1108,23 +1159,35 @@ void TimelinePanel::update_drag(const QPoint& pos) {
     
     if (dragging_segment_) {
         // Calculate new position for preview
-        ve::TimePoint new_time = pixel_to_time(pos.x());
+        ve::TimePoint raw_time = pixel_to_time(pos.x());
+        
+        // Apply snapping (grid first, then segments)
+        ve::TimePoint snapped_time = snap_to_grid(raw_time);
+        snapped_time = snap_to_segments(snapped_time, dragged_segment_id_);
         
         // Snap to reasonable boundaries
-        if (new_time.to_rational().num < 0) {
-            new_time = ve::TimePoint{0};
+        if (snapped_time.to_rational().num < 0) {
+            snapped_time = ve::TimePoint{0};
         }
         
         // Store preview position
-        preview_start_time_ = new_time;
+        preview_start_time_ = snapped_time;
         preview_duration_ = original_segment_duration_;
         show_drag_preview_ = true;
-        // Removed drag preview debug logging for performance - called frequently during drag
+        
+        // Update snap guides for visual feedback
+        snap_points_.clear();
+        if (snap_enabled_) {
+            snap_points_.push_back(snapped_time);
+        }
+        
         update();
         
     } else if (resizing_segment_) {
-        // Calculate new size for preview
-        ve::TimePoint new_time = pixel_to_time(pos.x());
+        // Calculate new size for preview with snapping
+        ve::TimePoint raw_time = pixel_to_time(pos.x());
+        ve::TimePoint snapped_time = snap_to_grid(raw_time);
+        snapped_time = snap_to_segments(snapped_time, dragged_segment_id_);
         
         if (is_left_resize_) {
             // Resize from left edge
@@ -1133,24 +1196,38 @@ void TimelinePanel::update_drag(const QPoint& pos) {
                 original_segment_start_.to_rational().den
             };
             
-            if (new_time < original_end && new_time.to_rational().num >= 0) {
-                preview_start_time_ = new_time;
+            if (snapped_time < original_end && snapped_time.to_rational().num >= 0) {
+                preview_start_time_ = snapped_time;
                 preview_duration_ = ve::TimeDuration{
-                    original_end.to_rational().num - new_time.to_rational().num,
-                    new_time.to_rational().den
+                    original_end.to_rational().num - snapped_time.to_rational().num,
+                    snapped_time.to_rational().den
                 };
                 show_drag_preview_ = true;
+                
+                // Update snap guides
+                snap_points_.clear();
+                if (snap_enabled_) {
+                    snap_points_.push_back(snapped_time);
+                }
+                
                 update();
             }
         } else {
             // Resize from right edge
-            if (new_time > original_segment_start_) {
+            if (snapped_time > original_segment_start_) {
                 preview_start_time_ = original_segment_start_;
                 preview_duration_ = ve::TimeDuration{
-                    new_time.to_rational().num - original_segment_start_.to_rational().num,
+                    snapped_time.to_rational().num - original_segment_start_.to_rational().num,
                     original_segment_start_.to_rational().den
                 };
                 show_drag_preview_ = true;
+                
+                // Update snap guides
+                snap_points_.clear();
+                if (snap_enabled_) {
+                    snap_points_.push_back(snapped_time);
+                }
+                
                 update();
             }
         }
@@ -1240,15 +1317,22 @@ void TimelinePanel::handle_click(const QPoint& pos) {
         emit selection_changed();
         update();
     } else {
-        // Clicked empty space - seek timeline
-        ve::TimePoint clicked_time = pixel_to_time(pos.x());
-        current_time_ = clicked_time;
-        emit time_changed(clicked_time);
-        
-        // Clear selection if not holding Ctrl
+        // Clicked empty space
         if (!(QApplication::keyboardModifiers() & Qt::ControlModifier)) {
             selected_segments_.clear();
             emit selection_changed();
+        }
+        
+        // Start rubber band selection if in track area
+        if (pos.y() >= TIMECODE_HEIGHT) {
+            rubber_band_selecting_ = true;
+            rubber_band_start_ = pos;
+            rubber_band_rect_ = QRect(pos, QSize(0, 0));
+        } else {
+            // Timeline seeking
+            ve::TimePoint clicked_time = pixel_to_time(pos.x());
+            current_time_ = clicked_time;
+            emit time_changed(clicked_time);
         }
         
         update();
@@ -3211,6 +3295,243 @@ void TimelinePanel::draw_placeholder_waveform(QPainter& painter, const QRect& re
         painter.setPen(QPen(QColor(120, 180, 255, 30), 1));
         painter.drawLine(rect.left(), center_y, rect.right(), center_y);
     }
+}
+
+// ============================================================================
+// Advanced Timeline Features (Phase 2) Implementation
+// ============================================================================
+
+ve::TimePoint TimelinePanel::snap_to_grid(ve::TimePoint time) const {
+    if (!snap_enabled_) return time;
+    
+    // Calculate the nearest grid point
+    int64_t grid_ticks = grid_size_.to_rational().num;
+    int32_t grid_den = grid_size_.to_rational().den;
+    
+    // Convert time to same denominator as grid
+    int64_t time_ticks = (time.to_rational().num * grid_den) / time.to_rational().den;
+    
+    // Snap to nearest grid line
+    int64_t snapped_ticks = ((time_ticks + grid_ticks / 2) / grid_ticks) * grid_ticks;
+    
+    return ve::TimePoint{snapped_ticks, grid_den};
+}
+
+ve::TimePoint TimelinePanel::snap_to_segments(ve::TimePoint time, ve::timeline::SegmentId exclude_id) const {
+    if (!snap_enabled_ || !timeline_) return time;
+    
+    const double snap_threshold_pixels = 10.0; // 10 pixel snap threshold
+    ve::TimeDuration snap_threshold = pixel_to_time_delta(snap_threshold_pixels);
+    
+    ve::TimePoint closest_snap = time;
+    ve::TimeDuration min_distance = snap_threshold;
+    
+    // Check all segments for snap points (start and end)
+    const auto& tracks = timeline_->tracks();
+    for (const auto& track : tracks) {
+        for (const auto& segment : track->segments()) {
+            if (segment.id == exclude_id) continue;
+            
+            // Check segment start
+            ve::TimeDuration distance_to_start = abs_time_difference(time, segment.start_time);
+            if (distance_to_start < min_distance) {
+                closest_snap = segment.start_time;
+                min_distance = distance_to_start;
+            }
+            
+            // Check segment end
+            ve::TimePoint segment_end = ve::TimePoint{
+                segment.start_time.to_rational().num + segment.duration.to_rational().num,
+                segment.start_time.to_rational().den
+            };
+            ve::TimeDuration distance_to_end = abs_time_difference(time, segment_end);
+            if (distance_to_end < min_distance) {
+                closest_snap = segment_end;
+                min_distance = distance_to_end;
+            }
+        }
+    }
+    
+    return closest_snap;
+}
+
+void TimelinePanel::draw_snap_guides(QPainter& painter) const {
+    if (!snap_enabled_ || snap_points_.empty()) return;
+    
+    painter.save();
+    painter.setPen(QPen(snap_guide_color_, 2, Qt::DashLine));
+    
+    for (const auto& snap_point : snap_points_) {
+        int x = time_to_pixel(snap_point);
+        painter.drawLine(x, TIMECODE_HEIGHT, x, height());
+    }
+    
+    painter.restore();
+}
+
+bool TimelinePanel::is_on_segment_edge(const QPoint& pos, const ve::timeline::Segment& segment, bool& is_left_edge) const {
+    if (!timeline_) return false;
+    
+    // Find which track this segment belongs to
+    int track_y = -1;
+    int track_index = 0;
+    const auto& tracks = timeline_->tracks();
+    for (const auto& track : tracks) {
+        if (track->find_segment(segment.id)) {
+            track_y = TIMECODE_HEIGHT + track_index * TRACK_HEIGHT;
+            break;
+        }
+        track_index++;
+    }
+    
+    if (track_y == -1) return false;
+    
+    // Check if mouse is within the track vertically
+    if (pos.y() < track_y || pos.y() > track_y + TRACK_HEIGHT) return false;
+    
+    // Calculate segment bounds
+    int segment_left = time_to_pixel(segment.start_time);
+    ve::TimePoint segment_end = ve::TimePoint{
+        segment.start_time.to_rational().num + segment.duration.to_rational().num,
+        segment.start_time.to_rational().den
+    };
+    int segment_right = time_to_pixel(segment_end);
+    
+    const int edge_threshold = 8; // 8 pixels for edge detection
+    
+    // Check left edge
+    if (abs(pos.x() - segment_left) <= edge_threshold) {
+        is_left_edge = true;
+        return true;
+    }
+    
+    // Check right edge
+    if (abs(pos.x() - segment_right) <= edge_threshold) {
+        is_left_edge = false;
+        return true;
+    }
+    
+    return false;
+}
+
+void TimelinePanel::draw_segment_resize_handles(QPainter& painter, const ve::timeline::Segment& segment, int track_y) const {
+    painter.save();
+    
+    int segment_left = time_to_pixel(segment.start_time);
+    ve::TimePoint segment_end = ve::TimePoint{
+        segment.start_time.to_rational().num + segment.duration.to_rational().num,
+        segment.start_time.to_rational().den
+    };
+    int segment_right = time_to_pixel(segment_end);
+    
+    // Draw resize handles as small rectangles
+    const int handle_width = 6;
+    const int handle_height = TRACK_HEIGHT - 4;
+    
+    painter.setPen(QPen(QColor(255, 255, 255, 200), 1));
+    painter.setBrush(QBrush(QColor(100, 100, 100, 150)));
+    
+    // Left handle
+    QRect left_handle(segment_left - handle_width/2, track_y + 2, handle_width, handle_height);
+    painter.drawRect(left_handle);
+    
+    // Right handle
+    QRect right_handle(segment_right - handle_width/2, track_y + 2, handle_width, handle_height);
+    painter.drawRect(right_handle);
+    
+    painter.restore();
+}
+
+void TimelinePanel::select_segments_in_range(ve::TimePoint start, ve::TimePoint end, int track_index) {
+    if (!timeline_) return;
+    
+    // Ensure start <= end
+    if (start > end) std::swap(start, end);
+    
+    const auto& tracks = timeline_->tracks();
+    
+    // If track_index is -1, select from all tracks
+    if (track_index == -1) {
+        for (const auto& track : tracks) {
+            for (const auto& segment : track->segments()) {
+                ve::TimePoint segment_end = ve::TimePoint{
+                    segment.start_time.to_rational().num + segment.duration.to_rational().num,
+                    segment.start_time.to_rational().den
+                };
+                
+                // Check if segment overlaps with selection range
+                if (segment.start_time < end && segment_end > start) {
+                    if (std::find(selected_segments_.begin(), selected_segments_.end(), segment.id) == selected_segments_.end()) {
+                        selected_segments_.push_back(segment.id);
+                    }
+                }
+            }
+        }
+    } else if (track_index < static_cast<int>(tracks.size())) {
+        // Select from specific track
+        const auto& track = tracks[track_index];
+        for (const auto& segment : track->segments()) {
+            ve::TimePoint segment_end = ve::TimePoint{
+                segment.start_time.to_rational().num + segment.duration.to_rational().num,
+                segment.start_time.to_rational().den
+            };
+            
+            if (segment.start_time < end && segment_end > start) {
+                if (std::find(selected_segments_.begin(), selected_segments_.end(), segment.id) == selected_segments_.end()) {
+                    selected_segments_.push_back(segment.id);
+                }
+            }
+        }
+    }
+    
+    emit selection_changed();
+    update();
+}
+
+void TimelinePanel::toggle_segment_selection(ve::timeline::SegmentId segment_id) {
+    auto it = std::find(selected_segments_.begin(), selected_segments_.end(), segment_id);
+    if (it != selected_segments_.end()) {
+        selected_segments_.erase(it);
+    } else {
+        selected_segments_.push_back(segment_id);
+    }
+    
+    emit selection_changed();
+    update();
+}
+
+bool TimelinePanel::is_segment_selected(ve::timeline::SegmentId segment_id) const {
+    return std::find(selected_segments_.begin(), selected_segments_.end(), segment_id) != selected_segments_.end();
+}
+
+void TimelinePanel::ripple_edit_segments(ve::TimePoint edit_point, ve::TimeDuration delta) {
+    if (!timeline_ || !ripple_mode_) return;
+    
+    // TODO: Implement ripple editing logic
+    // This would move all segments after edit_point by delta amount
+    // Need to integrate with command system for undo/redo support
+}
+
+// Helper function for time difference calculation
+ve::TimeDuration TimelinePanel::abs_time_difference(ve::TimePoint a, ve::TimePoint b) const {
+    if (a > b) {
+        return ve::TimeDuration{
+            a.to_rational().num - b.to_rational().num,
+            a.to_rational().den
+        };
+    } else {
+        return ve::TimeDuration{
+            b.to_rational().num - a.to_rational().num,
+            b.to_rational().den
+        };
+    }
+}
+
+// Helper function to convert pixel distance to time
+ve::TimeDuration TimelinePanel::pixel_to_time_delta(double pixels) const {
+    double seconds_per_pixel = 1.0 / (zoom_factor_ * 100.0);
+    double seconds = pixels * seconds_per_pixel;
+    return ve::TimeDuration{static_cast<int64_t>(seconds * 1000), 1000}; // Convert to milliseconds
 }
 
 } // namespace ve::ui

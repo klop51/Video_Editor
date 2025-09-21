@@ -117,6 +117,33 @@ private:
     void draw_video_thumbnail(QPainter& painter, const QRect& rect, const ve::timeline::Segment& segment);
     void draw_segment_handles(QPainter& painter, const QRect& rect);
     
+    // Advanced Timeline Features (Phase 2)
+    // Drag-and-drop with snap-to-grid
+    ve::TimePoint snap_to_grid(ve::TimePoint time) const;
+    ve::TimePoint snap_to_segments(ve::TimePoint time, ve::timeline::SegmentId exclude_id = 0) const;
+    void draw_snap_guides(QPainter& painter) const;
+    bool is_snap_enabled() const { return snap_enabled_; }
+    void set_snap_enabled(bool enabled) { snap_enabled_ = enabled; }
+    
+    // Segment trimming handles
+    bool is_on_segment_edge(const QPoint& pos, const ve::timeline::Segment& segment, bool& is_left_edge) const;
+    void draw_segment_resize_handles(QPainter& painter, const ve::timeline::Segment& segment, int track_y) const;
+    
+    // Multi-segment selection
+    void select_segments_in_range(ve::TimePoint start, ve::TimePoint end, int track_index = -1);
+    void toggle_segment_selection(ve::timeline::SegmentId segment_id);
+    void clear_selection() { selected_segments_.clear(); emit selection_changed(); }
+    bool is_segment_selected(ve::timeline::SegmentId segment_id) const;
+    
+    // Ripple editing
+    void set_ripple_mode(bool enabled) { ripple_mode_ = enabled; }
+    bool is_ripple_mode() const { return ripple_mode_; }
+    void ripple_edit_segments(ve::TimePoint edit_point, ve::TimeDuration delta);
+    
+    // Helper functions
+    ve::TimeDuration abs_time_difference(ve::TimePoint a, ve::TimePoint b) const;
+    ve::TimeDuration pixel_to_time_delta(double pixels) const;
+    
     // Segment rendering cache helpers
     QPixmap* get_cached_segment(uint32_t segment_id, const QRect& rect) const;
     void cache_segment(uint32_t segment_id, const QRect& rect, const QPixmap& pixmap) const;
@@ -235,6 +262,24 @@ private:
     ve::TimePoint selection_start_;
     ve::TimePoint selection_end_;
     
+    // Advanced Timeline Features (Phase 2)
+    // Snap-to-grid and snap-to-segments
+    bool snap_enabled_;
+    ve::TimeDuration grid_size_;
+    mutable std::vector<ve::TimePoint> snap_points_;  // Cached snap points for current frame
+    
+    // Ripple editing
+    bool ripple_mode_;
+    
+    // Multi-selection with rubber band
+    bool rubber_band_selecting_;
+    QRect rubber_band_rect_;
+    QPoint rubber_band_start_;
+    
+    // Enhanced drag preview with multiple segments
+    std::vector<ve::timeline::SegmentId> preview_segments_;
+    std::vector<ve::TimePoint> preview_positions_;
+    
     // Colors
     QColor track_color_video_;
     QColor track_color_audio_;
@@ -243,6 +288,8 @@ private:
     QColor playhead_color_;
     QColor background_color_;
     QColor grid_color_;
+    QColor snap_guide_color_;
+    QColor rubber_band_color_;
     
     // Debug tools
     QTimer* heartbeat_timer_;
