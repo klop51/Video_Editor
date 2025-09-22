@@ -212,7 +212,13 @@ void TimelinePanel::set_current_time(ve::TimePoint time) {
     invalidate_region(QRect(new_x - 5, 0, 10, height()));
     
     current_time_ = time;
-    update();
+    
+    // Patch 5: Use queued update to prevent painting conflicts during timeline updates
+    if (painting_) {
+        repaint_pending_ = true;
+    } else {
+        QMetaObject::invokeMethod(this, "update", Qt::QueuedConnection);
+    }
 }
 
 void TimelinePanel::refresh() {
@@ -253,11 +259,23 @@ void TimelinePanel::zoom_fit() {
 }
 
 // Phase 1: Override update to use throttled painting
+// Phase 1: Override update to use throttled painting with re-entrancy protection
 void TimelinePanel::update() {
+    // If a paint is in progress, just mark pending; the queued invoke below will coalesce.
+    if (painting_.load()) {
+        repaint_pending_.store(true);
+        return;
+    }
     request_throttled_update();
 }
 
 void TimelinePanel::paintEvent(QPaintEvent* event) {
+    // Re-entrancy protection: prevent overlapping paint operations
+    if (painting_.exchange(true)) {
+        // Should never happen, but bail out defensively.
+        return;
+    }
+    
     // Performance monitoring - track paint timing
     auto paint_start = std::chrono::high_resolution_clock::now();
     
@@ -402,6 +420,10 @@ void TimelinePanel::paintEvent(QPaintEvent* event) {
         painter.setBrush(QBrush(rubber_band_color_));
         painter.drawRect(rubber_band_rect_);
     }
+    
+    // Clear re-entrancy guards at method end
+    painting_ = false;
+    repaint_pending_ = false;
 }
 
 void TimelinePanel::mousePressEvent(QMouseEvent* event) {
@@ -1271,7 +1293,15 @@ ve::TimePoint TimelinePanel::pixel_to_time(int x) const {
 
 int TimelinePanel::time_to_pixel(ve::TimePoint time) const {
     double pixels_per_second = MIN_PIXELS_PER_SECOND * zoom_factor_;
-    double seconds = static_cast<double>(time.to_rational().num) / time.to_rational().den;
+    auto rational = time.to_rational();
+    
+    // CRITICAL FIX: Prevent division by zero SIGABRT
+    if (rational.den == 0) {
+        ve::log::error("TimelinePanel::time_to_pixel - Invalid time with denominator=0, using 0 position");
+        return -scroll_x_;  // Return valid pixel position for invalid time
+    }
+    
+    double seconds = static_cast<double>(rational.num) / rational.den;
     return static_cast<int>(seconds * pixels_per_second) - scroll_x_;
 }
 
@@ -2585,14 +2615,19 @@ void TimelinePanel::draw_minimal_timeline(QPainter& painter) {
 void TimelinePanel::invalidate_region(const QRect& rect, bool needs_full_redraw) {
     if (rect.isEmpty()) return;
     
+    // Patch 6: Clamp dirty regions to widget bounds to prevent Qt painting conflicts
+    QRect widget_bounds(0, 0, width(), height());
+    QRect clamped_rect = rect.intersected(widget_bounds);
+    if (clamped_rect.isEmpty()) return;
+    
     // Phase 2: Smart dirty region tracking
     bool merged = false;
     
     // Try to merge with existing dirty regions
     for (auto& dirty : dirty_regions_) {
-        if (dirty.rect.intersects(rect)) {
+        if (dirty.rect.intersects(clamped_rect)) {
             // Merge overlapping regions
-            dirty.rect = dirty.rect.united(rect);
+            dirty.rect = dirty.rect.united(clamped_rect);
             dirty.needs_full_redraw = dirty.needs_full_redraw || needs_full_redraw;
             merged = true;
             break;
@@ -2601,14 +2636,14 @@ void TimelinePanel::invalidate_region(const QRect& rect, bool needs_full_redraw)
     
     // If not merged, add as new dirty region
     if (!merged) {
-        dirty_regions_.emplace_back(rect, needs_full_redraw);
+        dirty_regions_.emplace_back(clamped_rect, needs_full_redraw);
     }
     
     // Update total dirty rect for efficient bounds checking
     if (has_dirty_regions_) {
-        total_dirty_rect_ = total_dirty_rect_.united(rect);
+        total_dirty_rect_ = total_dirty_rect_.united(clamped_rect);
     } else {
-        total_dirty_rect_ = rect;
+        total_dirty_rect_ = clamped_rect;
         has_dirty_regions_ = true;
     }
     

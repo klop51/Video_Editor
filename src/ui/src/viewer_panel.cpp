@@ -49,6 +49,10 @@ ViewerPanel::ViewerPanel(QWidget* parent)
     , aspect_ratio_mode_(Qt::KeepAspectRatio) {
     setup_ui();
     setAcceptDrops(true);
+    // Allow env override to disable viewer rendering for stability testing
+    if (std::getenv("VE_DISABLE_VIEWER_RENDER") != nullptr) {
+        display_enabled_ = false;
+    }
 }
 
 ViewerPanel::~ViewerPanel() = default;
@@ -106,6 +110,7 @@ void ViewerPanel::disable_gpu_pipeline() {
 }
 
 void ViewerPanel::display_frame(const ve::decode::VideoFrame& frame) {
+    if (!display_enabled_) return;
     VE_PROFILE_SCOPE_UNIQ("viewer.display_frame");
 #if VE_HEAP_DEBUG && defined(_MSC_VER)
     _CrtCheckMemory();

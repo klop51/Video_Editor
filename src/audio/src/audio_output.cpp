@@ -7,6 +7,7 @@
  */
 
 #include "audio/audio_output.hpp"
+#include "core/log.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -488,10 +489,22 @@ AudioOutputError AudioOutput::submit_data(const void* data, uint32_t frame_count
         return AudioOutputError::BufferTooSmall;
     }
 
-    // Copy data to buffer
-    memcpy(buffer_data, data, bytes_to_copy);
+    // CRASH PROTECTION: Re-check padding after GetBuffer to avoid over-release under clock jumps
+    UINT32 safe_frames = frames_to_submit;
+    UINT32 pad2 = 0;
+    if (SUCCEEDED(audio_client_->GetCurrentPadding(&pad2))) {
+        UINT32 avail2 = buffer_frame_count_ - pad2;
+        if (safe_frames > avail2) safe_frames = avail2;
+    }
+    
+    // Copy only safe_frames and release exactly that amount
+    size_t safe_bytes_to_copy = size_t(safe_frames) * config_.channel_count *
+        ((config_.format == SampleFormat::Float32 || config_.format == SampleFormat::Int32) ? 4 : 2);
 
-    hr = render_client_->ReleaseBuffer(frames_to_submit, 0);
+    // Copy data to buffer
+    memcpy(buffer_data, data, safe_bytes_to_copy);
+
+    hr = render_client_->ReleaseBuffer(safe_frames, 0);
     if (FAILED(hr)) {
         set_error(AudioOutputError::Unknown, "Failed to release buffer: " + std::to_string(hr));
         return AudioOutputError::Unknown;
@@ -500,7 +513,17 @@ AudioOutputError AudioOutput::submit_data(const void* data, uint32_t frame_count
     // Update statistics
     {
         std::lock_guard<std::mutex> lock(stats_mutex_);
-        stats_.frames_rendered += frames_to_submit;
+        stats_.frames_rendered += safe_frames;
+        
+        // BREADCRUMB: Log audio stats every 100 frames to track WASAPI state
+        static int frame_counter = 0;
+        if (++frame_counter % 100 == 0) {
+            ve::log::info("Audio breadcrumb: frames_to_submit=" + std::to_string(frames_to_submit) + 
+                         ", safe_frames=" + std::to_string(safe_frames) + 
+                         ", buffer_frame_count=" + std::to_string(buffer_frame_count_) +
+                         ", padding_frames=" + std::to_string(padding_frames) +
+                         ", bytes_copied=" + std::to_string(safe_bytes_to_copy));
+        }
     }
 #endif
 

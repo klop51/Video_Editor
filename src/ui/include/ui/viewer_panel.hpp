@@ -30,6 +30,8 @@ public:
     void set_playback_controller(ve::playback::PlaybackController* controller);
     void set_fps_overlay_visible(bool on);
     void set_preview_scale_to_widget(bool on) { preview_scale_to_widget_ = on; }
+    void set_display_enabled(bool on) { display_enabled_ = on; }
+    bool display_enabled() const { return display_enabled_; }
     // Experimental GPU pipeline control (no-op if initialization fails)
     bool enable_gpu_pipeline(); // returns true if GPU path initialized and enabled
     void disable_gpu_pipeline();
@@ -106,6 +108,9 @@ private:
     bool gpu_initialized_ = false;
     std::shared_ptr<ve::gfx::GraphicsDevice> gfx_device_;
     std::unique_ptr<ve::render::RenderGraph> render_graph_;
+
+    // Runtime toggle to bypass frame rendering for stability/isolation
+    bool display_enabled_ = true;
 };
 
 } // namespace ve::ui

@@ -4,6 +4,7 @@
 #include "core/log.hpp"
 #include <thread>
 #include <algorithm>
+#include <chrono>
 
 // Use isolated wrapper headers to prevent conflicts
 #ifdef _WIN32
@@ -97,9 +98,23 @@ PixelFormat map_pixel_format(int av_format) {
 
 // Simplified robust frame copy function for stability
 bool copy_frame_data(AVFrame* frame, VideoFrame& vf) {
+    // Critical safety check - ensure frame is valid
+    if (!frame) {
+        ve::log::error("NULL frame pointer passed to copy_frame_data");
+        return false;
+    }
+    
+    // Check if frame has been corrupted or freed
+    if (frame->width <= 0 || frame->height <= 0) {
+        ve::log::error("Invalid frame dimensions in copy_frame_data: " + std::to_string(frame->width) + "x" + std::to_string(frame->height));
+        return false;
+    }
+    
     const int width  = frame->width;
     const int height = frame->height;
     const AVPixelFormat fmt = static_cast<AVPixelFormat>(frame->format);
+
+    ve::log::info("DEBUG: copy_frame_data starting - format=" + std::to_string(fmt) + " dimensions=" + std::to_string(width) + "x" + std::to_string(height));
 
     // ve::log::info("Copying frame format: " + std::to_string(fmt) + " (" + std::string(av_get_pix_fmt_name(fmt) ? av_get_pix_fmt_name(fmt) : "unknown") + ")");
 
@@ -136,12 +151,15 @@ bool copy_frame_data(AVFrame* frame, VideoFrame& vf) {
     
     switch (fmt) {
         case AV_PIX_FMT_YUV420P:
+        case AV_PIX_FMT_YUVJ420P: // treat JPEG range same layout/size as 420P
             buf_size = width * height * 3 / 2; // Y + U/4 + V/4
             break;
         case AV_PIX_FMT_YUV422P:
+        case AV_PIX_FMT_YUVJ422P:
             buf_size = width * height * 2; // Y + U/2 + V/2
             break;
         case AV_PIX_FMT_YUV444P:
+        case AV_PIX_FMT_YUVJ444P:
             buf_size = width * height * 3; // Y + U + V
             break;
         case AV_PIX_FMT_NV12:
@@ -177,11 +195,13 @@ bool copy_frame_data(AVFrame* frame, VideoFrame& vf) {
     }
 
     // Add additional safety check for extremely large buffers
-    const size_t max_safe_buffer = 256 * 1024 * 1024; // 256MB max
+    const size_t max_safe_buffer = 32 * 1024 * 1024; // Reduced from 256MB to 32MB
     if (static_cast<size_t>(buf_size) > max_safe_buffer) {
         ve::log::error("Buffer size too large for safe allocation: " + std::to_string(buf_size) + " bytes (max: " + std::to_string(max_safe_buffer) + ")");
         return false;
     }
+
+    ve::log::info("DEBUG: Allocating VideoFrame buffer: " + std::to_string(buf_size) + " bytes");
 
     try {
         vf.data.resize(static_cast<size_t>(buf_size));
@@ -194,15 +214,36 @@ bool copy_frame_data(AVFrame* frame, VideoFrame& vf) {
     }
 
     // Use simple memcpy approach for common formats
-    if (fmt == AV_PIX_FMT_YUV420P) {
+    if (fmt == AV_PIX_FMT_YUV420P || fmt == AV_PIX_FMT_YUVJ420P) {
         // Manual YUV420P copy - most common format
         uint8_t* dst = vf.data.data();
+        
+        // Add safety checks for frame data pointers
+        if (!frame->data[0] || !frame->data[1] || !frame->data[2]) {
+            ve::log::error("Invalid frame data pointers: Y=" + std::string(frame->data[0] ? "valid" : "null") +
+                          " U=" + std::string(frame->data[1] ? "valid" : "null") +
+                          " V=" + std::string(frame->data[2] ? "valid" : "null"));
+            return false;
+        }
+        
+        // Check linesize values for safety
+        if (frame->linesize[0] < width || frame->linesize[1] < width/2 || frame->linesize[2] < width/2) {
+            ve::log::error("Invalid linesize values: Y=" + std::to_string(frame->linesize[0]) +
+                          " U=" + std::to_string(frame->linesize[1]) +
+                          " V=" + std::to_string(frame->linesize[2]) +
+                          " (expected Y>=" + std::to_string(width) + ", UV>=" + std::to_string(width/2) + ")");
+            return false;
+        }
+        
+        ve::log::info("DEBUG: Starting YUV420P frame copy - Y plane");
         
         // Copy Y plane
         for (int y = 0; y < height; y++) {
             memcpy(dst + y * width, frame->data[0] + y * frame->linesize[0], static_cast<size_t>(width));
         }
         dst += width * height;
+        
+        ve::log::info("DEBUG: YUV420P Y plane copied, starting U plane");
         
         // Copy U plane
         int uv_width = width / 2;
@@ -212,10 +253,14 @@ bool copy_frame_data(AVFrame* frame, VideoFrame& vf) {
         }
         dst += uv_width * uv_height;
         
+        ve::log::info("DEBUG: YUV420P U plane copied, starting V plane");
+        
         // Copy V plane
         for (int y = 0; y < uv_height; y++) {
             memcpy(dst + y * uv_width, frame->data[2] + y * frame->linesize[2], static_cast<size_t>(uv_width));
         }
+        
+        ve::log::info("DEBUG: YUV420P frame copy completed successfully");
         return true;
     } else if (fmt == AV_PIX_FMT_NV12) {
         // Manual NV12 copy - common for hardware decoding
@@ -235,6 +280,14 @@ bool copy_frame_data(AVFrame* frame, VideoFrame& vf) {
         return true;
     } else {
         // Fallback to av_image functions for other formats
+        ve::log::info("DEBUG: Using av_image_copy fallback for pixel format: " + std::to_string(fmt));
+        
+        // Add safety checks for frame data pointers
+        if (!frame->data[0]) {
+            ve::log::error("Invalid frame data pointer in fallback path: Y=null");
+            return false;
+        }
+        
         uint8_t* dst_data[4] = {nullptr, nullptr, nullptr, nullptr};
         int      dst_lines[4] = {0, 0, 0, 0};
         
@@ -244,9 +297,11 @@ bool copy_frame_data(AVFrame* frame, VideoFrame& vf) {
             return false;
         }
 
+        ve::log::info("DEBUG: Calling av_image_copy for format " + std::to_string(fmt));
         av_image_copy(dst_data, dst_lines,
                       const_cast<const uint8_t**>(frame->data), frame->linesize,
                       fmt, width, height);
+        ve::log::info("DEBUG: av_image_copy completed successfully");
         return true;
     }
 }
@@ -494,22 +549,47 @@ public:
     }
 
     std::optional<VideoFrame> read_video() override {
-        if(!video_codec_ctx_) return std::nullopt;
+        ve::log::info("DEBUG: read_video() starting");
+        static bool no_copy_mode = (std::getenv("VE_DECODE_NO_COPY") != nullptr);
+        
+        // Monitor memory usage
+        static size_t total_frames_processed = 0;
+        total_frames_processed++;
+        
+        if (total_frames_processed % 5 == 0) {
+            ve::log::info("DEBUG: Memory pressure check - processed " + std::to_string(total_frames_processed) + " frames");
+        }
+        
+        // Add processing delay to reduce memory pressure
+        std::this_thread::sleep_for(std::chrono::milliseconds(16)); // ~60 FPS max
+        if(!video_codec_ctx_) {
+            ve::log::info("DEBUG: read_video() - no video codec context");
+            return std::nullopt;
+        }
         
         static int consecutive_failures = 0;
         const int max_consecutive_failures = 10; // Prevent infinite loops
         
         while(true) {
-            if(av_read_frame(fmt_, packet_) < 0) return std::nullopt; // EOF
+            ve::log::info("DEBUG: read_video() - reading frame loop iteration, failures=" + std::to_string(consecutive_failures));
+            if(av_read_frame(fmt_, packet_) < 0) {
+                ve::log::info("DEBUG: read_video() - EOF on av_read_frame");
+                return std::nullopt; // EOF
+            }
+            ve::log::info("DEBUG: read_video() - read packet successfully, stream_index=" + std::to_string(packet_->stream_index));
             if(packet_->stream_index != video_stream_index_) {
                 // If it's audio packet and we have audio decoder, stash for later? For simplicity just push back by re-queue: drop.
+                ve::log::info("DEBUG: read_video() - skipping non-video packet (stream " + std::to_string(packet_->stream_index) + ")");
                 av_packet_unref(packet_);
                 continue;
             }
+            ve::log::info("DEBUG: read_video() - processing video packet, calling decode_packet");
             if(decode_packet(video_codec_ctx_, packet_)) {
+                ve::log::info("DEBUG: read_video() - decode_packet successful, processing frame");
                 av_packet_unref(packet_);
                 
                 // Add frame size safety checks
+                ve::log::info("DEBUG: read_video() - checking frame dimensions: " + std::to_string(frame_->width) + "x" + std::to_string(frame_->height));
                 if (frame_->width <= 0 || frame_->height <= 0) {
                     ve::log::error("Invalid frame dimensions: " + std::to_string(frame_->width) + "x" + std::to_string(frame_->height));
                     consecutive_failures++;
@@ -545,13 +625,15 @@ public:
                     continue;
                 }
                 
-                VideoFrame vf;
-                vf.width = frame_->width;
-                vf.height = frame_->height;
-                vf.pts = frame_->pts == AV_NOPTS_VALUE ? 0 : av_rescale_q(frame_->pts, fmt_->streams[video_stream_index_]->time_base, AVRational{1,1000000});
-                
-                // Detect color space with comprehensive support
-                switch (frame_->colorspace) {
+                // Create VideoFrame in try-catch block to detect any construction issues
+                try {
+                    VideoFrame vf;
+                    vf.width = frame_->width;
+                    vf.height = frame_->height;
+                    vf.pts = frame_->pts == AV_NOPTS_VALUE ? 0 : av_rescale_q(frame_->pts, fmt_->streams[video_stream_index_]->time_base, AVRational{1,1000000});
+
+                    // Detect color space with comprehensive support
+                    switch (frame_->colorspace) {
                     case AVCOL_SPC_BT709:
                         vf.color_space = ColorSpace::BT709;
                         break;
@@ -597,7 +679,12 @@ public:
                     return std::nullopt;
                 }
                 
-                // Copy frame data based on format
+                // Copy frame data based on format (optional no-copy mode for stability testing)
+                if (no_copy_mode) {
+                    ve::log::info("DEBUG: NO-COPY mode enabled - returning VideoFrame with empty data buffer");
+                    vf.format = map_pixel_format(frame_->format);
+                    vf.data.clear();
+                } else {
 #if defined(_WIN32) && VE_ENABLE_D3D11VA
                 if (frame_->format == AV_PIX_FMT_D3D11) {
                     // D3D11VA temporarily disabled due to stability issues
@@ -639,6 +726,7 @@ public:
                     continue; // Try next frame
                 }
 #endif
+                }
                 
                 // Success - reset failure counter
                 consecutive_failures = 0;
@@ -649,7 +737,50 @@ public:
                               ", format: " + std::to_string(static_cast<int>(vf.format)) + 
                               ", data size: " + std::to_string(vf.data.size()) + " bytes");
                 
+                ve::log::info("DEBUG: About to return VideoFrame from read_video()");
+                
+                // Add memory monitoring for debugging
+                size_t frame_size = vf.data.size();
+                ve::log::info("DEBUG: VideoFrame size: " + std::to_string(frame_size) + " bytes (" + std::to_string(frame_size / 1024 / 1024) + " MB)");
+                
+                // Critical: Unref the AVFrame after successful copy to prevent memory leaks
+                av_frame_unref(frame_);
+                ve::log::info("DEBUG: AVFrame unreferenced after VideoFrame creation");
+                
+                // Add explicit memory cleanup to prevent accumulation
+                static int frame_counter = 0;
+                frame_counter++;
+                if (frame_counter % 10 == 0) {
+                    ve::log::info("DEBUG: Triggering explicit cleanup after " + std::to_string(frame_counter) + " frames");
+                    // Force any pending cleanup
+                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                }
+                
+                // Reduce processing speed to prevent resource exhaustion
+                std::this_thread::sleep_for(std::chrono::milliseconds(3));
+                ve::log::info("DEBUG: Frame processing delay applied for stability");
+                
                 return vf;
+                
+                } catch (const std::exception& e) {
+                    av_frame_unref(frame_); // Critical: Clean up AVFrame on exception
+                    ve::log::error("Exception during VideoFrame creation/return: " + std::string(e.what()));
+                    consecutive_failures++;
+                    if (consecutive_failures >= max_consecutive_failures) {
+                        ve::log::error("Too many consecutive VideoFrame creation failures, aborting");
+                        return std::nullopt;
+                    }
+                    continue; // Try next frame
+                } catch (...) {
+                    av_frame_unref(frame_); // Critical: Clean up AVFrame on unknown exception
+                    ve::log::error("Unknown exception during VideoFrame creation/return");
+                    consecutive_failures++;
+                    if (consecutive_failures >= max_consecutive_failures) {
+                        ve::log::error("Too many consecutive unknown VideoFrame creation failures, aborting");
+                        return std::nullopt;
+                    }
+                    continue; // Try next frame
+                }
             }
             av_packet_unref(packet_);
         }

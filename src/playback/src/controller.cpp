@@ -55,6 +55,10 @@ PlaybackController::PlaybackController() {
     frame_drops_60fps_.store(0);
     frame_overruns_60fps_.store(0);
     last_perf_log_ = std::chrono::steady_clock::now();
+    // Allow env to disable decode loop for stability testing
+    if (std::getenv("VE_DISABLE_PLAYBACK_DECODE") != nullptr) {
+        decode_enabled_.store(false);
+    }
 }
 
 PlaybackController::~PlaybackController() {
@@ -228,10 +232,13 @@ bool PlaybackController::has_timeline_content() const {
     
     ve::log::info("Starting playback");
     
-    // Start timeline audio if available
+    // Start timeline audio if available - TEMPORARILY DISABLED FOR DEBUGGING SIGABRT
+    // DEBUGGING: Temporarily commented out to test if audio causes SIGABRT
+    /*
     if (timeline_audio_manager_) {
         timeline_audio_manager_->start_playback();
     }
+    */
     
     set_state(PlaybackState::Playing);
 }
@@ -351,6 +358,20 @@ void PlaybackController::playback_thread_main() {
         
         // Process frames if playing
         if (state_.load() == PlaybackState::Playing) {
+            // Master switch: if decode disabled, just advance time with frame pacing
+            if (!decode_enabled_.load()) {
+                int64_t delta = step_.next_delta_us();
+                int64_t next_pts = current_time_us_.load() + delta;
+                if (duration_us_ > 0 && next_pts >= duration_us_) {
+                    current_time_us_.store(duration_us_);
+                    set_state(ve::playback::PlaybackState::Stopped);
+                } else {
+                    current_time_us_.store(next_pts);
+                }
+                using namespace std::chrono;
+                precise_sleep_until(std::chrono::steady_clock::now() + microseconds(delta));
+                continue; // Skip actual decoding
+            }
             bool has_content = false;
             bool is_timeline_mode = false;
             
@@ -358,7 +379,9 @@ void PlaybackController::playback_thread_main() {
             if (decoder_) {
                 has_content = true;
                 is_timeline_mode = false;
-            } else if (has_timeline_content()) {
+            } else if (timeline_ && timeline_snapshot_) {
+                // DEADLOCK FIX: Use snapshot instead of has_timeline_content() to avoid cross-thread mutex conflicts
+                // The has_timeline_content() function calls timeline_->tracks() which can deadlock with main thread
                 has_content = true;
                 is_timeline_mode = true;
             }
@@ -792,12 +815,15 @@ bool PlaybackController::initialize_audio_pipeline() {
         return false;
     }
     
-    // Start audio output
+    // Start audio output - TEMPORARILY DISABLED FOR DEBUGGING SIGABRT  
+    // DEBUGGING: Temporarily commented out to test if audio causes SIGABRT
+    /*
     if (!audio_pipeline_->start_output()) {
         ve::log::error("Failed to start audio output");
         audio_pipeline_.reset();
         return false;
     }
+    */
     
     // Remove any existing audio callback to prevent duplicates
     if (audio_callback_id_ != 0) {

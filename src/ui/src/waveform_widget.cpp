@@ -1,8 +1,17 @@
 /**
  * @file waveform_widget.cpp
- * @brief Implementation of High-Performance Qt Waveform Widget
- * 
- * Week 8 Qt Timeline UI Integration - Complete implementation of professional
+ * @brief Implementation of High-Performance Qt Waveform Widge    // Setup refresh timer for smooth animation
+    refresh_timer_->setInterval(1000 / refresh_rate_); // 60fps default
+    connect(refresh_timer_.get(), &QTimer::timeout, this, &QWaveformWidget::update_rendering);
+    
+    // Setup background update timer for waveform data
+    update_timer_->setInterval(100); // 10Hz background updates
+    connect(update_timer_.get(), &QTimer::timeout, this, &QWaveformWidget::update_waveform_data);
+    
+    // Start timers
+    if (auto_refresh_) {
+        refresh_timer_->start();
+        update_timer_->start();eek 8 Qt Timeline UI Integration - Complete implementation of professional
  * waveform visualization widget with real-time rendering, mouse interaction,
  * and integration with Week 7 waveform generation system.
  */

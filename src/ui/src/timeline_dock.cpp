@@ -124,7 +124,8 @@ void TimelineWidget::set_current_time(ve::TimePoint time) {
         int pixel_pos = time_to_pixel(time);
         ve::log::info("Timeline playhead: " + std::to_string(seconds) + "s at pixel " + std::to_string(pixel_pos));
     }
-    update(); // Trigger repaint for playhead position
+    // Defer repaint to avoid painting on caller's stack (reduces re-entrancy risk)
+    QMetaObject::invokeMethod(this, [this]() { this->update(); }, Qt::QueuedConnection);
 }
 
 void TimelineWidget::set_playback_controller(ve::playback::PlaybackController* controller) {
@@ -152,6 +153,9 @@ void TimelineWidget::zoom_fit() {
 }
 
 void TimelineWidget::paintEvent(QPaintEvent* event) {
+    Q_UNUSED(event);
+    // Prevent re-entrant paints that can occur from cascading updates
+    if (painting_.exchange(true)) { repaint_pending_.store(true); return; }
     QPainter painter(this);
     painter.fillRect(rect(), QColor(40, 40, 40)); // Dark background
     
@@ -169,6 +173,12 @@ void TimelineWidget::paintEvent(QPaintEvent* event) {
     
     draw_tracks(painter, rect());
     draw_playhead(painter); // Draw playhead on top of tracks
+
+    // Release guard and schedule pending repaint if requested during paint
+    painting_.store(false);
+    if (repaint_pending_.exchange(false)) {
+        QMetaObject::invokeMethod(this, [this]() { this->update(); }, Qt::QueuedConnection);
+    }
 }
 
 void TimelineWidget::draw_default_empty_tracks(QPainter& painter, const QRect& rect) {
@@ -237,6 +247,7 @@ void TimelineWidget::draw_tracks(QPainter& painter, const QRect& rect) {
         // Draw segments if any
         const auto& segments = track.segments();
         for (const auto& segment : segments) {
+            Q_UNUSED(segment);
             // Simple segment visualization
             int segment_x = header_width_ + 10;
             int segment_width = 100; // Fixed width for now
@@ -251,7 +262,7 @@ void TimelineWidget::draw_tracks(QPainter& painter, const QRect& rect) {
     // Timeline ruler
     painter.fillRect(0, 0, rect.width(), 30, QColor(60, 60, 60));
     painter.setPen(QColor(180, 180, 180));
-    painter.drawText(10, 20, QString("Timeline (%1 tracks)").arg(tracks.size()));
+    painter.drawText(10, 20, QString("Timeline (%1 tracks)").arg(static_cast<int>(tracks.size())));
 }
 
 void TimelineWidget::draw_playhead(QPainter& painter) {
@@ -277,7 +288,12 @@ void TimelineWidget::draw_playhead(QPainter& painter) {
 
 int TimelineWidget::time_to_pixel(ve::TimePoint time) const {
     double pixels_per_second = MIN_PIXELS_PER_SECOND * zoom_factor_;
-    double seconds = static_cast<double>(time.to_rational().num) / time.to_rational().den;
+    auto r = time.to_rational();
+    if (r.den == 0) {
+        ve::log::error("TimelineWidget::time_to_pixel - invalid time denominator=0; clamping to header width");
+        return header_width_;
+    }
+    double seconds = static_cast<double>(r.num) / r.den;
     int pixel_pos = header_width_ + static_cast<int>(seconds * pixels_per_second);
     
     // Ensure playhead is always visible, even at time 0
@@ -363,8 +379,11 @@ void TimelineDock::set_zoom(double zoom_factor) {
 }
 
 void TimelineDock::set_current_time(ve::TimePoint time) {
+    // Set the time immediately, but defer repaint to avoid repaint during caller's stack
     timeline_widget_->set_current_time(time);
-    timeline_widget_->update(); // Explicit update to ensure repaint
+    QMetaObject::invokeMethod(timeline_widget_, [w=timeline_widget_]() {
+        if (w) w->update();
+    }, Qt::QueuedConnection);
 }
 
 void TimelineDock::set_playback_controller(ve::playback::PlaybackController* controller) {

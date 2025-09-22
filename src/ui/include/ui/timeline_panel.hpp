@@ -13,6 +13,7 @@
 #include <limits>
 #include <unordered_map>
 #include <chrono>
+#include <atomic>
 
 // Forward declarations
 namespace ve::commands { class Command; }
@@ -241,6 +242,10 @@ private:
     ve::timeline::Timeline* timeline_;
     ve::TimePoint current_time_;
     double zoom_factor_;
+    
+    // Paint re-entrancy protection (Qt crash prevention)
+    std::atomic<bool> painting_{false};
+    std::atomic<bool> repaint_pending_{false};
     
     // Video playback integration
     ve::playback::PlaybackController* playback_controller_;

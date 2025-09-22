@@ -14,6 +14,7 @@
 #include <limits>
 #include <unordered_map>
 #include <chrono>
+#include <atomic>
 
 // Forward declarations
 namespace ve::commands { class Command; }
@@ -80,6 +81,10 @@ private:
     QTimer* throttle_timer_;
     bool pending_heavy_update_;
     int segments_being_added_;
+
+    // Paint re-entrancy guard (prevents nested paint leading to abort)
+    std::atomic<bool> painting_{false};
+    std::atomic<bool> repaint_pending_{false};
     
     // Drawing methods
     void draw_minimal_timeline(QPainter& painter, const QRect& rect);

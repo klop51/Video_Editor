@@ -1,11 +1,5 @@
 {
   "samples": [
-    { "name": "to_rgba_scaled_view", "count": 6, "total_ms": 2.5376, "avg_ms": 0.422933, "min_ms": 0.311, "max_ms": 0.6004, "p50_ms": 0.4092, "p95_ms": 0.4529 },
-    { "name": "to_rgba_scaled_view.sws_scale", "count": 6, "total_ms": 2.21, "avg_ms": 0.368333, "min_ms": 0.299, "max_ms": 0.4202, "p50_ms": 0.3419, "p95_ms": 0.4199 },
-    { "name": "playback.cache_hit", "count": 1, "total_ms": 19.7045, "avg_ms": 19.7045, "min_ms": 19.7045, "max_ms": 19.7045, "p50_ms": 19.7045, "p95_ms": 19.7045 },
-    { "name": "playback.decode_audio", "count": 5, "total_ms": 0.5176, "avg_ms": 0.10352, "min_ms": 0.0595, "max_ms": 0.1749, "p50_ms": 0.072, "p95_ms": 0.1449 },
-    { "name": "viewer.display_frame", "count": 7, "total_ms": 6.5424, "avg_ms": 0.934629, "min_ms": 0.4047, "max_ms": 1.613, "p50_ms": 0.9668, "p95_ms": 1.0361 },
-    { "name": "to_rgba_scaled_view.ffmpeg", "count": 6, "total_ms": 2.4287, "avg_ms": 0.404783, "min_ms": 0.309, "max_ms": 0.5677, "p50_ms": 0.3508, "p95_ms": 0.4498 },
-    { "name": "playback.decode_video", "count": 4, "total_ms": 117.129, "avg_ms": 29.2824, "min_ms": 17.723, "max_ms": 37.3085, "p50_ms": 28.7712, "p95_ms": 33.3267 }
+
   ]
 }

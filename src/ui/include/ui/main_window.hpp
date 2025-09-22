@@ -9,6 +9,7 @@
 #include <QQueue>
 #include <memory>
 #include <string>
+#include <atomic>
 
 QT_BEGIN_NAMESPACE
 class QMenuBar;
@@ -221,6 +222,10 @@ private:
     QAction* go_to_end_action_;
     QAction* toggle_fps_overlay_action_{};
     QAction* toggle_preview_fit_action_{};
+    QAction* toggle_timeline_sync_action_{};
+    QAction* toggle_fps_status_action_{}; // Show FPS in status bar
+    QAction* toggle_position_ui_action_{}; // Update status time while playing
+    QAction* toggle_playback_ui_ticks_action_{}; // Master switch for playback UI tick work
     
     // Audio controls
     QAction* mute_audio_action_;
@@ -243,6 +248,12 @@ private:
     ve::playback::PlaybackController* playback_controller_;
     std::unique_ptr<ve::commands::CommandHistory> command_history_;
     QTimer* position_update_timer_;
+    std::atomic<bool> updating_position_{false};  // Patch 3: Prevent overlapping timer callbacks
+    bool timeline_sync_enabled_{false};            // UI toggle for playhead -> timeline sync
+    bool fps_status_enabled_{false};               // UI toggle for FPS status label updates
+    bool position_ui_enabled_{true};               // UI toggle for time label updates
+    bool playback_ui_ticks_enabled_{false};        // Master switch; default off for stability
+    std::atomic<bool> timeline_time_update_pending_{false}; // Coalesce queued timeline time updates
     
     QString current_project_path_;
     bool project_modified_;

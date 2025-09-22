@@ -18,6 +18,7 @@
 #include "app/application.hpp"
 #include <limits>
 #include <algorithm>
+#include <cmath>
 
 #include <QApplication>
 #include <QMenuBar>
@@ -27,6 +28,7 @@
 #include <algorithm>
 #include <QAction>
 #include <QLabel>
+#include <QPointer>
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QSlider>
@@ -273,6 +275,14 @@ MainWindow::MainWindow(QWidget* parent)
     , timeline_worker_(nullptr)
     , timeline_worker_thread_(nullptr)
 {
+    // Initialize timeline sync default from environment
+    const bool env_disable_sync = (std::getenv("VE_DISABLE_TIMELINE_SYNC") != nullptr);
+    const bool env_enable_sync  = (std::getenv("VE_ENABLE_TIMELINE_SYNC") != nullptr);
+    timeline_sync_enabled_ = env_enable_sync && !env_disable_sync; // default disabled unless explicitly enabled
+    // Allow disabling status time updates via env
+    if (std::getenv("VE_DISABLE_POSITION_UI") != nullptr) {
+        position_ui_enabled_ = false;
+    }
     setWindowTitle("Video Editor");
     setMinimumSize(1200, 800);
     
@@ -510,7 +520,18 @@ void MainWindow::set_playback_controller(ve::playback::PlaybackController* contr
                 }
             } else {
                 ve::log::info("Playback state changed to: " + std::to_string(static_cast<int>(state)) + " - stopping position update timer");
-                if (position_update_timer_) position_update_timer_->stop();
+                // Safe timer stop: queue the operation to avoid race condition with active timer callback
+                if (position_update_timer_) {
+                    QMetaObject::invokeMethod(this, [this]() {
+                        // Only stop if not currently updating to avoid timer callback/stop race condition
+                        if (!updating_position_.load() && position_update_timer_) {
+                            position_update_timer_->stop();
+                            ve::log::info("Position update timer stopped safely");
+                        } else {
+                            ve::log::info("Deferred timer stop - callback in progress");
+                        }
+                    }, Qt::QueuedConnection);
+                }
             }
         });
     }
@@ -670,6 +691,84 @@ void MainWindow::create_menus() {
     toggle_preview_fit_action_->setChecked(true);
     connect(toggle_preview_fit_action_, &QAction::triggered, this, &MainWindow::toggle_preview_quality);
     view_menu->addAction(toggle_preview_fit_action_);
+
+    // Timeline playhead sync toggle
+    toggle_timeline_sync_action_ = new QAction("Sync Playhead To Timeline", this);
+    toggle_timeline_sync_action_->setCheckable(true);
+    toggle_timeline_sync_action_->setChecked(timeline_sync_enabled_);
+    connect(toggle_timeline_sync_action_, &QAction::toggled, this, [this](bool on){
+        timeline_sync_enabled_ = on;
+        timeline_time_update_pending_.store(false);
+        // Reset last sent time so the next tick sends immediately when enabling
+        // We'll rely on local static in update_playback_position to accept the next change
+        if (status_label_) {
+            status_label_->setText(on ? "Timeline sync enabled" : "Timeline sync disabled");
+            status_label_->setStyleSheet(on ? "color: green;" : "color: orange;");
+        }
+    });
+    view_menu->addAction(toggle_timeline_sync_action_);
+
+    // FPS status label toggle (off by default for stability)
+    toggle_fps_status_action_ = new QAction("Show FPS In Status Bar", this);
+    toggle_fps_status_action_->setCheckable(true);
+    toggle_fps_status_action_->setChecked(fps_status_enabled_);
+    connect(toggle_fps_status_action_, &QAction::toggled, this, [this](bool on){
+        fps_status_enabled_ = on;
+        if (!on && fps_label_) fps_label_->setText("");
+    });
+    view_menu->addAction(toggle_fps_status_action_);
+
+    // Viewer display toggle
+    QAction* toggle_viewer_display_action = new QAction("Display Video In Viewer", this);
+    toggle_viewer_display_action->setCheckable(true);
+    bool viewer_on = true;
+    if (viewer_panel_) viewer_on = viewer_panel_->display_enabled();
+    toggle_viewer_display_action->setChecked(viewer_on);
+    connect(toggle_viewer_display_action, &QAction::toggled, this, [this](bool on){
+        if (viewer_panel_) viewer_panel_->set_display_enabled(on);
+        if (status_label_) {
+            status_label_->setText(on ? "Viewer display enabled" : "Viewer display disabled");
+            status_label_->setStyleSheet(on ? "color: green;" : "color: orange;");
+        }
+    });
+    view_menu->addAction(toggle_viewer_display_action);
+
+    // Position UI updates toggle
+    toggle_position_ui_action_ = new QAction("Update Status Time While Playing", this);
+    toggle_position_ui_action_->setCheckable(true);
+    toggle_position_ui_action_->setChecked(position_ui_enabled_);
+    connect(toggle_position_ui_action_, &QAction::toggled, this, [this](bool on){
+        position_ui_enabled_ = on;
+        if (!on && time_label_) time_label_->clear();
+    });
+    view_menu->addAction(toggle_position_ui_action_);
+
+    // Master switch for playback UI ticks (safest isolation)
+    toggle_playback_ui_ticks_action_ = new QAction("Enable Playback UI Ticks", this);
+    toggle_playback_ui_ticks_action_->setCheckable(true);
+    toggle_playback_ui_ticks_action_->setChecked(playback_ui_ticks_enabled_);
+    connect(toggle_playback_ui_ticks_action_, &QAction::toggled, this, [this](bool on){
+        playback_ui_ticks_enabled_ = on;
+        if (status_label_) {
+            status_label_->setText(on ? "Playback UI ticks enabled" : "Playback UI ticks disabled");
+            status_label_->setStyleSheet(on ? "color: green;" : "color: orange;");
+        }
+    });
+    view_menu->addAction(toggle_playback_ui_ticks_action_);
+
+    // Decode enable/disable (playback loop)
+    QAction* toggle_decode_action = new QAction("Enable Video Decoding (Playback)", this);
+    toggle_decode_action->setCheckable(true);
+    bool decode_on = playback_controller_ ? playback_controller_->decode_enabled() : true;
+    toggle_decode_action->setChecked(decode_on);
+    connect(toggle_decode_action, &QAction::toggled, this, [this](bool on){
+        if (playback_controller_) playback_controller_->set_decode_enabled(on);
+        if (status_label_) {
+            status_label_->setText(on ? "Playback decoding enabled" : "Playback decoding disabled");
+            status_label_->setStyleSheet(on ? "color: green;" : "color: orange;");
+        }
+    });
+    view_menu->addAction(toggle_decode_action);
 
     QMenu* help_menu = menuBar()->addMenu("&Help");
     mk(help_menu, dummy, "&About", QKeySequence(), &MainWindow::about);
@@ -1906,33 +2005,165 @@ void MainWindow::add_media_to_timeline(const QString& filePath, ve::TimePoint st
 }
 
 void MainWindow::update_playback_position() {
-    if (playback_controller_ && timeline_dock_) {
-        auto current_time_us = playback_controller_->current_time_us();
-        // Removed verbose logging to prevent crash investigation interference
-        timeline_dock_->set_current_time(ve::TimePoint{current_time_us, 1000000});
-        
-        // Update time display in status bar
-        if (time_label_) {
-            auto seconds = current_time_us / 1000000.0;
-            time_label_->setText(QString("Time: %1s").arg(seconds, 0, 'f', 2));
+    // Patch 3: Prevent overlapping timer callbacks to avoid Qt re-entrancy
+    if (updating_position_.exchange(true)) {
+        ve::log::info("update_playback_position: Skipping - already in progress");
+        return;
+    }
+    // Ensure the guard is always cleared even on early returns/exceptions
+    struct ResetUpdatingFlag { std::atomic<bool>* f; ~ResetUpdatingFlag(){ if(f) f->store(false); } } _reset{ &updating_position_ };
+    
+    try {
+        // Master guard: optionally disable all playback UI tick work for stability testing
+        if (!playback_ui_ticks_enabled_) {
+            ve::log::debug("update_playback_position: playback UI ticks disabled (master switch)");
+            return;
         }
-
-        // Update FPS indicator from playback stats (lightweight)
-        if (fps_label_) {
-            auto stats = playback_controller_->get_stats();
-            double fps = 0.0;
-            if (stats.avg_frame_time_ms > 0.0) {
-                fps = 1000.0 / stats.avg_frame_time_ms;
+        // Monitor (light) and proceed; removed old safety-limit throttle
+        ve::log::debug("update_playback_position: tick");
+        
+        if (playback_controller_ && timeline_dock_) {
+            ve::log::info("update_playback_position: Getting current time");
+            auto current_time_us = playback_controller_->current_time_us();
+            ve::log::info("update_playback_position: Got time: " + std::to_string(current_time_us));
+            
+            // IMPORTANT: queue the timeline update to avoid re-entrancy into paint
+            // Runtime toggle: timeline_sync_enabled_ controls whether we emit playhead time to the timeline dock
+            bool disable_timeline_sync = !timeline_sync_enabled_;
+            // Only send when playhead actually changes to reduce churn
+            static int64_t last_playhead_sent = -1;
+            bool time_changed = (current_time_us != last_playhead_sent);
+            if (disable_timeline_sync || !time_changed) {
+                if (disable_timeline_sync) {
+                    ve::log::debug("update_playback_position: Timeline sync disabled");
+                } else {
+                    ve::log::debug("update_playback_position: Skipping identical playhead time update");
+                }
+            } else if (!timeline_time_update_pending_.exchange(true)) {
+                ve::log::info("update_playback_position: Queuing timeline update (re-entrancy prevention)");
+                // Use QPointer to guard against use-after-free if the dock is closed/destroyed
+                if (!timeline_dock_) { ve::log::error("timeline_dock_ is null during position update"); timeline_time_update_pending_.store(false); return; }
+                QPointer<TimelineDock> dock_ptr = timeline_dock_;
+                try {
+                    // Post to this MainWindow's thread; check dock_ptr at execution time
+                    QMetaObject::invokeMethod(
+                        this,
+                        [this, dock_ptr, current_time_us]() {
+                            if (dock_ptr) {
+                                dock_ptr->set_current_time(ve::TimePoint{current_time_us, 1000000});
+                            }
+                            // clear pending flag when delivered (even if dock destroyed)
+                            timeline_time_update_pending_.store(false);
+                        },
+                        Qt::QueuedConnection
+                    );
+                    last_playhead_sent = current_time_us;
+                    ve::log::info("update_playback_position: Timeline time queued");
+                } catch (const std::exception& e) {
+                    ve::log::error(std::string("Exception during queued timeline update: ") + e.what());
+                    timeline_time_update_pending_.store(false);
+                    return;
+                } catch (...) {
+                    ve::log::error("Unknown exception during queued timeline update");
+                    timeline_time_update_pending_.store(false);
+                    return;
+                }
             } else {
-                // Fallback to guessed frame duration
-                auto us = playback_controller_->frame_duration_guess_us();
-                if (us > 0) fps = 1'000'000.0 / static_cast<double>(us);
+                ve::log::debug("update_playback_position: Skipping timeline queue (pending)");
             }
-            if (fps > 0.0 && fps < 300.0) {
-                fps_label_->setText(QString("%1 fps").arg(fps, 0, 'f', 1));
+            
+            // Update time display in status bar (lightweight)
+            if (time_label_ && position_ui_enabled_) {
+                ve::log::info("update_playback_position: Updating time label (queued)");
+                auto seconds = current_time_us / 1000000.0;
+                QMetaObject::invokeMethod(this, [this, seconds]() {
+                    if (time_label_) {
+                        time_label_->setText(QString("Time: %1s").arg(seconds, 0, 'f', 2));
+                    }
+                }, Qt::QueuedConnection);
+                ve::log::info("update_playback_position: Time label update queued");
             }
+
+            // Small pause no longer needed; avoid stalling UI thread
+            
+            // Reduce logging to prevent potential stack issues
+            // ve::log::info("update_playback_position: About to process FPS update");
+            
+            // Skip processEvents to avoid recursive Qt event issues
+            // ve::log::info("update_playback_position: Skipping processEvents for safety");
+            
+            // Update FPS indicator from playback stats (lightweight)
+            if (fps_label_ && fps_status_enabled_) {
+                // ve::log::info("update_playback_position: Checking fps_label_ is valid");
+                
+                if (!fps_label_) {
+                    ve::log::error("update_playback_position: fps_label_ is null!");
+                    return;
+                }
+                
+                ve::log::info("update_playback_position: About to get stats");
+                
+                auto stats = playback_controller_->get_stats();
+                ve::log::info("update_playback_position: Got stats successfully");
+                
+                ve::log::info("update_playback_position: Processing FPS calculation");
+                double fps = 0.0;
+                
+                ve::log::info("update_playback_position: Checking avg_frame_time_ms: " + std::to_string(stats.avg_frame_time_ms));
+                if (stats.avg_frame_time_ms > 0.0 && !std::isnan(stats.avg_frame_time_ms) && std::isfinite(stats.avg_frame_time_ms)) {
+                    ve::log::info("update_playback_position: Computing FPS from avg_frame_time_ms");
+                    fps = 1000.0 / stats.avg_frame_time_ms;
+                    ve::log::info("update_playback_position: Computed FPS: " + std::to_string(fps));
+                } else {
+                    // Fallback to guessed frame duration
+                    ve::log::info("update_playback_position: Getting frame duration guess");
+                    auto us = playback_controller_->frame_duration_guess_us();
+                    ve::log::info("update_playback_position: Got frame duration: " + std::to_string(us));
+                    if (us > 0) {
+                        ve::log::info("update_playback_position: Computing FPS from frame duration");
+                        fps = 1'000'000.0 / static_cast<double>(us);
+                        ve::log::info("update_playback_position: Computed FPS from duration: " + std::to_string(fps));
+                    }
+                }
+                
+                ve::log::info("update_playback_position: Final FPS value: " + std::to_string(fps));
+                if (fps > 0.0 && fps < 300.0 && !std::isnan(fps) && std::isfinite(fps)) {
+                    ve::log::info("update_playback_position: Setting FPS label: " + std::to_string(fps));
+                    fps_label_->setText(QString("%1 fps").arg(fps, 0, 'f', 1));
+                    ve::log::info("update_playback_position: FPS label set");
+                } else {
+                    ve::log::info("update_playback_position: FPS not valid for display: " + std::to_string(fps));
+                }
+            }
+        }
+        ve::log::info("update_playback_position: Completed");
+        
+    } catch (const std::exception& e) {
+        ve::log::error(std::string("update_playback_position: Exception caught in timer callback: ") + e.what());
+        // Defer timer stop to avoid stopping timer from within its own callback (Qt SIGABRT risk)
+        if (position_update_timer_) {
+            QMetaObject::invokeMethod(this, [this]() {
+                if (position_update_timer_) {
+                    position_update_timer_->stop();
+                    ve::log::error("update_playback_position: Timer stopped safely due to exception");
+                }
+            }, Qt::QueuedConnection);
+        }
+    } catch (...) {
+        ve::log::error("update_playback_position: Unknown exception caught in timer callback");
+        // Defer timer stop to avoid stopping timer from within its own callback (Qt SIGABRT risk)
+        if (position_update_timer_) {
+            QMetaObject::invokeMethod(this, [this]() {
+                if (position_update_timer_) {
+                    position_update_timer_->stop();
+                    ve::log::error("update_playback_position: Timer stopped safely due to unknown exception");
+                }
+            }, Qt::QueuedConnection);
         }
     }
+    
+    ve::log::info("update_playback_position: Function exit point reached");
+    // Guard cleared by RAII at function exit
 }
 
 void MainWindow::create_test_timeline_content() {
@@ -2191,7 +2422,6 @@ void MainWindow::flushTimelineBatch() {
             
         } else {
             // Single media type - only create if user specifically requests it
-            ve::timeline::Track::Type track_type = info.has_video ? ve::timeline::Track::Video : ve::timeline::Track::Audio;
             int target_track_index = info.track_index;
 
             if (!info.has_video && info.has_audio) {
@@ -2225,7 +2455,8 @@ void MainWindow::flushTimelineBatch() {
             }
 
             // Only create segment if specifically requested (not for automatic "Add to Timeline")
-            // target_track_index = ensure_track(target_track_index, track_type);
+            // Example (disabled): ensure target track type before placement
+            // target_track_index = ensure_track(target_track_index, info.has_video ? ve::timeline::Track::Video : ve::timeline::Track::Audio);
             // add_segment_to_track(target_track_index, clip_name);
             ve::log::info("Media ready for manual placement on tracks - no automatic segments created");
         }

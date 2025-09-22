@@ -49,7 +49,9 @@ private:
     QMutex mutex_;
 
 #ifndef VE_ENABLE_PBO_UPLOAD
-#define VE_ENABLE_PBO_UPLOAD 1
+// Default PBO uploads to off for stability on wider GPU/driver sets.
+// Set VE_ENABLE_PBO_UPLOAD=1 at compile time or define env VE_DISABLE_PBO to override at runtime.
+#define VE_ENABLE_PBO_UPLOAD 0
 #endif
 #if VE_ENABLE_PBO_UPLOAD
 #ifndef VE_GL_PBO_TRIPLE

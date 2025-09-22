@@ -1,6 +1,7 @@
 // Ensure high DPI policy is applied before constructing QApplication-derived instance.
 #include <QApplication>
 #include "app/application.hpp"
+#include "../../core/crash_trap.hpp"
 #include <iostream>
 #include <exception>
 #ifdef _MSC_VER
@@ -28,6 +29,11 @@ void ve_terminate_handler() {
 
 int main(int argc, char** argv) {
     std::cout << "Video Editor Main starting..." << std::endl;
+    
+    // Install crash traps FIRST to catch crashes during startup
+    ve::install_crash_traps();
+    std::cout << "Crash traps installed" << std::endl;
+    
     std::set_terminate(ve_terminate_handler);
 #ifdef _MSC_VER
     _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);

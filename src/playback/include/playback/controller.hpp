@@ -104,6 +104,10 @@ public:
     Stats get_stats() const { return stats_; }
     double cache_hit_ratio() const { int64_t hits=cache_hits_.load(); int64_t lookups=cache_lookups_.load(); return lookups? (double)hits / (double)lookups : 0.0; }
 
+    // Decode enable/disable (for stability/isolation)
+    void set_decode_enabled(bool on) { decode_enabled_.store(on); }
+    bool decode_enabled() const { return decode_enabled_.load(); }
+
 private:
     void playback_thread_main();
     void set_state(PlaybackState new_state);
@@ -183,6 +187,9 @@ private:
     
     // PTS-based deduplication for echo prevention
     std::atomic<int64_t> last_audio_pts_{-1};
+
+    // Master switch to enable/disable video decoding in playback loop
+    std::atomic<bool> decode_enabled_{true};
 };
 
 } // namespace ve::playback
