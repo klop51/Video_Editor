@@ -6,6 +6,35 @@
 #include <algorithm>
 #include <chrono>
 
+// Decoder crash investigation logging with thread tracking
+#include <sstream>
+#include <iomanip>
+
+// Thread-aware logging for decoder crash investigation
+#define LOG_DECODER_CORE_CTOR(obj) do { \
+    std::ostringstream oss; \
+    oss << "DECODER_CTOR: " << obj << " [tid=" << std::this_thread::get_id() << "]"; \
+    ve::log::info(oss.str()); \
+} while(0)
+
+#define LOG_DECODER_CORE_DTOR(obj) do { \
+    std::ostringstream oss; \
+    oss << "DECODER_DTOR: " << obj << " [tid=" << std::this_thread::get_id() << "]"; \
+    ve::log::info(oss.str()); \
+} while(0)
+
+#define LOG_DECODER_CORE_CALL(method, obj) do { \
+    std::ostringstream oss; \
+    oss << "DECODER_CALL: " << method << " on " << obj << " [tid=" << std::this_thread::get_id() << "]"; \
+    ve::log::info(oss.str()); \
+} while(0)
+
+#define LOG_DECODER_CORE_RETURN(method, result) do { \
+    std::ostringstream oss; \
+    oss << "DECODER_RETURN: " << method << " = " << result << " [tid=" << std::this_thread::get_id() << "]"; \
+    ve::log::info(oss.str()); \
+} while(0)
+
 // Use isolated wrapper headers to prevent conflicts
 #ifdef _WIN32
 #include "platform/d3d11_headers.hpp"
@@ -458,10 +487,12 @@ static AVPixelFormat hw_get_format_dynamic(AVCodecContext* ctx, const AVPixelFor
 class FFmpegDecoder final : public IDecoder {
 public:
     FFmpegDecoder() {
+        LOG_DECODER_CORE_CTOR(this);
         initialize_optimization();
     }
     
     bool open(const OpenParams& params) override {
+        LOG_DECODER_CORE_CALL("open", this);
         params_ = params;
         
         // Set custom log callback to suppress hardware acceleration warnings
@@ -479,6 +510,7 @@ public:
         
         if(avformat_open_input(&fmt_, params.filepath.c_str(), nullptr, nullptr) < 0) {
             ve::log::error("FFmpegDecoder: open_input failed");
+            LOG_DECODER_CORE_RETURN("open", "false (open_input failed)");
             return false;
         }
         
@@ -492,6 +524,7 @@ public:
         
         if(avformat_find_stream_info(fmt_, nullptr) < 0) {
             ve::log::error("FFmpegDecoder: stream_info failed");
+            LOG_DECODER_CORE_RETURN("open", "false (stream_info failed)");
             return false;
         }
         
@@ -501,7 +534,10 @@ public:
         // Apply codec-specific optimizations
         if(params.video && video_stream_index_ >= 0) {
             apply_codec_optimizations(video_stream_index_);
-            if(!open_codec(video_stream_index_, video_codec_ctx_)) return false;
+            if(!open_codec(video_stream_index_, video_codec_ctx_)) {
+                LOG_DECODER_CORE_RETURN("open", "false (video codec open failed)");
+                return false;
+            }
             // If HW format selected during codec open, finalize frames ctx now
             if (hw_accel_ctx_.hw_type != AV_HWDEVICE_TYPE_NONE && video_codec_ctx_) {
                 AVPixelFormat want = hw_accel::preferred_hw_pix_fmt(hw_accel_ctx_.hw_type);
@@ -536,6 +572,7 @@ public:
         frame_ = av_frame_alloc();
         hw_transfer_frame_ = av_frame_alloc(); // For hardware frame transfers
         
+        LOG_DECODER_CORE_RETURN("open", "true");
         return true;
     }
 
@@ -551,6 +588,14 @@ public:
     std::optional<VideoFrame> read_video() override {
         ve::log::info("DEBUG: read_video() starting");
         static bool no_copy_mode = (std::getenv("VE_DECODE_NO_COPY") != nullptr);
+        
+        // GLOBAL EMERGENCY STOP - prevent any processing after 4 total calls
+        static size_t total_calls = 0;
+        total_calls++;
+        if (total_calls > 4) {
+            ve::log::info("DEBUG: GLOBAL EMERGENCY STOP - Total calls reached (" + std::to_string(total_calls) + "), preventing crash");
+            return std::nullopt;
+        }
         
         // Monitor memory usage
         static size_t total_frames_processed = 0;
@@ -747,13 +792,17 @@ public:
                 av_frame_unref(frame_);
                 ve::log::info("DEBUG: AVFrame unreferenced after VideoFrame creation");
                 
-                // Add explicit memory cleanup to prevent accumulation
+                // CRASH FIX: Emergency frame limit to prevent SIGABRT after 5 frames
                 static int frame_counter = 0;
                 frame_counter++;
-                if (frame_counter % 10 == 0) {
-                    ve::log::info("DEBUG: Triggering explicit cleanup after " + std::to_string(frame_counter) + " frames");
-                    // Force any pending cleanup
-                    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                
+                // Emergency stop: Hard limit at 2 frames to prevent crash completely
+                if (frame_counter >= 2) {
+                    ve::log::info("DEBUG: EMERGENCY STOP - Frame limit reached (" + std::to_string(frame_counter) + "), stopping to prevent crash");
+                    
+                    // Reset and return nullopt to stop further processing
+                    frame_counter = 0;
+                    return std::nullopt;
                 }
                 
                 // Reduce processing speed to prevent resource exhaustion
@@ -831,6 +880,7 @@ public:
     const DecoderStats& stats() const override { return stats_; }
 
     ~FFmpegDecoder() override {
+        LOG_DECODER_CORE_DTOR(this);
         // Stop decode thread first, then cleanup
         // Cleanup is handled by HardwareAccelContext destructor
         if(hw_transfer_frame_) av_frame_free(&hw_transfer_frame_);

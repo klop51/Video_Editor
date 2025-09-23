@@ -30,9 +30,22 @@ void ve_terminate_handler() {
 int main(int argc, char** argv) {
     std::cout << "Video Editor Main starting..." << std::endl;
     
-    // Install crash traps FIRST to catch crashes during startup
+    // CRITICAL: Clear any conflicting Qt environment variables first
+    qunsetenv("QT_SCALE_FACTOR_ROUNDING_POLICY");
+    qunsetenv("QT_SCREEN_SCALE_FACTORS");
+    
+    // CRITICAL: Apply DPI rounding policy FIRST - before any Qt calls or QApplication creation
+    QApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
+    std::cout << "High DPI policy set" << std::endl;
+    
+    // Install crash traps to catch crashes during startup
     ve::install_crash_traps();
     std::cout << "Crash traps installed" << std::endl;
+    
+    // Configure Qt logging for crash investigation
+    qputenv("QT_FATAL_WARNINGS", "1");  // Turn Qt warnings into aborts for stack traces
+    qputenv("QT_LOGGING_RULES", "qt.qpa.*=true;*.debug=true;decoder.ui=true;decoder.core=true");
+    std::cout << "Qt logging environment configured for crash investigation" << std::endl;
     
     std::set_terminate(ve_terminate_handler);
 #ifdef _MSC_VER
@@ -40,10 +53,6 @@ int main(int argc, char** argv) {
     _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
 #endif
     std::cout.flush();
-    
-    // Apply DPI rounding policy BEFORE any Qt application creation - must be very first Qt call
-    QApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
-    std::cout << "High DPI policy set" << std::endl;
     
     try {
         std::cout << "Creating Application object..." << std::endl;

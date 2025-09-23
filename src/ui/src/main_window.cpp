@@ -15,6 +15,23 @@
 #include "core/log.hpp"
 #include "media_io/media_probe.hpp"
 #include "decode/decoder.hpp"
+
+// Decoder crash investigation logging with thread tracking
+#include <sstream>
+#include <thread>
+
+// Thread-aware logging for decoder crash investigation
+#define LOG_DECODER_UI_ENTRY(method) do { \
+    std::ostringstream oss; \
+    oss << "DECODER_UI_ENTRY: " << method << " [tid=" << std::this_thread::get_id() << "]"; \
+    ve::log::info(oss.str()); \
+} while(0)
+
+#define LOG_DECODER_UI_EXIT(method) do { \
+    std::ostringstream oss; \
+    oss << "DECODER_UI_EXIT: " << method << " [tid=" << std::this_thread::get_id() << "]"; \
+    ve::log::info(oss.str()); \
+} while(0)
 #include "app/application.hpp"
 #include <limits>
 #include <algorithm>
@@ -285,6 +302,9 @@ MainWindow::MainWindow(QWidget* parent)
     }
     setWindowTitle("Video Editor");
     setMinimumSize(1200, 800);
+    
+    // Initialize first paint guard
+    firstPaintGate_.bind(this);
     
     // Set up media processing worker thread
     setup_media_worker();
@@ -1162,8 +1182,7 @@ void MainWindow::new_project() {
         // Force immediate timeline dock refresh after setting timeline
         timeline_dock_->refresh();
         timeline_dock_->updateGeometry();
-        timeline_dock_->update();
-        timeline_dock_->repaint();
+        firstPaintGate_.queueUpdate();  // Queue first paint instead of synchronous update/repaint
         QApplication::processEvents();
         
         // Debug: Force paint event to see if tracks are rendering
@@ -1208,8 +1227,7 @@ void MainWindow::new_project() {
         // Immediate refresh after showing timeline panel (working sequence)
         timeline_dock_->refresh();
         timeline_dock_->updateGeometry();
-        timeline_dock_->update();
-        timeline_dock_->repaint();
+        firstPaintGate_.queueUpdate();  // Queue first paint instead of synchronous update/repaint
         QApplication::processEvents();
         
         ve::log::info("Timeline panel shown with immediate content refresh");
@@ -1225,8 +1243,7 @@ void MainWindow::new_project() {
                 // Force complete widget refresh through Qt event system
                 timeline_dock_->refresh();
                 timeline_dock_->updateGeometry();
-                timeline_dock_->update();
-                timeline_dock_->repaint();
+                firstPaintGate_.queueUpdate();  // Queue first paint instead of synchronous update/repaint
                 
                 // Additional safety - trigger paint event manually
                 QApplication::processEvents();
@@ -1362,8 +1379,11 @@ void MainWindow::paste() { ve::log::info("Paste requested"); }
 void MainWindow::delete_selection() { ve::log::info("Delete requested"); }
 
 void MainWindow::play_pause() { 
+    LOG_DECODER_UI_ENTRY("play_pause");
+    
     if (!playback_controller_) {
         ve::log::warn("No playback controller available");
+        LOG_DECODER_UI_EXIT("play_pause (no controller)");
         return;
     }
     
@@ -1410,9 +1430,11 @@ void MainWindow::play_pause() {
                 ve::log::info("Loading timeline media for playback: " + timeline_media_path);
                 try {
                     // Load timeline media (MP4 detection and software fallback handled in playback controller)
+                    LOG_DECODER_UI_ENTRY("load_media");
                     if (playback_controller_->load_media(timeline_media_path)) {
                         current_loaded_media = timeline_media_path;
                         ve::log::info("Timeline media loaded successfully");
+                        LOG_DECODER_UI_EXIT("load_media (success)");
                     } else {
                         ve::log::warn("Failed to load timeline media");
                         ve::log::info("Timeline media loading failed - this could be due to format compatibility issues");
@@ -1445,16 +1467,24 @@ void MainWindow::play_pause() {
         auto current_state = playback_controller_->state();
         if (current_state == ve::playback::PlaybackState::Playing) {
             ve::log::info("Pausing playback");
+            LOG_DECODER_UI_ENTRY("pause");
             playback_controller_->pause();
+            LOG_DECODER_UI_EXIT("pause (success)");
         } else {
             ve::log::info("Starting playback");
+            LOG_DECODER_UI_ENTRY("play");
             playback_controller_->play();
+            LOG_DECODER_UI_EXIT("play (success)");
         }
     } catch (const std::exception& e) {
         ve::log::error("Exception during play/pause: " + std::string(e.what()));
+        LOG_DECODER_UI_EXIT("play_pause (exception)");
     } catch (...) {
         ve::log::error("Unknown exception during play/pause");
+        LOG_DECODER_UI_EXIT("play_pause (unknown exception)");
     }
+    
+    LOG_DECODER_UI_EXIT("play_pause");
 }
 
 
@@ -1465,7 +1495,7 @@ void MainWindow::stop() {
     }
     if (timeline_dock_) {
         timeline_dock_->set_current_time(us_to_tp(0));
-        timeline_dock_->update();
+        firstPaintGate_.queueUpdate();  // Queue first paint instead of synchronous update
     }
     if (time_label_) time_label_->setText(QString("Time: %1s").arg(0.0, 0, 'f', 2));
 }
@@ -1479,7 +1509,7 @@ void MainWindow::step_forward() {
     qint64 tgt = cur_us + frame_us; if(dur_us>0 && tgt>dur_us) tgt = dur_us;
     playback_controller_->seek(tgt);
     playback_controller_->step_once(); // decode one frame
-    if (timeline_dock_) { timeline_dock_->set_current_time(us_to_tp(tgt)); timeline_dock_->update(); }
+    if (timeline_dock_) { timeline_dock_->set_current_time(us_to_tp(tgt)); firstPaintGate_.queueUpdate(); }
     if (time_label_) time_label_->setText(QString("Time: %1s").arg(tgt / 1'000'000.0, 0, 'f', 2));
 }
 
@@ -1492,7 +1522,7 @@ void MainWindow::step_backward() {
     qint64 tgt = cur_us - frame_us; if(tgt < 0) tgt = 0;
     playback_controller_->seek(tgt);
     playback_controller_->step_once();
-    if (timeline_dock_) { timeline_dock_->set_current_time(us_to_tp(tgt)); timeline_dock_->update(); }
+    if (timeline_dock_) { timeline_dock_->set_current_time(us_to_tp(tgt)); firstPaintGate_.queueUpdate(); }
     if (time_label_) time_label_->setText(QString("Time: %1s").arg(tgt / 1'000'000.0, 0, 'f', 2));
 }
 
@@ -2005,6 +2035,39 @@ void MainWindow::add_media_to_timeline(const QString& filePath, ve::TimePoint st
 }
 
 void MainWindow::update_playback_position() {
+    // CRASH FIX: Intelligent emergency protection - detect decoder failure state and stop timer
+    if (playback_controller_) {
+        try {
+            // Try to get stats - if decoder is in emergency state, this will reflect it
+            auto stats = playback_controller_->get_stats();
+            
+            // Stop timer immediately if we detect emergency frame time patterns (99999us = 99.999ms)
+            // These occur when decoder emergency protection returns null frames
+            if (stats.avg_frame_time_ms > 90.0) { // > 90ms indicates emergency state
+                ve::log::info("DEBUG: CRITICAL - Detected decoder emergency state (avg_frame_time_ms=" + std::to_string(stats.avg_frame_time_ms) + "), stopping UI timer");
+                if (position_update_timer_) {
+                    position_update_timer_->stop();
+                    ve::log::info("DEBUG: Position update timer stopped due to decoder emergency state");
+                }
+                return;
+            }
+        } catch (const std::exception& e) {
+            ve::log::info("DEBUG: CRITICAL - Exception accessing playback stats: " + std::string(e.what()) + ", stopping UI timer");
+            if (position_update_timer_) {
+                position_update_timer_->stop();
+                ve::log::info("DEBUG: Position update timer stopped due to exception");
+            }
+            return;
+        } catch (...) {
+            ve::log::info("DEBUG: CRITICAL - Unknown exception accessing playback stats, stopping UI timer");
+            if (position_update_timer_) {
+                position_update_timer_->stop();
+                ve::log::info("DEBUG: Position update timer stopped due to unknown exception");
+            }
+            return;
+        }
+    }
+    
     // Patch 3: Prevent overlapping timer callbacks to avoid Qt re-entrancy
     if (updating_position_.exchange(true)) {
         ve::log::info("update_playback_position: Skipping - already in progress");
@@ -2103,36 +2166,61 @@ void MainWindow::update_playback_position() {
                 
                 ve::log::info("update_playback_position: About to get stats");
                 
-                auto stats = playback_controller_->get_stats();
-                ve::log::info("update_playback_position: Got stats successfully");
-                
-                ve::log::info("update_playback_position: Processing FPS calculation");
-                double fps = 0.0;
-                
-                ve::log::info("update_playback_position: Checking avg_frame_time_ms: " + std::to_string(stats.avg_frame_time_ms));
-                if (stats.avg_frame_time_ms > 0.0 && !std::isnan(stats.avg_frame_time_ms) && std::isfinite(stats.avg_frame_time_ms)) {
-                    ve::log::info("update_playback_position: Computing FPS from avg_frame_time_ms");
-                    fps = 1000.0 / stats.avg_frame_time_ms;
-                    ve::log::info("update_playback_position: Computed FPS: " + std::to_string(fps));
-                } else {
-                    // Fallback to guessed frame duration
-                    ve::log::info("update_playback_position: Getting frame duration guess");
-                    auto us = playback_controller_->frame_duration_guess_us();
-                    ve::log::info("update_playback_position: Got frame duration: " + std::to_string(us));
-                    if (us > 0) {
-                        ve::log::info("update_playback_position: Computing FPS from frame duration");
-                        fps = 1'000'000.0 / static_cast<double>(us);
-                        ve::log::info("update_playback_position: Computed FPS from duration: " + std::to_string(fps));
+                // CRASH PROTECTION: Wrap stats access in try-catch
+                try {
+                    auto stats = playback_controller_->get_stats();
+                    
+                    // CRITICAL DEBUGGING: Show exact stats when decoder emergency stops are active
+                    ve::log::info("TIMER DEBUG: frames_displayed=" + std::to_string(stats.frames_displayed) + 
+                        ", avg_frame_time_ms=" + std::to_string(stats.avg_frame_time_ms));
+                    
+                    // NUCLEAR PROTECTION: Immediate timer stop on ANY failure indicator
+                    if (stats.frames_displayed == 0 || 
+                        !std::isfinite(stats.avg_frame_time_ms) || 
+                        stats.avg_frame_time_ms > 50.0) {
+                        ve::log::critical("NUCLEAR PROTECTION: Emergency timer shutdown triggered - frames_displayed=" + 
+                            std::to_string(stats.frames_displayed) + ", avg_frame_time_ms=" + std::to_string(stats.avg_frame_time_ms));
+                        position_update_timer_->stop();
+                        if (fps_label_) {
+                            fps_label_->setText("FPS: Emergency Stop");
+                        }
+                        return;
                     }
-                }
-                
-                ve::log::info("update_playback_position: Final FPS value: " + std::to_string(fps));
-                if (fps > 0.0 && fps < 300.0 && !std::isnan(fps) && std::isfinite(fps)) {
-                    ve::log::info("update_playback_position: Setting FPS label: " + std::to_string(fps));
-                    fps_label_->setText(QString("%1 fps").arg(fps, 0, 'f', 1));
-                    ve::log::info("update_playback_position: FPS label set");
-                } else {
-                    ve::log::info("update_playback_position: FPS not valid for display: " + std::to_string(fps));
+                    
+                    ve::log::info("update_playback_position: Processing FPS calculation");
+                    double fps = 0.0;
+                    
+                    ve::log::info("update_playback_position: Checking avg_frame_time_ms: " + std::to_string(stats.avg_frame_time_ms));
+                    if (stats.avg_frame_time_ms > 0.0 && !std::isnan(stats.avg_frame_time_ms) && std::isfinite(stats.avg_frame_time_ms)) {
+                        ve::log::info("update_playback_position: Computing FPS from avg_frame_time_ms");
+                        fps = 1000.0 / stats.avg_frame_time_ms;
+                        ve::log::info("update_playback_position: Computed FPS: " + std::to_string(fps));
+                    } else {
+                        // Fallback to guessed frame duration
+                        ve::log::info("update_playback_position: Getting frame duration guess");
+                        auto us = playback_controller_->frame_duration_guess_us();
+                        ve::log::info("update_playback_position: Got frame duration: " + std::to_string(us));
+                        if (us > 0) {
+                            ve::log::info("update_playback_position: Computing FPS from frame duration");
+                            fps = 1'000'000.0 / static_cast<double>(us);
+                            ve::log::info("update_playback_position: Computed FPS from duration: " + std::to_string(fps));
+                        }
+                    }
+                    
+                    ve::log::info("update_playback_position: Final FPS value: " + std::to_string(fps));
+                    if (fps > 0.0 && fps < 300.0 && !std::isnan(fps) && std::isfinite(fps)) {
+                        ve::log::info("update_playback_position: Setting FPS label: " + std::to_string(fps));
+                        fps_label_->setText(QString("%1 fps").arg(fps, 0, 'f', 1));
+                        ve::log::info("update_playback_position: FPS label set");
+                    } else {
+                        ve::log::info("update_playback_position: FPS not valid for display: " + std::to_string(fps));
+                    }
+                } catch (const std::exception& e) {
+                    ve::log::error("update_playback_position: Exception getting stats/fps: " + std::string(e.what()));
+                    return;
+                } catch (...) {
+                    ve::log::error("update_playback_position: Unknown exception getting stats/fps");
+                    return;
                 }
             }
         }
@@ -2140,26 +2228,12 @@ void MainWindow::update_playback_position() {
         
     } catch (const std::exception& e) {
         ve::log::error(std::string("update_playback_position: Exception caught in timer callback: ") + e.what());
-        // Defer timer stop to avoid stopping timer from within its own callback (Qt SIGABRT risk)
-        if (position_update_timer_) {
-            QMetaObject::invokeMethod(this, [this]() {
-                if (position_update_timer_) {
-                    position_update_timer_->stop();
-                    ve::log::error("update_playback_position: Timer stopped safely due to exception");
-                }
-            }, Qt::QueuedConnection);
-        }
+        // NUCLEAR PROTECTION: Immediate timer stop on ANY exception
+        position_update_timer_->stop();
     } catch (...) {
         ve::log::error("update_playback_position: Unknown exception caught in timer callback");
-        // Defer timer stop to avoid stopping timer from within its own callback (Qt SIGABRT risk)
-        if (position_update_timer_) {
-            QMetaObject::invokeMethod(this, [this]() {
-                if (position_update_timer_) {
-                    position_update_timer_->stop();
-                    ve::log::error("update_playback_position: Timer stopped safely due to unknown exception");
-                }
-            }, Qt::QueuedConnection);
-        }
+        // NUCLEAR PROTECTION: Immediate timer stop on ANY exception
+        position_update_timer_->stop();
     }
     
     ve::log::info("update_playback_position: Function exit point reached");

@@ -4,6 +4,23 @@
 #include "core/profiling.hpp"
 #include "media_io/media_probe.hpp"
 #include "../../config/debug.hpp"
+
+// Include decoder crash investigation logging with thread tracking
+#include <sstream>
+#include <thread>
+
+// Thread-aware logging for decoder crash investigation
+#define LOG_DECODER_CORE_CALL(method, obj) do { \
+    std::ostringstream oss; \
+    oss << "DECODER_CORE_CALL: " << method << " on " << obj << " [tid=" << std::this_thread::get_id() << "]"; \
+    ve::log::info(oss.str()); \
+} while(0)
+
+#define LOG_DECODER_CORE_RETURN(method, result) do { \
+    std::ostringstream oss; \
+    oss << "DECODER_CORE_RETURN: " << method << " = " << result << " [tid=" << std::this_thread::get_id() << "]"; \
+    ve::log::info(oss.str()); \
+} while(0)
 #include <vector>
 #include <chrono>
 #include <thread>
@@ -84,6 +101,7 @@ PlaybackController::~PlaybackController() {
 }
 
 bool PlaybackController::load_media(const std::string& path) {
+    LOG_DECODER_CORE_CALL("load_media", path.c_str());
     ve::log::info("Loading media: " + path);
     
     // Check if this is an MP4 file that might have hardware acceleration issues
@@ -92,11 +110,14 @@ bool PlaybackController::load_media(const std::string& path) {
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     bool is_mp4 = filename.find(".mp4") != std::string::npos;
     
+    LOG_DECODER_CORE_CALL("create_decoder", "factory");
     decoder_ = decode::create_decoder();
     if (!decoder_) {
         ve::log::error("Failed to create decoder");
+        LOG_DECODER_CORE_RETURN("load_media", false);
         return false;
     }
+    LOG_DECODER_CORE_RETURN("create_decoder", "success");
     
     decode::OpenParams params;
     params.filepath = path;
@@ -109,13 +130,16 @@ bool PlaybackController::load_media(const std::string& path) {
         // For MP4 files, use software decoding to prevent crashes
         ve::log::info("MP4 file detected - using software decoding to prevent crashes: " + path);
         params.hw_accel = false;
+        LOG_DECODER_CORE_CALL("decoder->open", "software_mode");
         success = decoder_->open(params);
+        LOG_DECODER_CORE_RETURN("decoder->open", success);
         
         if (success) {
             ve::log::info("MP4 software decoding successful");
         } else {
             ve::log::error("MP4 software decoding failed for: " + path);
             decoder_.reset();
+            LOG_DECODER_CORE_RETURN("load_media", false);
             return false;
         }
     } else {

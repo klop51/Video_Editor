@@ -11,6 +11,9 @@
 #include <string>
 #include <atomic>
 
+// Include UiUpdateGuard after standard includes
+#include "../../UiUpdateGuard.h"
+
 QT_BEGIN_NAMESPACE
 class QMenuBar;
 class QToolBar;
@@ -274,6 +277,9 @@ private:
     QQueue<TimelineInfo> timeline_update_queue_;
     QTimer* timeline_update_pump_;
     void flushTimelineBatch();
+    
+    // First paint guard to prevent synchronous UI update crashes
+    ::ui::UpdateGate firstPaintGate_{this};
 };
 
 } // namespace ve::ui

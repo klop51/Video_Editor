@@ -25,6 +25,9 @@ add_library(ve_ui
     src/viewer_panel.cpp
     src/gl_video_widget.cpp
     
+    # UI update guard header
+    UiUpdateGuard.h
+    
     # Week 8 Qt Audio UI Components - Minimal Working Integration
     src/minimal_waveform_widget.cpp
     src/minimal_audio_track_widget.cpp

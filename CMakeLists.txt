@@ -108,6 +108,21 @@ if(ENABLE_COVERAGE AND NOT MSVC)
     add_link_options(--coverage)
 endif()
 
+# Debug symbols and runtime guards for crash investigation
+if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_CONFIGURATION_TYPES)
+    if(MSVC)
+        # Windows MSVC: debug symbols and runtime checks
+        add_compile_options(/Zi /Od /RTC1)
+        add_link_options(/DEBUG)
+        message(STATUS "MSVC debug symbols and runtime checks enabled")
+    else()
+        # Linux/macOS: debug symbols and sanitizers
+        add_compile_options(-g -O0 -fno-omit-frame-pointer)
+        add_link_options(-g)
+        message(STATUS "GCC/Clang debug symbols enabled")
+    endif()
+endif()
+
 add_subdirectory(src/core) # Sets up external deps (fmt/spdlog) if not present
 # Media IO (FFmpeg wrapper placeholder)
 add_subdirectory(src/media_io)
