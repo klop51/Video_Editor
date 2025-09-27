@@ -15,6 +15,7 @@
 
 #include "audio/audio_frame.hpp"
 #include "audio/loudness_monitor.hpp"
+#include "audio/safe_loudness_monitor.hpp"
 #include "audio/audio_meters.hpp"
 #include "core/time.hpp"
 #include <vector>
@@ -81,7 +82,7 @@ public:
     double get_measurement_duration_seconds() const;
 
 private:
-    std::unique_ptr<RealTimeLoudnessMonitor> core_monitor_;
+    std::unique_ptr<SafeRealTimeLoudnessMonitor> core_monitor_;
     
     // Enhanced measurement tracking
     mutable std::mutex measurement_mutex_;

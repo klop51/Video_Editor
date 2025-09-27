@@ -43,10 +43,10 @@ int main(int argc, char** argv) {
     ve::install_crash_traps();
     std::cout << "Crash traps installed" << std::endl;
     
-    // Configure Qt logging for crash investigation
-    qputenv("QT_FATAL_WARNINGS", "1");  // Turn Qt warnings into aborts for stack traces
-    qputenv("QT_LOGGING_RULES", "qt.widgets.painting=true;qt.qpa.*=true;*.debug=true;decoder.ui=true;decoder.core=true");
-    std::cout << "Qt logging environment configured for Step 7 crash investigation" << std::endl;
+    // Configure Qt logging for production (minimal output)
+    qputenv("QT_FATAL_WARNINGS", "0");  // Don't turn warnings into aborts in production
+    qputenv("QT_LOGGING_RULES", "*.critical=true;*.fatal=true");  // Only show critical/fatal messages
+    std::cout << "Qt logging configured for production (minimal output)" << std::endl;
     
     // CRITICAL: Register UiImageFramePtr metatype early for robust queued signal delivery
     qRegisterMetaType<UiImageFramePtr>("UiImageFramePtr");

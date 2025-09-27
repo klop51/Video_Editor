@@ -1,9 +1,9 @@
 {
   "samples": [
-    { "name": "playback.cache_hit", "count": 1, "total_ms": 45.9694, "avg_ms": 45.9694, "min_ms": 45.9694, "max_ms": 45.9694, "p50_ms": 45.9694, "p95_ms": 45.9694 },
-    { "name": "to_rgba_scaled_view", "count": 237, "total_ms": 665.462, "avg_ms": 2.80786, "min_ms": 2.586, "max_ms": 4.5264, "p50_ms": 2.6723, "p95_ms": 3.6473 },
-    { "name": "to_rgba_scaled_view.sws_scale", "count": 237, "total_ms": 661.614, "avg_ms": 2.79162, "min_ms": 2.5772, "max_ms": 4.5176, "p50_ms": 2.6558, "p95_ms": 3.6346 },
-    { "name": "viewer.display_frame", "count": 239, "total_ms": 3857.01, "avg_ms": 16.1381, "min_ms": 0.235, "max_ms": 2418.82, "p50_ms": 5.5193, "p95_ms": 8.3905 },
-    { "name": "to_rgba_scaled_view.ffmpeg", "count": 237, "total_ms": 664.173, "avg_ms": 2.80242, "min_ms": 2.5839, "max_ms": 4.5234, "p50_ms": 2.6666, "p95_ms": 3.6439 }
+    { "name": "playback.cache_hit", "count": 1, "total_ms": 47.5073, "avg_ms": 47.5073, "min_ms": 47.5073, "max_ms": 47.5073, "p50_ms": 47.5073, "p95_ms": 47.5073 },
+    { "name": "to_rgba_scaled_view", "count": 379, "total_ms": 1030.71, "avg_ms": 2.71955, "min_ms": 2.5737, "max_ms": 4.0915, "p50_ms": 2.6441, "p95_ms": 3.0162 },
+    { "name": "to_rgba_scaled_view.sws_scale", "count": 379, "total_ms": 1025.58, "avg_ms": 2.70602, "min_ms": 2.5657, "max_ms": 4.0784, "p50_ms": 2.6318, "p95_ms": 3.0059 },
+    { "name": "viewer.display_frame", "count": 381, "total_ms": 2249.4, "avg_ms": 5.90394, "min_ms": 0.2348, "max_ms": 11.4703, "p50_ms": 5.4608, "p95_ms": 8.0288 },
+    { "name": "to_rgba_scaled_view.ffmpeg", "count": 379, "total_ms": 1029.21, "avg_ms": 2.7156, "min_ms": 2.5718, "max_ms": 4.087, "p50_ms": 2.6416, "p95_ms": 3.0139 }
   ]
 }

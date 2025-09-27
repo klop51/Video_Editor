@@ -143,7 +143,7 @@ bool copy_frame_data(AVFrame* frame, VideoFrame& vf) {
     const int height = frame->height;
     const AVPixelFormat fmt = static_cast<AVPixelFormat>(frame->format);
 
-    ve::log::info("DEBUG: copy_frame_data starting - format=" + std::to_string(fmt) + " dimensions=" + std::to_string(width) + "x" + std::to_string(height));
+    // copy_frame_data starting
 
     // ve::log::info("Copying frame format: " + std::to_string(fmt) + " (" + std::string(av_get_pix_fmt_name(fmt) ? av_get_pix_fmt_name(fmt) : "unknown") + ")");
 
@@ -230,7 +230,7 @@ bool copy_frame_data(AVFrame* frame, VideoFrame& vf) {
         return false;
     }
 
-    ve::log::info("DEBUG: Allocating VideoFrame buffer: " + std::to_string(buf_size) + " bytes");
+    // Allocating VideoFrame buffer
 
     try {
         vf.data.resize(static_cast<size_t>(buf_size));
@@ -264,7 +264,7 @@ bool copy_frame_data(AVFrame* frame, VideoFrame& vf) {
             return false;
         }
         
-        ve::log::info("DEBUG: Starting YUV420P frame copy - Y plane");
+        // Starting YUV420P frame copy - Y plane
         
         // Copy Y plane
         for (int y = 0; y < height; y++) {
@@ -272,7 +272,7 @@ bool copy_frame_data(AVFrame* frame, VideoFrame& vf) {
         }
         dst += width * height;
         
-        ve::log::info("DEBUG: YUV420P Y plane copied, starting U plane");
+        // YUV420P Y plane copied, starting U plane
         
         // Copy U plane
         int uv_width = width / 2;
@@ -282,14 +282,14 @@ bool copy_frame_data(AVFrame* frame, VideoFrame& vf) {
         }
         dst += uv_width * uv_height;
         
-        ve::log::info("DEBUG: YUV420P U plane copied, starting V plane");
+        // YUV420P U plane copied, starting V plane
         
         // Copy V plane
         for (int y = 0; y < uv_height; y++) {
             memcpy(dst + y * uv_width, frame->data[2] + y * frame->linesize[2], static_cast<size_t>(uv_width));
         }
         
-        ve::log::info("DEBUG: YUV420P frame copy completed successfully");
+        // YUV420P frame copy completed successfully
         return true;
     } else if (fmt == AV_PIX_FMT_NV12) {
         // Manual NV12 copy - common for hardware decoding
@@ -586,7 +586,6 @@ public:
     }
 
     std::optional<VideoFrame> read_video() override {
-        ve::log::info("DEBUG: read_video() starting");
         static bool no_copy_mode = (std::getenv("VE_DECODE_NO_COPY") != nullptr);
         
         // Emergency stop removed - original crash has been fixed
@@ -595,8 +594,9 @@ public:
         static size_t total_frames_processed = 0;
         total_frames_processed++;
         
-        if (total_frames_processed % 5 == 0) {
-            ve::log::info("DEBUG: Memory pressure check - processed " + std::to_string(total_frames_processed) + " frames");
+        // Only log memory check every 100 frames instead of every 5 to reduce noise
+        if (total_frames_processed % 100 == 0) {
+            ve::log::info("Processed " + std::to_string(total_frames_processed) + " video frames");
         }
         
         // Add processing delay to reduce memory pressure
@@ -610,25 +610,18 @@ public:
         const int max_consecutive_failures = 10; // Prevent infinite loops
         
         while(true) {
-            ve::log::info("DEBUG: read_video() - reading frame loop iteration, failures=" + std::to_string(consecutive_failures));
             if(av_read_frame(fmt_, packet_) < 0) {
-                ve::log::info("DEBUG: read_video() - EOF on av_read_frame");
                 return std::nullopt; // EOF
             }
-            ve::log::info("DEBUG: read_video() - read packet successfully, stream_index=" + std::to_string(packet_->stream_index));
             if(packet_->stream_index != video_stream_index_) {
                 // If it's audio packet and we have audio decoder, stash for later? For simplicity just push back by re-queue: drop.
-                ve::log::info("DEBUG: read_video() - skipping non-video packet (stream " + std::to_string(packet_->stream_index) + ")");
                 av_packet_unref(packet_);
                 continue;
             }
-            ve::log::info("DEBUG: read_video() - processing video packet, calling decode_packet");
             if(decode_packet(video_codec_ctx_, packet_)) {
-                ve::log::info("DEBUG: read_video() - decode_packet successful, processing frame");
                 av_packet_unref(packet_);
                 
                 // Add frame size safety checks
-                ve::log::info("DEBUG: read_video() - checking frame dimensions: " + std::to_string(frame_->width) + "x" + std::to_string(frame_->height));
                 if (frame_->width <= 0 || frame_->height <= 0) {
                     ve::log::error("Invalid frame dimensions: " + std::to_string(frame_->width) + "x" + std::to_string(frame_->height));
                     consecutive_failures++;
@@ -776,22 +769,22 @@ public:
                               ", format: " + std::to_string(static_cast<int>(vf.format)) + 
                               ", data size: " + std::to_string(vf.data.size()) + " bytes");
                 
-                ve::log::info("DEBUG: About to return VideoFrame from read_video()");
+                // About to return VideoFrame from read_video()
                 
                 // Add memory monitoring for debugging
                 size_t frame_size = vf.data.size();
-                ve::log::info("DEBUG: VideoFrame size: " + std::to_string(frame_size) + " bytes (" + std::to_string(frame_size / 1024 / 1024) + " MB)");
+                // VideoFrame size logged for debugging
                 
                 // Critical: Unref the AVFrame after successful copy to prevent memory leaks
                 av_frame_unref(frame_);
-                ve::log::info("DEBUG: AVFrame unreferenced after VideoFrame creation");
+                // AVFrame unreferenced after VideoFrame creation
                 
                 // CRASH FIX: Emergency frame limit to prevent SIGABRT - allow reasonable operation
                 // Emergency stop removed - original crash has been fixed
                 
                 // Reduce processing speed to prevent resource exhaustion
                 std::this_thread::sleep_for(std::chrono::milliseconds(3));
-                ve::log::info("DEBUG: Frame processing delay applied for stability");
+                // Frame processing delay applied for stability
                 
                 return vf;
                 

@@ -90,60 +90,37 @@ void AudioPipeline::shutdown() {
 }
 
 bool AudioPipeline::process_audio_frame(std::shared_ptr<AudioFrame> frame) {
-    ve::log::info("AudioPipeline::process_audio_frame - ENTRY");
-    
     // De-dup: if the same AudioFrame* arrives twice, drop the duplicate to avoid echo
     static const AudioFrame* s_last_enqueued = nullptr;
     if (frame.get() == s_last_enqueued) {
-        ve::log::info("AudioPipeline::process_audio_frame - DUPLICATE frame detected, returning early");
         return true; // already enqueued this exact frame
     }
     s_last_enqueued = frame.get();
-    ve::log::info("AudioPipeline::process_audio_frame - Frame deduplication check passed");
 
     if (state_.load() == AudioPipelineState::Uninitialized) {
-        ve::log::info("AudioPipeline::process_audio_frame - ERROR: Pipeline not initialized");
         set_error("Pipeline not initialized");
         return false;
     }
-    ve::log::info("AudioPipeline::process_audio_frame - Pipeline state check passed");
 
     if (!frame || frame->sample_count() == 0) {
-        ve::log::info("AudioPipeline::process_audio_frame - Empty frame, returning early");
         return true; // Skip empty frames
     }
-    ve::log::info("AudioPipeline::process_audio_frame - Frame validity check passed, sample_count=" + std::to_string(frame->sample_count()));
 
     // Process through professional monitoring system if enabled
-    ve::log::info("AudioPipeline::process_audio_frame - About to check monitoring system");
     if (monitoring_enabled_.load() && monitoring_system_) {
-        ve::log::info("AudioPipeline::process_audio_frame - Monitoring system enabled, about to process frame");
         monitoring_system_->process_audio_frame(*frame);
-        ve::log::info("AudioPipeline::process_audio_frame - Monitoring system processing completed");
-    } else {
-        ve::log::info("AudioPipeline::process_audio_frame - Monitoring system disabled or unavailable");
     }
 
     // Add frame to buffer
-    ve::log::info("AudioPipeline::process_audio_frame - About to add frame to buffer");
     {
         std::lock_guard<std::mutex> lock(buffer_mutex_);
-        ve::log::info("AudioPipeline::process_audio_frame - Acquired buffer mutex lock");
         size_t write_pos = buffer_write_pos_.load();
-        ve::log::info("AudioPipeline::process_audio_frame - Buffer write position: " + std::to_string(write_pos));
         audio_buffer_[write_pos] = frame;
-        ve::log::info("AudioPipeline::process_audio_frame - Frame stored in buffer");
         buffer_write_pos_.store((write_pos + 1) % BUFFER_SIZE);
-        ve::log::info("AudioPipeline::process_audio_frame - Buffer write position updated");
     }
-    ve::log::info("AudioPipeline::process_audio_frame - Buffer operations completed");
 
-    // Update statistics
-    ve::log::info("AudioPipeline::process_audio_frame - About to update statistics");
+    // Update statistics  
     update_stats(frame);
-    ve::log::info("AudioPipeline::process_audio_frame - Statistics updated successfully");
-
-    ve::log::info("AudioPipeline::process_audio_frame - SUCCESS, returning true");
     return true;
 }
 

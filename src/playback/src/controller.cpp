@@ -497,36 +497,13 @@ void PlaybackController::playback_thread_main() {
             }
 
             // Read video frame (decode path)
-            // TEMPORARY: Disable profiling scope to test if ScopedTimer destructor is causing crash
-            // VE_PROFILE_SCOPE_UNIQ("playback.decode_video");
-            ve::log::info(std::string("PlaybackController: About to call decoder_->read_video()"));
             auto video_frame = decoder_->read_video();
-            ve::log::info(std::string("PlaybackController: decoder_->read_video() returned successfully"));
             
             if (video_frame) {
-                ve::log::info(std::string("PlaybackController: VideoFrame is valid, accessing properties..."));
-                ve::log::info(std::string("PlaybackController: VideoFrame pts: ") + std::to_string(video_frame->pts));
-                ve::log::info(std::string("PlaybackController: VideoFrame dimensions: ") + std::to_string(video_frame->width) + "x" + std::to_string(video_frame->height));
                 // Future: traverse snapshot (immutable) to determine which clip/segment is active
                 // For now we rely solely on decoder PTS ordering.
-                // Cache store (basic) - store raw data buffer
-                // TEMPORARY: Disable frame caching to test if this is causing the memory corruption
-                ve::log::info(std::string("PlaybackController: TEMPORARILY SKIPPING frame cache to test memory corruption theory"));
-                /*
-                ve::cache::CachedFrame cf; cf.width = video_frame->width; cf.height = video_frame->height; cf.data = video_frame->data; // copy
-                cf.format = video_frame->format;
-                cf.color_space = video_frame->color_space;
-                cf.color_range = video_frame->color_range;
-                ve::cache::FrameKey putKey; putKey.pts_us = video_frame->pts;
-                VE_DEBUG_ONLY(ve::log::info("Cache PUT for pts=" + std::to_string(putKey.pts_us) + 
-                                             ", size=" + std::to_string(cf.width) + "x" + std::to_string(cf.height)));
-                frame_cache_.put(putKey, std::move(cf));
-                VE_DEBUG_ONLY(ve::log::info("Cache size now=" + std::to_string(frame_cache_.size())));
-                */
                 
-                ve::log::info(std::string("PlaybackController: About to store video_frame->pts: ") + std::to_string(video_frame->pts));
                 current_time_us_.store(video_frame->pts);
-                ve::log::info(std::string("PlaybackController: Successfully stored pts to current_time_us_"));
 
                 // Advance time for next frame (matching cache hit logic)
                 int64_t delta = step_.next_delta_us();
@@ -537,42 +514,27 @@ void PlaybackController::playback_thread_main() {
                     current_time_us_.store(next_pts);
                 }
 
-                { // video callback dispatch (profiling removed to avoid variable shadow warning on MSVC)
-                    ve::log::info(std::string("PlaybackController: About to acquire callbacks_mutex_ for video callback dispatch"));
+                { // video callback dispatch
                     std::vector<CallbackEntry<VideoFrameCallback>> copy;
                     { 
                         std::scoped_lock lk(callbacks_mutex_); 
-                        ve::log::info(std::string("PlaybackController: Acquired callbacks_mutex_, copying ") + std::to_string(video_video_entries_.size()) + " callbacks");
                         copy = video_video_entries_; 
                     }
-                    ve::log::info(std::string("PlaybackController: Released callbacks_mutex_, dispatching ") + std::to_string(copy.size()) + " video callbacks for pts=" + std::to_string(video_frame->pts));
                     
-                    for(size_t i = 0; i < copy.size(); ++i) {
-                        auto &entry = copy[i];
+                    for(auto &entry : copy) {
                         if(entry.fn) {
-                            ve::log::info(std::string("PlaybackController: About to invoke callback ") + std::to_string(i) + " for pts=" + std::to_string(video_frame->pts));
                             entry.fn(*video_frame);
-                            ve::log::info(std::string("PlaybackController: Successfully invoked callback ") + std::to_string(i) + " for pts=" + std::to_string(video_frame->pts));
-                        } else {
-                            ve::log::info(std::string("PlaybackController: Skipping null callback ") + std::to_string(i));
                         }
                     }
-                    ve::log::info(std::string("PlaybackController: Completed all video callback dispatches for pts=") + std::to_string(video_frame->pts));
                 }
 
                 // High-performance frame timing for smooth playback
-                ve::log::info(std::string("PlaybackController: About to start frame timing logic, first_frame=") + (first_frame ? "true" : "false"));
                 if (!first_frame) {
-                    ve::log::info(std::string("PlaybackController: About to call frame_duration_guess_us()"));
                     // Use fixed frame duration based on detected FPS for consistent timing
                     int64_t frame_duration_us = frame_duration_guess_us();
-                    ve::log::info(std::string("PlaybackController: frame_duration_guess_us() returned ") + std::to_string(frame_duration_us));
                     auto target_interval = std::chrono::microseconds(frame_duration_us);
-                    ve::log::info(std::string("PlaybackController: Created target_interval"));
                     auto frame_end = std::chrono::steady_clock::now();
-                    ve::log::info(std::string("PlaybackController: Got frame_end timestamp"));
                     auto actual_duration = frame_end - last_frame_time;
-                    ve::log::info(std::string("PlaybackController: Calculated actual_duration"));
 
                     // Balanced optimization for 4K 60fps content - targeting 80-83% performance
                     bool is_4k_60fps = (video_frame->width >= 3840 && video_frame->height >= 2160 && probed_fps_ >= 59.0);

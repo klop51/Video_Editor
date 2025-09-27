@@ -6,6 +6,7 @@
  */
 
 #include "audio/professional_monitoring.hpp"
+#include "audio/safe_loudness_monitor.hpp"
 #include "core/log.hpp"
 #include <numeric>
 #include <algorithm>
@@ -24,7 +25,7 @@ namespace ve::audio {
 // ============================================================================
 
 EnhancedEBUR128Monitor::EnhancedEBUR128Monitor(double sample_rate, uint16_t channels)
-    : core_monitor_(std::make_unique<RealTimeLoudnessMonitor>(sample_rate, channels))
+    : core_monitor_(std::make_unique<SafeRealTimeLoudnessMonitor>(sample_rate, channels))
     , start_time_(std::chrono::steady_clock::now())
 {
     history_.momentary_values.reserve(history_.max_history_size);
@@ -78,27 +79,28 @@ void EnhancedEBUR128Monitor::process_samples(const AudioFrame& frame) {
 }
 
 double EnhancedEBUR128Monitor::get_momentary_lufs() const {
-    auto measurement = core_monitor_->get_current_measurement();
+    auto measurement = core_monitor_->get_legacy_measurement();
     return measurement.momentary_lufs;
 }
 
 double EnhancedEBUR128Monitor::get_short_term_lufs() const {
-    auto measurement = core_monitor_->get_current_measurement();
+    auto measurement = core_monitor_->get_legacy_measurement();
     return measurement.short_term_lufs;
 }
 
 double EnhancedEBUR128Monitor::get_integrated_lufs() const {
-    return core_monitor_->get_integrated_lufs();
+    auto measurement = core_monitor_->get_legacy_measurement();
+    return measurement.integrated_lufs;
 }
 
 double EnhancedEBUR128Monitor::get_loudness_range() const {
-    auto measurement = core_monitor_->get_current_measurement();
+    auto measurement = core_monitor_->get_legacy_measurement();
     // Calculate loudness range from available data (simplified)
     return 5.0; // Placeholder - would need proper LRA calculation
 }
 
 double EnhancedEBUR128Monitor::get_peak_level_dbfs() const {
-    auto measurement = core_monitor_->get_current_measurement();
+    auto measurement = core_monitor_->get_legacy_measurement();
     return std::max(measurement.peak_left_dbfs, measurement.peak_right_dbfs);
 }
 
@@ -693,69 +695,32 @@ void ProfessionalAudioMonitoringSystem::set_target_platform(const std::string& p
 }
 
 void ProfessionalAudioMonitoringSystem::process_audio_frame(const AudioFrame& frame) {
-    ve::log::info("ProfessionalAudioMonitoringSystem::process_audio_frame - ENTRY");
-    
     if (!initialized_) {
-        ve::log::info("ProfessionalAudioMonitoringSystem::process_audio_frame - Not initialized, returning early");
         return;
     }
-    ve::log::info("ProfessionalAudioMonitoringSystem::process_audio_frame - Initialization check passed");
     
     auto start_time = std::chrono::high_resolution_clock::now();
     
     // Process through all enabled monitoring components
-    ve::log::info("ProfessionalAudioMonitoringSystem::process_audio_frame - About to check loudness_monitor_");
-    
-    // PHASE K: Investigate return crash - heap allocation didn't fix it
-    // PHASE P: FINAL SOLUTION - Disable crashing loudness monitor to eliminate SIGABRT
     if (loudness_monitor_) {  
-        // PHASE P: Phases K-O proved the crash happens during method return instruction
-        // This is likely a stack corruption or calling convention issue
-        // TEMPORARY SOLUTION: Disable loudness monitoring to eliminate crash
-        ve::log::info("PHASE P: Loudness monitor temporarily DISABLED to eliminate SIGABRT crash");
-        ve::log::info("PHASE P: Crash investigation complete - issue is in process_samples() return");
-        
-        // PHASE P: The crash is eliminated by not calling the problematic method
-        // Future improvement: Investigate stack corruption or implement alternative interface
-    } else {
-        ve::log::info("PHASE P: Loudness monitor already disabled");
+        try {
+            loudness_monitor_->process_samples(frame);
+        } catch (const std::exception& e) {
+            ve::log::error("Loudness monitor error: " + std::string(e.what()));
+        }
     }
     
-    ve::log::info("ProfessionalAudioMonitoringSystem::process_audio_frame - About to check meter_system_");
     if (meter_system_) {
-        ve::log::info("PHASE M: Meter system enabled, testing crash theory");
         try {
-            ve::log::info("PHASE M: About to call meter_system_->process_samples()");
             meter_system_->process_samples(frame);
-            ve::log::info("PHASE M: meter_system_->process_samples() completed successfully");
-        } catch (const std::bad_alloc&) {
-            ve::log::error("PHASE M: std::bad_alloc in meter_system_->process_samples()");
-            throw;
-        } catch (const std::out_of_range&) {
-            ve::log::error("PHASE M: std::out_of_range in meter_system_->process_samples()");
-            throw;
-        } catch (const std::runtime_error&) {
-            ve::log::error("PHASE M: std::runtime_error in meter_system_->process_samples()");
-            throw;
-        } catch (const std::exception&) {
-            ve::log::error("PHASE M: std::exception in meter_system_->process_samples()");
-            throw;
-        } catch (...) {
-            ve::log::error("PHASE M: Unknown exception in meter_system_->process_samples()");
+        } catch (const std::exception& e) {
+            ve::log::error("Meter system error: " + std::string(e.what()));
             throw;
         }
-        ve::log::info("ProfessionalAudioMonitoringSystem::process_audio_frame - Meter system processing completed");
-    } else {
-        ve::log::info("ProfessionalAudioMonitoringSystem::process_audio_frame - Meter system disabled");
     }
     
-    ve::log::info("ProfessionalAudioMonitoringSystem::process_audio_frame - About to check scopes_");
     if (scopes_) {
-        ve::log::info("ProfessionalAudioMonitoringSystem::process_audio_frame - Scopes enabled, processing samples");
         scopes_->process_samples(frame);
-        ve::log::info("ProfessionalAudioMonitoringSystem::process_audio_frame - Scopes processing completed");
-    } else {
-        ve::log::info("ProfessionalAudioMonitoringSystem::process_audio_frame - Scopes disabled");
     }
     
     auto end_time = std::chrono::high_resolution_clock::now();
