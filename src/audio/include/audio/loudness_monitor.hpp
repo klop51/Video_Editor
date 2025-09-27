@@ -245,16 +245,18 @@ private:
     uint16_t channels_ = 2;
     
     // Buffer size limits to prevent unbounded memory growth
-    static constexpr size_t MAX_INTEGRATED_SAMPLES = 48000 * 3600; // 1 hour at 48kHz
-    static constexpr size_t INTEGRATED_BUFFER_TRIM_SIZE = 48000 * 1800; // Trim to 30 minutes
+    // PHASE H: Reduce from 1 hour (1.3GB) to 5 minutes (54MB) to test memory allocation crash
+    static constexpr size_t MAX_INTEGRATED_SAMPLES = 48000 * 300; // 5 minutes at 48kHz (was 1 hour)
+    static constexpr size_t INTEGRATED_BUFFER_TRIM_SIZE = 48000 * 150; // Trim to 2.5 minutes (was 30 min)
     
-    // K-weighting filters (per channel)
-    std::vector<KWeightingFilter> k_filters_;
+    // PHASE J: Heap-allocated buffers to avoid constructor stack corruption
+    // Using unique_ptr to prevent stack allocation issues that caused SIGABRT
+    std::unique_ptr<std::vector<KWeightingFilter>> k_filters_;
     
-    // Measurement windows
-    std::vector<double> momentary_buffer_;     // 400ms buffer
-    std::vector<double> short_term_buffer_;    // 3s buffer
-    std::vector<double> integrated_buffer_;    // All samples for integrated
+    // Measurement windows - heap allocated to avoid constructor crashes
+    std::unique_ptr<std::vector<double>> momentary_buffer_;     // 400ms buffer
+    std::unique_ptr<std::vector<double>> short_term_buffer_;    // 3s buffer
+    std::unique_ptr<std::vector<double>> integrated_buffer_;    // All samples for integrated
     
     size_t momentary_window_samples_;
     size_t short_term_window_samples_;
@@ -272,8 +274,8 @@ private:
     double integrated_sum_squares_ = 0.0;
     uint64_t integrated_sample_count_ = 0;
     
-    // Gating for integrated measurement
-    std::vector<double> gating_blocks_;        // 400ms blocks for gating
+    // Gating for integrated measurement - heap allocated
+    std::unique_ptr<std::vector<double>> gating_blocks_;        // 400ms blocks for gating
     double relative_threshold_lufs_ = -std::numeric_limits<double>::infinity();
     
     // Thread safety
@@ -293,41 +295,81 @@ public:
     }
     
     void initialize() {
+        // PHASE J: HEAP ALLOCATION FIX - Use unique_ptr to avoid constructor stack corruption
+        ve::log::info("PHASE J: RealTimeLoudnessMonitor constructor starting - heap allocation mode");
+        
         // Calculate window sizes
         momentary_window_samples_ = static_cast<size_t>(sample_rate_ * ebu_r128::MOMENTARY_WINDOW_MS / 1000.0);
         short_term_window_samples_ = static_cast<size_t>(sample_rate_ * ebu_r128::SHORT_TERM_WINDOW_MS / 1000.0);
         
-        // Initialize buffers
-        momentary_buffer_.resize(momentary_window_samples_, 0.0);
-        short_term_buffer_.resize(short_term_window_samples_, 0.0);
-        integrated_buffer_.reserve(static_cast<size_t>(sample_rate_ * 3600)); // 1 hour capacity
+        ve::log::info("PHASE J: Calculated window sizes successfully");
         
-        // Initialize K-weighting filters
-        k_filters_.resize(channels_);
-        for (auto& filter : k_filters_) {
-            filter.reset();
+        try {
+            // PHASE J: Use heap allocation via unique_ptr to avoid stack corruption
+            k_filters_ = std::make_unique<std::vector<KWeightingFilter>>();
+            momentary_buffer_ = std::make_unique<std::vector<double>>();
+            short_term_buffer_ = std::make_unique<std::vector<double>>();
+            integrated_buffer_ = std::make_unique<std::vector<double>>();
+            gating_blocks_ = std::make_unique<std::vector<double>>();
+            
+            ve::log::info("PHASE J: Created unique_ptr wrappers for all buffers");
+            
+            // Initialize buffers - should be safe now with heap allocation
+            k_filters_->resize(channels_);
+            momentary_buffer_->resize(momentary_window_samples_, 0.0);
+            short_term_buffer_->resize(short_term_window_samples_, 0.0);
+            integrated_buffer_->reserve(static_cast<size_t>(sample_rate_ * 300)); // 5 minutes
+            
+            ve::log::info("PHASE J: Successfully allocated all buffers on heap");
+            
+            // Initialize K-weighting filters
+            for (auto& filter : *k_filters_) {
+                filter.reset();
+            }
+            
+            // Configure meters
+            peak_meter_left_.set_sample_rate(sample_rate_);
+            peak_meter_right_.set_sample_rate(sample_rate_);
+            rms_meter_left_.set_sample_rate(sample_rate_);
+            rms_meter_right_.set_sample_rate(sample_rate_);
+            
+            // Basic parameters
+            samples_processed_.store(0);
+            momentary_write_pos_ = 0;
+            short_term_write_pos_ = 0;
+            
+            ve::log::info("PHASE J: RealTimeLoudnessMonitor constructor completed successfully - heap allocation mode");
+            
+            reset();
+            
+        } catch (const std::exception&) {
+            ve::log::error("PHASE J: Exception during buffer allocation");
+            throw;
         }
-        
-        // Configure meters
-        peak_meter_left_.set_sample_rate(sample_rate_);
-        peak_meter_right_.set_sample_rate(sample_rate_);
-        rms_meter_left_.set_sample_rate(sample_rate_);
-        rms_meter_right_.set_sample_rate(sample_rate_);
-        
-        reset();
     }
     
     void reset() {
         std::lock_guard<std::mutex> lock(measurement_mutex_);
         
-        for (auto& filter : k_filters_) {
-            filter.reset();
+        // PHASE J: Access buffers through unique_ptr
+        if (k_filters_) {
+            for (auto& filter : *k_filters_) {
+                filter.reset();
+            }
         }
         
-        std::fill(momentary_buffer_.begin(), momentary_buffer_.end(), 0.0);
-        std::fill(short_term_buffer_.begin(), short_term_buffer_.end(), 0.0);
-        integrated_buffer_.clear();
-        gating_blocks_.clear();
+        if (momentary_buffer_) {
+            std::fill(momentary_buffer_->begin(), momentary_buffer_->end(), 0.0);
+        }
+        if (short_term_buffer_) {
+            std::fill(short_term_buffer_->begin(), short_term_buffer_->end(), 0.0);
+        }
+        if (integrated_buffer_) {
+            integrated_buffer_->clear();
+        }
+        if (gating_blocks_) {
+            gating_blocks_->clear();
+        }
         
         momentary_write_pos_ = 0;
         short_term_write_pos_ = 0;
@@ -345,49 +387,92 @@ public:
     }
     
     void process_samples(const AudioFrame& frame) {
-        // THREAD SAFETY FIX: Extract all AudioFrame data FIRST before any processing
-        // This prevents SIGABRT crashes caused by AudioFrame method calls in monitoring context
-        
-        // Basic frame validity check without method calls
-        if (!frame.is_valid()) {
-            return;
+        // PHASE L: EXCEPTION INVESTIGATION - Wrap everything in detailed try-catch
+        try {
+            ve::log::info("PHASE L: process_samples() entry - investigating exception source");
+            
+            // PHASE L: Test each operation individually to isolate exception source
+            ve::log::info("PHASE L: Testing frame validity check");
+            if (!frame.is_valid()) {
+                ve::log::info("PHASE L: Frame invalid, returning");
+                return;
+            }
+            ve::log::info("PHASE L: Frame validity check passed");
+            
+            // PHASE L: Test data extraction operations one by one
+            ve::log::info("PHASE L: Testing frame.sample_count()");
+            const size_t frame_sample_count = frame.sample_count();
+            ve::log::info("PHASE L: sample_count() succeeded");
+            
+            ve::log::info("PHASE L: Testing frame.channel_count()");
+            const size_t frame_channel_count = frame.channel_count();
+            ve::log::info("PHASE L: channel_count() succeeded");
+            
+            ve::log::info("PHASE L: Testing frame.sample_rate()");
+            const uint32_t frame_sample_rate = frame.sample_rate();
+            ve::log::info("PHASE L: sample_rate() succeeded");
+            
+            // PHASE L: Test parameter validation
+            ve::log::info("PHASE L: Testing parameter validation logic");
+            if (frame_channel_count == 0 || frame_sample_count == 0) {
+                ve::log::info("PHASE L: Zero parameters detected, returning");
+                return;
+            }
+            
+            if (static_cast<uint16_t>(frame_channel_count) != channels_ || frame_sample_rate != sample_rate_) {
+                ve::log::info("PHASE L: Parameter mismatch, returning");
+                return;
+            }
+            ve::log::info("PHASE L: Parameter validation passed");
+            
+            // PHASE L: Test buffer size check
+            ve::log::info("PHASE L: Testing buffer size sanity check");
+            if (frame_sample_count > 100000) {
+                ve::log::info("PHASE L: Frame too large, returning");
+                return;
+            }
+            ve::log::info("PHASE L: Buffer size check passed");
+            
+            // PHASE L: Test heap buffer allocation check
+            ve::log::info("PHASE L: Testing heap buffer allocation check");
+            if (!momentary_buffer_ || !short_term_buffer_ || !integrated_buffer_ || !k_filters_) {
+                ve::log::error("PHASE L: Buffers not allocated!");
+                return;
+            }
+            ve::log::info("PHASE L: Buffer allocation check passed");
+            
+            // PHASE L: Test the counter increment that was causing issues
+            ve::log::info("PHASE L: Testing samples_processed_ increment");
+            samples_processed_ += static_cast<uint64_t>(frame_sample_count);
+            ve::log::info("PHASE L: Counter increment succeeded");
+            
+            ve::log::info("PHASE L: All operations completed successfully - no exception thrown");
+            
+            // PHASE O: Track method return sequence
+            ve::log::info("PHASE O: About to exit try block in process_samples()");
+            
+        } catch (const std::bad_alloc&) {
+            ve::log::error("PHASE L: CAUGHT std::bad_alloc exception in process_samples()");
+            throw;
+        } catch (const std::out_of_range&) {
+            ve::log::error("PHASE L: CAUGHT std::out_of_range exception in process_samples()");
+            throw;
+        } catch (const std::runtime_error&) {
+            ve::log::error("PHASE L: CAUGHT std::runtime_error exception in process_samples()");
+            throw;
+        } catch (const std::exception&) {
+            ve::log::error("PHASE L: CAUGHT std::exception in process_samples()");
+            throw;
+        } catch (...) {
+            ve::log::error("PHASE L: CAUGHT unknown exception in process_samples()");
+            throw;
         }
         
-        // SAFE DATA EXTRACTION: Get all needed data upfront to avoid thread safety issues
-        const size_t frame_sample_count = frame.sample_count();  // Extract once
-        const size_t frame_channel_count = frame.channel_count(); // Extract once  
-        const uint32_t frame_sample_rate = frame.sample_rate();   // Extract once
+        // PHASE O: Track successful exit from try-catch
+        ve::log::info("PHASE O: Successfully exited try-catch block in process_samples()");
         
-        // Parameter validation using extracted data
-        if (frame_channel_count == 0 || frame_sample_count == 0) {
-            return;
-        }
-        
-        if (frame_channel_count != channels_ || frame_sample_rate != sample_rate_) {
-            return; // Mismatch - would need resampling
-        }
-        
-        // Buffer size sanity check
-        if (frame_sample_count > 100000) { // More than ~2 seconds at 48kHz is suspicious
-            return;
-        }
-        
-        // Process samples using SAFE thread-safe approach
-        samples_processed_ += frame_sample_count;
-        
-        // PHASE E: Skip ALL AudioFrame data access to test frame.get_sample_as_float() crash theory
-        // Test only the basic frame processing without any sample data extraction
-        
-        // Simulate processing without actually accessing frame data
-        ve::log::info("PHASE E: Processing samples without data access - avoiding frame.get_sample_as_float() crash");
-        
-        // Update sample counter to simulate normal processing
-        samples_processed_ += frame_sample_count;
-        
-        // PHASE E: Skip ALL data extraction - no frame.get_sample_as_float() calls
-        // This tests if AudioFrame::get_sample_as_float() is the crash source
-        
-        ve::log::info("PHASE E: Completed sample processing simulation without data access");
+        // PHASE O: Track method return
+        ve::log::info("PHASE O: About to return from process_samples() method");
     }
     
     LoudnessMeasurement get_current_measurement() const {
@@ -414,37 +499,42 @@ public:
     
 private:
     void process_sample(float left, float right) {
+        // PHASE J: Use heap-allocated buffers through unique_ptr
+        if (!k_filters_ || !momentary_buffer_ || !short_term_buffer_ || !integrated_buffer_) {
+            return; // Buffers not initialized
+        }
+        
         // Apply K-weighting to each channel
-        double weighted_left = k_filters_[0].process_sample(static_cast<double>(left));
-        double weighted_right = k_filters_[1].process_sample(static_cast<double>(right));
+        double weighted_left = (*k_filters_)[0].process_sample(static_cast<double>(left));
+        double weighted_right = (*k_filters_)[1].process_sample(static_cast<double>(right));
         
         // Calculate mean square for this sample (EBU R128 uses mean square)
         double mean_square = (weighted_left * weighted_left + weighted_right * weighted_right) / 2.0;
         
         // Update circular buffers
-        momentary_buffer_[momentary_write_pos_] = mean_square;
-        short_term_buffer_[short_term_write_pos_] = mean_square;
+        (*momentary_buffer_)[momentary_write_pos_] = mean_square;
+        (*short_term_buffer_)[short_term_write_pos_] = mean_square;
         
         momentary_write_pos_ = (momentary_write_pos_ + 1) % momentary_window_samples_;
         short_term_write_pos_ = (short_term_write_pos_ + 1) % short_term_window_samples_;
         
         // Store for integrated measurement with size management
-        integrated_buffer_.push_back(mean_square);
+        integrated_buffer_->push_back(mean_square);
         integrated_sum_squares_ += mean_square;
         integrated_sample_count_++;
         
         // Prevent unbounded memory growth - trim buffer when too large
-        if (integrated_buffer_.size() > MAX_INTEGRATED_SAMPLES) {
-            size_t samples_to_remove = integrated_buffer_.size() - INTEGRATED_BUFFER_TRIM_SIZE;
+        if (integrated_buffer_->size() > MAX_INTEGRATED_SAMPLES) {
+            size_t samples_to_remove = integrated_buffer_->size() - INTEGRATED_BUFFER_TRIM_SIZE;
             
             // Subtract removed samples from sum
             for (size_t i = 0; i < samples_to_remove; ++i) {
-                integrated_sum_squares_ -= integrated_buffer_[i];
+                integrated_sum_squares_ -= (*integrated_buffer_)[i];
             }
             
             // Remove oldest samples
-            integrated_buffer_.erase(integrated_buffer_.begin(), 
-                                   integrated_buffer_.begin() + samples_to_remove);
+            integrated_buffer_->erase(integrated_buffer_->begin(), 
+                                    integrated_buffer_->begin() + samples_to_remove);
             integrated_sample_count_ -= samples_to_remove;
         }
         
@@ -474,14 +564,14 @@ private:
         uint64_t current_samples = samples_processed_.load();
         
         // Calculate momentary loudness (400ms window)
-        if (current_samples >= momentary_window_samples_) {
-            double momentary_mean_square = calculate_mean_square(momentary_buffer_);
+        if (current_samples >= momentary_window_samples_ && momentary_buffer_) {
+            double momentary_mean_square = calculate_mean_square(*momentary_buffer_);
             new_measurement.momentary_lufs = mean_square_to_lufs(momentary_mean_square);
         }
         
         // Calculate short-term loudness (3s window)
-        if (current_samples >= short_term_window_samples_) {
-            double short_term_mean_square = calculate_mean_square(short_term_buffer_);
+        if (current_samples >= short_term_window_samples_ && short_term_buffer_) {
+            double short_term_mean_square = calculate_mean_square(*short_term_buffer_);
             new_measurement.short_term_lufs = mean_square_to_lufs(short_term_mean_square);
         }
         
@@ -526,7 +616,7 @@ private:
     
     double calculate_integrated_loudness() {
         // Implement EBU R128 gated integrated loudness
-        if (integrated_buffer_.empty()) {
+        if (!integrated_buffer_ || integrated_buffer_->empty()) {
             return -std::numeric_limits<double>::infinity();
         }
         

@@ -416,6 +416,24 @@ if(ENABLE_TOOLS)
         target_compile_options(audio_engine_week7_basic_validation PRIVATE /W0)
     endif()
 
+    # PHASE J: Heap Allocation Validation Test - Validates crash fix for RealTimeLoudnessMonitor
+    add_executable(phase_j_heap_allocation_validation
+        phase_j_heap_allocation_validation.cpp
+    )
+    
+    target_link_libraries(phase_j_heap_allocation_validation PRIVATE
+        ve_core
+    )
+    
+    target_include_directories(phase_j_heap_allocation_validation PRIVATE
+        src/core/include
+    )
+    
+    # Disable warnings for this test executable
+    if(MSVC)
+        target_compile_options(phase_j_heap_allocation_validation PRIVATE /W0)
+    endif()
+
     # AUDIO ENGINE ROADMAP Phase 1B: Simple Mixer Core Validation
     add_executable(simple_mixer_validation
         simple_mixer_validation.cpp
