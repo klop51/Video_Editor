@@ -127,6 +127,9 @@ public:
     void disable_professional_monitoring();
     bool is_monitoring_enabled() const { return monitoring_enabled_; }
 
+    // Audio data access for external output
+    std::shared_ptr<AudioFrame> get_mixed_audio(uint32_t frame_count);
+
     // Error handling
     std::string get_last_error() const;
     void clear_error();
@@ -175,6 +178,10 @@ private:
     void update_stats(const std::shared_ptr<AudioFrame>& frame);
     void process_audio_buffer();
     std::shared_ptr<AudioFrame> mix_buffered_audio(uint32_t frame_count);
+    std::shared_ptr<AudioFrame> resize_audio_frame(const std::shared_ptr<AudioFrame>& source_frame, uint32_t target_frame_count);
+    
+    // Audio callback for AudioOutput integration
+    size_t audio_render_callback(void* buffer, uint32_t frame_count, SampleFormat format, uint16_t channels);
 };
 
 } // namespace ve::audio

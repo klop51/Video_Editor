@@ -630,8 +630,8 @@ void PlaybackController::playback_thread_main() {
                 }
             }
             
-            // Read audio frame - DEBUG LOGGING DISABLED FOR PERFORMANCE
-            auto audio_frame = [&](){ /* VE_PROFILE_SCOPE_UNIQ("playback.decode_audio"); */ return decoder_->read_audio(); }();
+            // Read audio frame
+            auto audio_frame = [&](){ /* VE_PROFILE_SCOPE_UNIQ("playbook.decode_audio"); */ return decoder_->read_audio(); }();
             
             if (audio_frame) {
                 { // audio callback dispatch (profiling removed to avoid variable shadow warning on MSVC)
@@ -639,9 +639,31 @@ void PlaybackController::playback_thread_main() {
                     
                     { std::scoped_lock lk(callbacks_mutex_); copy = audio_entries_; }
                     
+                    // PHASE 1 DIAGNOSTIC: Enforce single audio sink during debugging (throttled logging)
+                    static auto last_sink_log = std::chrono::steady_clock::now();
+                    auto now = std::chrono::steady_clock::now();
+                    bool should_log = std::chrono::duration_cast<std::chrono::seconds>(now - last_sink_log).count() >= 5;
+                    
                     if (copy.size() > 1) {
-                        ve::log::warn("WARNING_MULTIPLE_AUDIO_SINKS: " + std::to_string(copy.size()) +
-                                      " audio callbacks registered; this can cause echo.");
+                        if (should_log) {
+                            ve::log::error("PHASE1_MULTIPLE_SINKS_ERROR: " + std::to_string(copy.size()) +
+                                          " audio callbacks registered; this can cause competing submits and timing issues. " +
+                                          "Using only the first callback during Phase 1 debugging.");
+                        }
+                        // Limit to first callback only during Phase 1
+                        copy.resize(1);
+                    } else if (copy.size() == 0) {
+                        if (should_log) {
+                            ve::log::warn("PHASE1_NO_AUDIO_SINK: No audio callbacks registered - audio will not be heard.");
+                        }
+                    } else {
+                        if (should_log) {
+                            ve::log::info("PHASE1_SINGLE_SINK_OK: 1 audio callback registered - good for testing.");
+                        }
+                    }
+                    
+                    if (should_log) {
+                        last_sink_log = now;
                     }
                     
                     // DEBUG LOGGING DISABLED FOR PERFORMANCE - audio callback dispatch
@@ -842,7 +864,7 @@ bool PlaybackController::initialize_audio_pipeline() {
     ve::audio::AudioPipelineConfig pipeline_config;
     pipeline_config.sample_rate = 48000;
     pipeline_config.channel_count = 2;
-    pipeline_config.buffer_size = 32;  // Minimal buffer to eliminate echo
+    pipeline_config.buffer_size = 480;  // Match WASAPI device period frames for optimal audio synchronization
     pipeline_config.format = ve::audio::SampleFormat::Float32;
     
     // Create the audio pipeline
@@ -859,15 +881,12 @@ bool PlaybackController::initialize_audio_pipeline() {
         return false;
     }
     
-    // Start audio output - TEMPORARILY DISABLED FOR DEBUGGING SIGABRT  
-    // DEBUGGING: Temporarily commented out to test if audio causes SIGABRT
-    /*
+    // Start audio output
     if (!audio_pipeline_->start_output()) {
         ve::log::error("Failed to start audio output");
         audio_pipeline_.reset();
         return false;
     }
-    */
     
     // Remove any existing audio callback to prevent duplicates
     if (audio_callback_id_ != 0) {

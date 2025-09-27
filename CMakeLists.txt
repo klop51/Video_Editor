@@ -607,6 +607,85 @@ if(ENABLE_TOOLS)
         target_compile_options(audio_effects_phase2_week5_validation PRIVATE /W0)
     endif()
 
+    # Phase 2: Event-Driven WASAPI Validation Test
+    add_executable(phase2_event_driven_test
+        phase2_event_driven_test.cpp
+    )
+
+    target_link_libraries(phase2_event_driven_test PRIVATE
+        ve_audio
+        ve_core
+    )
+
+    target_include_directories(phase2_event_driven_test PRIVATE
+        src/core/include
+        src/audio/include
+    )
+
+    set_target_properties(phase2_event_driven_test PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
+    )
+
+    # Disable warnings for this test executable
+    if(MSVC)
+        target_compile_options(phase2_event_driven_test PRIVATE /W0)
+    endif()
+
+    # Audio Callback Test - Real audio data with event-driven AudioOutput
+    add_executable(audio_callback_test
+        audio_callback_test.cpp
+    )
+
+    target_link_libraries(audio_callback_test PRIVATE
+        ve_audio
+        ve_core
+    )
+
+    target_include_directories(audio_callback_test PRIVATE
+        src/core/include
+        src/audio/include
+    )
+
+    set_target_properties(audio_callback_test PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
+    )
+
+    # Disable warnings for this test executable
+    if(MSVC)
+        target_compile_options(audio_callback_test PRIVATE /W0)
+    endif()
+
+    # Video Audio Callback Test - Real video file playback with event-driven callback system
+    add_executable(video_audio_callback_test
+        video_audio_callback_test.cpp
+    )
+
+    target_link_libraries(video_audio_callback_test PRIVATE
+        ve_audio
+        ve_core
+        ve_media_io
+        ve_decode
+    )
+
+    target_include_directories(video_audio_callback_test PRIVATE
+        src/core/include
+        src/audio/include
+        src/media_io/include
+        src/decode/include
+    )
+
+    set_target_properties(video_audio_callback_test PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
+    )
+
+    # Disable warnings for this test executable
+    if(MSVC)
+        target_compile_options(video_audio_callback_test PRIVATE /W0)
+    endif()
+
     # Week 10: Real-Time Audio Monitoring Validation (Standalone)
     add_executable(audio_monitoring_week10_validation_standalone
         audio_monitoring_week10_validation_standalone.cpp

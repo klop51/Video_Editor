@@ -335,6 +335,12 @@ AudioOutputError AudioOutput::stop() {
 
     // Stop render thread
     thread_should_exit_ = true;
+    
+    // PHASE 2: Wake up render thread from WaitForSingleObject if it's waiting
+    if (render_event_) {
+        SetEvent(render_event_);
+    }
+    
     if (render_thread_.joinable()) {
         render_thread_.join();
     }
@@ -515,9 +521,30 @@ AudioOutputError AudioOutput::submit_data(const void* data, uint32_t frame_count
         std::lock_guard<std::mutex> lock(stats_mutex_);
         stats_.frames_rendered += safe_frames;
         
-        // BREADCRUMB: Log audio stats every 100 frames to track WASAPI state
+        // PHASE 1 DIAGNOSTIC: Track submit timing every 5 seconds to prevent frame skips
         static int frame_counter = 0;
-        if (++frame_counter % 100 == 0) {
+        static auto last_submit_time = std::chrono::high_resolution_clock::now();
+        static auto last_log_time = std::chrono::high_resolution_clock::now();
+        
+        auto current_time = std::chrono::high_resolution_clock::now();
+        auto time_since_last_submit = std::chrono::duration_cast<std::chrono::microseconds>(current_time - last_submit_time).count();
+        auto time_since_last_log = std::chrono::duration_cast<std::chrono::seconds>(current_time - last_log_time).count();
+        
+        // Log timing data every 5 seconds to maintain system stability
+        if (time_since_last_log >= 5) {
+            ve::log::info("PHASE1_SUBMIT_TIMING: frames_submitted=" + std::to_string(safe_frames) + 
+                         ", padding_before=" + std::to_string(padding_frames) +
+                         ", padding_after=" + std::to_string(pad2) +
+                         ", available_frames=" + std::to_string(available_frames) +
+                         ", time_since_last_submit_us=" + std::to_string(time_since_last_submit) +
+                         ", buffer_frame_count=" + std::to_string(buffer_frame_count_));
+            last_log_time = current_time;
+        }
+        
+        last_submit_time = current_time;
+        
+        // Keep original breadcrumb logging every 500 frames (every ~5 seconds @ 100fps) for comparison
+        if (++frame_counter % 500 == 0) {
             ve::log::info("Audio breadcrumb: frames_to_submit=" + std::to_string(frames_to_submit) + 
                          ", safe_frames=" + std::to_string(safe_frames) + 
                          ", buffer_frame_count=" + std::to_string(buffer_frame_count_) +
@@ -676,6 +703,10 @@ void AudioOutput::set_device_change_callback(std::function<void(const std::strin
     device_change_callback_ = callback;
 }
 
+void AudioOutput::set_render_callback(std::function<size_t(void* buffer, uint32_t frame_count, SampleFormat format, uint16_t channels)> callback) {
+    render_callback_ = callback;
+}
+
 #ifdef _WIN32
 
 AudioOutputError AudioOutput::initialize_wasapi() {
@@ -774,9 +805,12 @@ AudioOutputError AudioOutput::initialize_format() {
     REFERENCE_TIME requested_duration = config_.buffer_duration_ms * 10000; // Convert to 100-nanosecond units
     REFERENCE_TIME min_periodicity = config_.min_periodicity_ms * 10000;
 
+    // PHASE 2: Enable event-driven WASAPI for device-clock driven rendering
+    DWORD stream_flags = AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
+    
     hr = audio_client_->Initialize(
         config_.exclusive_mode ? AUDCLNT_SHAREMODE_EXCLUSIVE : AUDCLNT_SHAREMODE_SHARED,
-        0, // flags
+        stream_flags, // Enable event-driven rendering
         requested_duration,
         config_.exclusive_mode ? requested_duration : 0,
         mix_format,
@@ -798,11 +832,48 @@ AudioOutputError AudioOutput::initialize_format() {
         }
     }
 
+    // PHASE 2: Create and set event handle for device-driven rendering
+    if (!render_event_) {
+        render_event_ = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+        if (!render_event_) {
+            set_error(AudioOutputError::Unknown, "Failed to create render event: " + std::to_string(GetLastError()));
+            return AudioOutputError::Unknown;
+        }
+    }
+    
+    hr = audio_client_->SetEventHandle(render_event_);
+    if (FAILED(hr)) {
+        set_error(AudioOutputError::Unknown, "Failed to set event handle: " + std::to_string(hr));
+        return AudioOutputError::Unknown;
+    }
+
     // Get buffer size
     hr = audio_client_->GetBufferSize(&buffer_frame_count_);
     if (FAILED(hr)) {
         set_error(AudioOutputError::Unknown, "Failed to get buffer size: " + std::to_string(hr));
         return AudioOutputError::Unknown;
+    }
+
+    // PHASE 1 DIAGNOSTIC: Get device period and quantum information
+    REFERENCE_TIME default_device_period = 0;
+    REFERENCE_TIME minimum_device_period = 0;
+    hr = audio_client_->GetDevicePeriod(&default_device_period, &minimum_device_period);
+    if (SUCCEEDED(hr)) {
+        // Convert 100-nanosecond units to milliseconds and frames
+        double default_period_ms = default_device_period / 10000.0;
+        double minimum_period_ms = minimum_device_period / 10000.0;
+        UINT32 default_period_frames = (UINT32)(config_.sample_rate * default_period_ms / 1000.0);
+        UINT32 minimum_period_frames = (UINT32)(config_.sample_rate * minimum_period_ms / 1000.0);
+        
+        ve::log::info("PHASE1_DEVICE_INFO: buffer_frame_count=" + std::to_string(buffer_frame_count_) +
+                     ", default_device_period_ms=" + std::to_string(default_period_ms) +
+                     ", minimum_device_period_ms=" + std::to_string(minimum_period_ms) +
+                     ", default_period_frames=" + std::to_string(default_period_frames) +
+                     ", minimum_period_frames=" + std::to_string(minimum_period_frames) +
+                     ", sample_rate=" + std::to_string(config_.sample_rate) +
+                     ", channel_count=" + std::to_string(config_.channel_count));
+    } else {
+        ve::log::warn("PHASE1_DEVICE_INFO: Failed to get device period: " + std::to_string(hr));
     }
 
     // Update stats
@@ -836,16 +907,79 @@ void AudioOutput::render_thread_function() {
         AvSetMmThreadPriority(task_handle, AVRT_PRIORITY_HIGH);
     }
 
+    ve::log::info("PHASE2_RENDER_THREAD: Event-driven render thread started with MMCSS priority");
+
     while (!thread_should_exit_) {
-        // Wait for buffer to be available
+        // PHASE 2: Wait for device event (device-clock driven timing)
         if (render_event_) {
-            WaitForSingleObject(render_event_, INFINITE);
+            DWORD wait_result = WaitForSingleObject(render_event_, INFINITE);
+            if (wait_result != WAIT_OBJECT_0 || thread_should_exit_) {
+                break;
+            }
+        } else {
+            // Fallback if no event (shouldn't happen with event-driven mode)
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            continue;
         }
 
-        // In a real implementation, you'd render audio here
-        // For now, just sleep to simulate processing
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        // PHASE 2: Device-driven audio rendering 
+        if (!audio_client_ || !render_client_) {
+            continue;
+        }
+
+        // Check how much space is available in the buffer
+        UINT32 padding_frames = 0;
+        HRESULT hr = audio_client_->GetCurrentPadding(&padding_frames);
+        if (FAILED(hr)) {
+            continue;
+        }
+
+        UINT32 available_frames = buffer_frame_count_ - padding_frames;
+        if (available_frames == 0) {
+            continue; // Buffer is full, wait for next event
+        }
+
+        // Calculate optimal submission size (device period aligned)
+        UINT32 frames_to_submit = std::min(available_frames, 480u); // 10ms @ 48kHz
+
+        // PHASE 2: Get real audio data from callback or fill with silence
+        size_t bytes_per_frame = config_.channel_count * 
+            ((config_.format == SampleFormat::Float32) ? 4 : 
+             (config_.format == SampleFormat::Int32) ? 4 : 2);
+        
+        std::vector<uint8_t> audio_buffer(frames_to_submit * bytes_per_frame, 0);
+        
+        if (render_callback_) {
+            // Get real audio data from the callback
+            size_t frames_rendered = render_callback_(audio_buffer.data(), frames_to_submit, config_.format, config_.channel_count);
+            if (frames_rendered < frames_to_submit) {
+                // Fill remaining with silence if callback didn't provide enough data
+                size_t silence_bytes = (frames_to_submit - frames_rendered) * bytes_per_frame;
+                std::memset(audio_buffer.data() + (frames_rendered * bytes_per_frame), 0, silence_bytes);
+            }
+        }
+        // If no callback is set, audio_buffer remains filled with silence (initialized to 0)
+        
+        // Use existing submit_data logic but bypass PTS deduplication for render thread
+        auto now_chrono = std::chrono::high_resolution_clock::now();
+        auto now_us = std::chrono::duration_cast<std::chrono::microseconds>(now_chrono.time_since_epoch()).count();
+        TimePoint now(now_us, 1000000);
+        submit_data(audio_buffer.data(), frames_to_submit, now);
+        
+        // Log device-driven submissions every 5 seconds to prevent performance issues
+        static auto last_render_log_time = std::chrono::high_resolution_clock::now();
+        auto current_render_time = std::chrono::high_resolution_clock::now();
+        auto time_since_render_log = std::chrono::duration_cast<std::chrono::seconds>(current_render_time - last_render_log_time).count();
+        
+        if (time_since_render_log >= 5) {
+            ve::log::info("PHASE2_DEVICE_DRIVEN: submitted " + std::to_string(frames_to_submit) + 
+                         " frames, padding=" + std::to_string(padding_frames) + 
+                         ", available=" + std::to_string(available_frames));
+            last_render_log_time = current_render_time;
+        }
     }
+
+    ve::log::info("PHASE2_RENDER_THREAD: Event-driven render thread exiting");
 
     if (task_handle) {
         AvRevertMmThreadCharacteristics(task_handle);

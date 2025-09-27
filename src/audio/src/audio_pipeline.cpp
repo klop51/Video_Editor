@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <cstring>
 
 namespace ve::audio {
 
@@ -290,6 +291,14 @@ void AudioPipeline::clear_error() {
     last_error_.clear();
 }
 
+std::shared_ptr<AudioFrame> AudioPipeline::get_mixed_audio(uint32_t frame_count) {
+    if (state_.load() != AudioPipelineState::Playing) {
+        return nullptr;
+    }
+    
+    return mix_buffered_audio(frame_count);
+}
+
 // Private methods
 
 void AudioPipeline::set_state(AudioPipelineState new_state) {
@@ -325,14 +334,19 @@ bool AudioPipeline::initialize_output() {
     output_config.sample_rate = config_.sample_rate;
     output_config.channel_count = config_.channel_count;
     output_config.format = config_.format;
-    output_config.exclusive_mode = true; // Try exclusive mode first to prevent echo
-    output_config.buffer_duration_ms = 10; // Further reduced for minimal latency
-    output_config.min_periodicity_ms = 2;  // Very responsive
+    output_config.exclusive_mode = false; // Use shared mode for better stability and quality
+    output_config.buffer_duration_ms = 50; // Increased buffer for stable continuous audio
+    output_config.min_periodicity_ms = 10;  // Balanced latency and stability
 
     output_ = AudioOutput::create(output_config);
     if (!output_) {
         return false;
     }
+
+    // Set up audio render callback to provide real audio data
+    output_->set_render_callback([this](void* buffer, uint32_t frame_count, SampleFormat format, uint16_t channels) -> size_t {
+        return this->audio_render_callback(buffer, frame_count, format, channels);
+    });
 
     // Try to initialize with exclusive mode first
     auto result = output_->initialize();
@@ -345,6 +359,11 @@ bool AudioPipeline::initialize_output() {
         if (!output_) {
             return false;
         }
+
+        // Set up callback for the recreated output
+        output_->set_render_callback([this](void* buffer, uint32_t frame_count, SampleFormat format, uint16_t channels) -> size_t {
+            return this->audio_render_callback(buffer, frame_count, format, channels);
+        });
         
         result = output_->initialize();
         if (result != AudioOutputError::Success) {
@@ -395,11 +414,18 @@ std::shared_ptr<AudioFrame> AudioPipeline::mix_buffered_audio(uint32_t frame_cou
 
     // Check if mixer is properly initialized and has channels
     if (!mixer_ || !mixer_->is_initialized()) {
+        // Resize frame to match requested count for WASAPI compatibility
+        if (latest_frame->sample_count() != frame_count) {
+            return resize_audio_frame(latest_frame, frame_count);
+        }
         return latest_frame; // Fallback to direct passthrough
     }
 
-    // If no channels exist, return the frame directly (no mixing needed)
+    // If no channels exist, resize frame to match requested count
     if (mixer_->get_channel_count() == 0) {
+        if (latest_frame->sample_count() != frame_count) {
+            return resize_audio_frame(latest_frame, frame_count);
+        }
         return latest_frame;
     }
 
@@ -407,8 +433,16 @@ std::shared_ptr<AudioFrame> AudioPipeline::mix_buffered_audio(uint32_t frame_cou
     // Create output frame with requested frame count and latest frame timestamp
     auto mixed_frame = mixer_->mix_channels(frame_count, latest_frame->timestamp());
     
-    // Return mixed frame if successful, otherwise fallback to original
-    return mixed_frame ? mixed_frame : latest_frame;
+    // Return mixed frame if successful, otherwise fallback to resized original
+    if (mixed_frame) {
+        return mixed_frame;
+    } else {
+        // Fallback: resize original frame to match requirements
+        if (latest_frame->sample_count() != frame_count) {
+            return resize_audio_frame(latest_frame, frame_count);
+        }
+        return latest_frame;
+    }
 }
 
 void AudioPipeline::processing_thread_main() {
@@ -464,6 +498,101 @@ void AudioPipeline::disable_professional_monitoring() {
     }
     
     ve::log::info("Professional audio monitoring disabled");
+}
+
+size_t AudioPipeline::audio_render_callback(void* buffer, uint32_t frame_count, SampleFormat format, uint16_t channels) {
+    // Verify we're in playing state
+    if (state_.load() != AudioPipelineState::Playing) {
+        // Fill with silence if not playing
+        size_t buffer_size = frame_count * channels * sizeof(float);
+        std::memset(buffer, 0, buffer_size);
+        return buffer_size;
+    }
+
+    // Get mixed audio data from pipeline
+    auto audio_frame = get_mixed_audio(frame_count);
+    if (!audio_frame) {
+        // No audio available, fill with silence
+        size_t buffer_size = frame_count * channels * sizeof(float);
+        std::memset(buffer, 0, buffer_size);
+        return buffer_size;
+    }
+
+    // Verify format compatibility
+    if (audio_frame->format() != format || 
+        audio_frame->channel_count() != channels ||
+        audio_frame->sample_count() != frame_count) {
+        // Format mismatch, fill with silence for safety
+        size_t buffer_size = frame_count * channels * sizeof(float);
+        std::memset(buffer, 0, buffer_size);
+        
+        // Log format mismatches only every 5 seconds to prevent log spam
+        static auto last_format_warning = std::chrono::steady_clock::now();
+        auto now = std::chrono::steady_clock::now();
+        if (std::chrono::duration_cast<std::chrono::seconds>(now - last_format_warning).count() >= 5) {
+            ve::log::warn("AudioPipeline: Format mismatch in render callback - expected " + 
+                         std::to_string(channels) + "ch/" + std::to_string(static_cast<int>(format)) + "fmt/" + std::to_string(frame_count) + 
+                         " frames, got " + std::to_string(audio_frame->channel_count()) + "ch/" + 
+                         std::to_string(static_cast<int>(audio_frame->format())) + "fmt/" + std::to_string(audio_frame->sample_count()) + " frames");
+            last_format_warning = now;
+        }
+        return buffer_size;
+    }
+
+    // Copy audio data to output buffer
+    const void* audio_data = audio_frame->data();
+    size_t data_size = audio_frame->data_size();
+    std::memcpy(buffer, audio_data, data_size);
+
+    return data_size;
+}
+
+std::shared_ptr<AudioFrame> AudioPipeline::resize_audio_frame(const std::shared_ptr<AudioFrame>& source_frame, uint32_t target_frame_count) {
+    if (!source_frame || target_frame_count == 0) {
+        return nullptr;
+    }
+
+    uint32_t source_frame_count = source_frame->sample_count();
+    if (source_frame_count == target_frame_count) {
+        return source_frame; // No resizing needed
+    }
+
+    // Create new frame with target size
+    auto resized_frame = AudioFrame::create(
+        source_frame->sample_rate(),
+        source_frame->channel_count(),
+        target_frame_count,
+        source_frame->format(),
+        source_frame->timestamp()
+    );
+
+    if (!resized_frame) {
+        return source_frame; // Fallback to original if creation fails
+    }
+
+    // Get source and target data pointers
+    const float* source_data = static_cast<const float*>(source_frame->data());
+    float* target_data = static_cast<float*>(resized_frame->data());
+    
+    uint16_t channels = source_frame->channel_count();
+    
+    if (target_frame_count <= source_frame_count) {
+        // Truncate: copy first N frames
+        uint32_t samples_to_copy = target_frame_count * channels;
+        std::memcpy(target_data, source_data, samples_to_copy * sizeof(float));
+    } else {
+        // Extend: copy all source frames, then pad with silence
+        uint32_t source_samples = source_frame_count * channels;
+        uint32_t target_samples = target_frame_count * channels;
+        
+        // Copy source audio data
+        std::memcpy(target_data, source_data, source_samples * sizeof(float));
+        
+        // Fill remaining with silence
+        std::memset(target_data + source_samples, 0, (target_samples - source_samples) * sizeof(float));
+    }
+
+    return resized_frame;
 }
 
 } // namespace ve::audio

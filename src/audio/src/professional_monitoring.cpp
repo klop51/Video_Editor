@@ -711,15 +711,18 @@ void ProfessionalAudioMonitoringSystem::process_audio_frame(const AudioFrame& fr
     
     auto start_time = std::chrono::high_resolution_clock::now();
     
-    // TEMPORARY FIX: Disable loudness monitoring to eliminate deadlock
-    // Process through all enabled monitoring components
-    if (false) {  // loudness_monitor_ && false to disable
+    // TEMPORARILY DISABLED: Process through all enabled monitoring components with safe error handling
+    // TODO: Fix recursive mutex deadlock in loudness monitoring
+    /*
+    if (loudness_monitor_) {
         try {
             loudness_monitor_->process_samples(frame);
         } catch (const std::exception& e) {
             ve::log::error("Loudness monitor error: " + std::string(e.what()));
+            // Continue processing even if loudness monitoring fails
         }
     }
+    */
     
     if (meter_system_) {
         try {

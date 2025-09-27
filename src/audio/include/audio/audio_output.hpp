@@ -143,6 +143,7 @@ public:
     // Callbacks
     void set_underrun_callback(std::function<void()> callback);
     void set_device_change_callback(std::function<void(const std::string&)> callback);
+    void set_render_callback(std::function<size_t(void* buffer, uint32_t frame_count, SampleFormat format, uint16_t channels)> callback);
 
 private:
     // Configuration
@@ -188,6 +189,7 @@ private:
     // Callbacks
     std::function<void()> underrun_callback_;
     std::function<void(const std::string&)> device_change_callback_;
+    std::function<size_t(void* buffer, uint32_t frame_count, SampleFormat format, uint16_t channels)> render_callback_;
 
     // WASAPI implementation
     AudioOutputError initialize_wasapi();
