@@ -57,6 +57,8 @@ target_include_directories(ve_ui
     PRIVATE ${CMAKE_SOURCE_DIR}/src/audio/include
     # Needed for referencing Application signals in main_window (no link dependency)
     PRIVATE ${CMAKE_SOURCE_DIR}/src/app/include
+    # Include video module for UiImageFrame
+    PRIVATE ${CMAKE_SOURCE_DIR}/src
 )
 
 target_link_libraries(ve_ui
@@ -71,6 +73,8 @@ target_link_libraries(ve_ui
         ve_gfx
         # Week 8: Link Week 7 audio engine for waveform system
         ve_audio
+        # Link video module for UiImageFrame
+        video
         Qt6::Core
         Qt6::Widgets
         Qt6::Multimedia

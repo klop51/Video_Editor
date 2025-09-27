@@ -2,6 +2,7 @@
 #include <QApplication>
 #include "app/application.hpp"
 #include "../../core/crash_trap.hpp"
+#include "../../video/UiImageFrame.h"
 #include <iostream>
 #include <exception>
 #ifdef _MSC_VER
@@ -44,8 +45,12 @@ int main(int argc, char** argv) {
     
     // Configure Qt logging for crash investigation
     qputenv("QT_FATAL_WARNINGS", "1");  // Turn Qt warnings into aborts for stack traces
-    qputenv("QT_LOGGING_RULES", "qt.qpa.*=true;*.debug=true;decoder.ui=true;decoder.core=true");
-    std::cout << "Qt logging environment configured for crash investigation" << std::endl;
+    qputenv("QT_LOGGING_RULES", "qt.widgets.painting=true;qt.qpa.*=true;*.debug=true;decoder.ui=true;decoder.core=true");
+    std::cout << "Qt logging environment configured for Step 7 crash investigation" << std::endl;
+    
+    // CRITICAL: Register UiImageFramePtr metatype early for robust queued signal delivery
+    qRegisterMetaType<UiImageFramePtr>("UiImageFramePtr");
+    std::cout << "UiImageFramePtr metatype registered for thread-safe signals" << std::endl;
     
     std::set_terminate(ve_terminate_handler);
 #ifdef _MSC_VER

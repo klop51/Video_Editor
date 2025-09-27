@@ -1,3 +1,6 @@
+# Find Qt6 for Qt playback controller
+find_package(Qt6 REQUIRED COMPONENTS Core Gui)
+
 add_library(ve_decode STATIC
     src/decoder.cpp
     src/video_decoder_ffmpeg.cpp
@@ -5,6 +8,7 @@ add_library(ve_decode STATIC
     src/async_decoder.cpp
     src/audio_resampler.cpp
     src/playback_controller.cpp
+    src/qt_playback_controller.cpp
     src/gpu_upload_stub.cpp
     src/codec_optimizer.cpp
 )
@@ -27,6 +31,10 @@ target_link_libraries(ve_decode
         VideoEditor::media_io
         ve_core
         ve_media_io
+        video  # For UiImageFrame
+    PRIVATE
+        Qt6::Core
+        Qt6::Gui
 )
 
 if(ENABLE_FFMPEG)

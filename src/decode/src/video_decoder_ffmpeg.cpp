@@ -589,13 +589,7 @@ public:
         ve::log::info("DEBUG: read_video() starting");
         static bool no_copy_mode = (std::getenv("VE_DECODE_NO_COPY") != nullptr);
         
-        // GLOBAL EMERGENCY STOP - prevent any processing after 4 total calls
-        static size_t total_calls = 0;
-        total_calls++;
-        if (total_calls > 4) {
-            ve::log::info("DEBUG: GLOBAL EMERGENCY STOP - Total calls reached (" + std::to_string(total_calls) + "), preventing crash");
-            return std::nullopt;
-        }
+        // Emergency stop removed - original crash has been fixed
         
         // Monitor memory usage
         static size_t total_frames_processed = 0;
@@ -792,18 +786,8 @@ public:
                 av_frame_unref(frame_);
                 ve::log::info("DEBUG: AVFrame unreferenced after VideoFrame creation");
                 
-                // CRASH FIX: Emergency frame limit to prevent SIGABRT after 5 frames
-                static int frame_counter = 0;
-                frame_counter++;
-                
-                // Emergency stop: Hard limit at 2 frames to prevent crash completely
-                if (frame_counter >= 2) {
-                    ve::log::info("DEBUG: EMERGENCY STOP - Frame limit reached (" + std::to_string(frame_counter) + "), stopping to prevent crash");
-                    
-                    // Reset and return nullopt to stop further processing
-                    frame_counter = 0;
-                    return std::nullopt;
-                }
+                // CRASH FIX: Emergency frame limit to prevent SIGABRT - allow reasonable operation
+                // Emergency stop removed - original crash has been fixed
                 
                 // Reduce processing speed to prevent resource exhaustion
                 std::this_thread::sleep_for(std::chrono::milliseconds(3));

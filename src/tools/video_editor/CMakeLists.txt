@@ -22,6 +22,7 @@ target_link_libraries(video_editor
     PRIVATE
         ve_app
         ve_core
+        video
         Qt6::Core
         Qt6::Widgets
 )

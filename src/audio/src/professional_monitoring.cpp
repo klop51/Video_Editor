@@ -57,13 +57,19 @@ void EnhancedEBUR128Monitor::reset() {
 }
 
 void EnhancedEBUR128Monitor::process_samples(const AudioFrame& frame) {
+    // PHASE B: Test compliance checking operations while RealTimeLoudnessMonitor is disabled
+    
+    // This should be safe since RealTimeLoudnessMonitor::process_samples just returns early
     core_monitor_->process_samples(frame);
+    
+    // PHASE A SUCCESS: These operations work fine
     samples_processed_.fetch_add(frame.sample_count() * frame.channel_count());
     
-    // Update measurements and compliance every 100ms
+    // PHASE B: Re-enable compliance checking and history operations
     static auto last_update = std::chrono::steady_clock::now();
     auto now = std::chrono::steady_clock::now();
     if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_update).count() >= 100) {
+        // PHASE B: Re-enable these operations to test if they cause the crash
         update_compliance_status();
         update_history();
         last_update = now;
@@ -685,21 +691,45 @@ void ProfessionalAudioMonitoringSystem::set_target_platform(const std::string& p
 }
 
 void ProfessionalAudioMonitoringSystem::process_audio_frame(const AudioFrame& frame) {
-    if (!initialized_) return;
+    ve::log::info("ProfessionalAudioMonitoringSystem::process_audio_frame - ENTRY");
+    
+    if (!initialized_) {
+        ve::log::info("ProfessionalAudioMonitoringSystem::process_audio_frame - Not initialized, returning early");
+        return;
+    }
+    ve::log::info("ProfessionalAudioMonitoringSystem::process_audio_frame - Initialization check passed");
     
     auto start_time = std::chrono::high_resolution_clock::now();
     
     // Process through all enabled monitoring components
-    if (loudness_monitor_) {
+    ve::log::info("ProfessionalAudioMonitoringSystem::process_audio_frame - About to check loudness_monitor_");
+    
+    // PHASE G: Completely disable loudness monitor to test stack corruption theory
+    // Skip ALL loudness monitor processing to isolate the crash source
+    if (false && loudness_monitor_) {  // PHASE G: Force disable loudness monitor
+        ve::log::info("ProfessionalAudioMonitoringSystem::process_audio_frame - Loudness monitor enabled, processing samples");
         loudness_monitor_->process_samples(frame);
+        ve::log::info("ProfessionalAudioMonitoringSystem::process_audio_frame - Loudness monitor processing completed");
+    } else {
+        ve::log::info("PHASE G: Loudness monitor DISABLED - testing if this eliminates stack corruption crash");
     }
     
+    ve::log::info("ProfessionalAudioMonitoringSystem::process_audio_frame - About to check meter_system_");
     if (meter_system_) {
+        ve::log::info("ProfessionalAudioMonitoringSystem::process_audio_frame - Meter system enabled, processing samples");
         meter_system_->process_samples(frame);
+        ve::log::info("ProfessionalAudioMonitoringSystem::process_audio_frame - Meter system processing completed");
+    } else {
+        ve::log::info("ProfessionalAudioMonitoringSystem::process_audio_frame - Meter system disabled");
     }
     
+    ve::log::info("ProfessionalAudioMonitoringSystem::process_audio_frame - About to check scopes_");
     if (scopes_) {
+        ve::log::info("ProfessionalAudioMonitoringSystem::process_audio_frame - Scopes enabled, processing samples");
         scopes_->process_samples(frame);
+        ve::log::info("ProfessionalAudioMonitoringSystem::process_audio_frame - Scopes processing completed");
+    } else {
+        ve::log::info("ProfessionalAudioMonitoringSystem::process_audio_frame - Scopes disabled");
     }
     
     auto end_time = std::chrono::high_resolution_clock::now();

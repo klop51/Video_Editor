@@ -27,9 +27,9 @@ void PlayerWindow::startPlayback() {
         // Convert RGBA frame to QImage
         if(vf.format != ve::decode::PixelFormat::RGBA32) return; // expectation from controller conversion
         QImage img(vf.data.data(), vf.width, vf.height, QImage::Format_RGBA8888);
-        QMetaObject::invokeMethod(this, [this, img]() {
+        QTimer::singleShot(0, this, [this, img]() {
             label_->setPixmap(QPixmap::fromImage(img.scaled(label_->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation)));
-        }, Qt::QueuedConnection);
+        });
     });
 }
 

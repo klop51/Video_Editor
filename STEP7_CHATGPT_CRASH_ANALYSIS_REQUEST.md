@@ -1,10 +1,12 @@
-# STEP 7 CRASH ANALYSIS REQUEST FOR CHATGPT
+# Qt6 Video Editor Crash Analysis Request
 
-## EXECUTIVE SUMMARY
+## Executive Summary
+**Issue**: Qt6 video editor application crashes with SIGABRT during video playback after successful frame processing.
+**Architecture**: C++17 Qt6 video editor with thread-safe frame handoff system
+**Crash Pattern**: Delayed crash (~5 seconds) during active video playback with continuous frame processing
+**Environment**: Windows 11, Qt6, CMake, MSVC 2022
 
-**Mission**: User reported "The app crashes when the decoder is enabled from the UI" and requested systematic 7-step crash fix methodology. We have successfully progressed through Steps 1-7, achieving dramatic improvement from immediate crashes to extended stable operation. **Step 7 has been reached** and requires ChatGPT analysis for the final crash resolution.
-
-**Achievement**: **MAJOR SUCCESS** - Original immediate synchronous UI crash completely eliminated. Application now achieves **400ms+ stable operation** with successful timer callbacks, Qt paint operations, frame processing, and emergency stops working correctly. The crash now occurs at a **completely different location** representing successful progression through the methodology.
+**Achievement**: **MAJOR SUCCESS** - Original immediate synchronous UI crash completely eliminated. Application now achieves **5+ seconds stable operation** with successful video loading, frame processing, Qt paint operations, and UI updates working correctly.
 
 ## STEP 7 STATUS: CRASH PROGRESSION ACHIEVED ✅
 

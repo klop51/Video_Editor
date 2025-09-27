@@ -126,6 +126,8 @@ endif()
 add_subdirectory(src/core) # Sets up external deps (fmt/spdlog) if not present
 # Media IO (FFmpeg wrapper placeholder)
 add_subdirectory(src/media_io)
+# Video utilities (UI frame types, etc.)
+add_subdirectory(src/video)
 # Decode (video/audio) module
 add_subdirectory(src/decode)
 # Playback controller

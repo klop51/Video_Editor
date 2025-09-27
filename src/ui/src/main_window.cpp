@@ -542,7 +542,7 @@ void MainWindow::set_playback_controller(ve::playback::PlaybackController* contr
                 ve::log::info("Playback state changed to: " + std::to_string(static_cast<int>(state)) + " - stopping position update timer");
                 // Safe timer stop: queue the operation to avoid race condition with active timer callback
                 if (position_update_timer_) {
-                    QMetaObject::invokeMethod(this, [this]() {
+                    QTimer::singleShot(0, [this]() {
                         // Only stop if not currently updating to avoid timer callback/stop race condition
                         if (!updating_position_.load() && position_update_timer_) {
                             position_update_timer_->stop();
@@ -550,7 +550,7 @@ void MainWindow::set_playback_controller(ve::playback::PlaybackController* contr
                         } else {
                             ve::log::info("Deferred timer stop - callback in progress");
                         }
-                    }, Qt::QueuedConnection);
+                    });
                 }
             }
         });
@@ -1140,7 +1140,9 @@ void MainWindow::new_project() {
     
     // Clean up existing timeline if it exists
     if (timeline_) {
+        // Direct delete is safe for Timeline as it's not a QObject
         delete timeline_;
+        timeline_ = nullptr;
     }
     
     // Always create new timeline using the working sequence
@@ -2139,11 +2141,11 @@ void MainWindow::update_playback_position() {
             if (time_label_ && position_ui_enabled_) {
                 ve::log::info("update_playback_position: Updating time label (queued)");
                 auto seconds = current_time_us / 1000000.0;
-                QMetaObject::invokeMethod(this, [this, seconds]() {
+                QTimer::singleShot(0, this, [this, seconds]() {
                     if (time_label_) {
                         time_label_->setText(QString("Time: %1s").arg(seconds, 0, 'f', 2));
                     }
-                }, Qt::QueuedConnection);
+                });
                 ve::log::info("update_playback_position: Time label update queued");
             }
 

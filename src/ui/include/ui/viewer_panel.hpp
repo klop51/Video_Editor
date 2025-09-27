@@ -1,12 +1,15 @@
 #pragma once
 #include "../../decode/include/decode/frame.hpp"
+#include "video/UiImageFrame.h"
 #include <QWidget>
 #include <QLabel>
 #include <QPushButton>
 #include <QSlider>
 #include <QPixmap>
+#include <QMutex>
 #include <deque>
 #include <memory>
+#include <atomic>
 // Forward declarations to reduce header coupling; implementation includes full definitions.
 namespace ve { namespace gfx { class GraphicsDevice; struct GraphicsDeviceInfo; } }
 namespace ve { namespace render { class RenderGraph; } }
@@ -42,6 +45,8 @@ public:
     
 public slots:
     void display_frame(const ve::decode::VideoFrame& frame);
+    void onUiFrame(UiImageFramePtr frame); // NEW: Thread-safe UI frame slot
+    void onUiFrameReady(UiImageFramePtr frame); // Qt signal-slot bridge for QtPlaybackController
     void update_time_display(int64_t time_us);
     void update_playback_controls();
     
@@ -111,6 +116,13 @@ private:
 
     // Runtime toggle to bypass frame rendering for stability/isolation
     bool display_enabled_ = true;
+    
+    // Thread-safe UI frame mailbox (latest wins pattern)
+    UiImageFramePtr latest_ui_frame_; // Guarded by ui_frame_mutex_
+    QMutex ui_frame_mutex_;
+    
+    // Qt object lifetime safety for thread-safe signal handling
+    std::atomic<bool> destroying_{false};
 };
 
 } // namespace ve::ui

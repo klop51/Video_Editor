@@ -6,7 +6,9 @@
 #endif
 
 #include "ui/viewer_panel.hpp"
+#include "video/UiImageFrame.h"
 #include "playback/controller.hpp"
+#include "decode/qt_playback_controller.hpp"
 #include "decode/decoder.hpp"
 #include "decode/color_convert.hpp"
 #include "decode/rgba_view.hpp"
@@ -18,6 +20,8 @@
 #include "core/log.hpp"
 #include <algorithm>
 #include <QVBoxLayout>
+#include <QPointer>
+#include <QTimer>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
@@ -31,6 +35,7 @@
 #include <QMessageBox>
 #include <QDateTime>
 #include <QDir>
+#include <QMutexLocker>
 #include <algorithm>
 #include <memory>
 #ifdef _MSC_VER
@@ -55,17 +60,68 @@ ViewerPanel::ViewerPanel(QWidget* parent)
     }
 }
 
-ViewerPanel::~ViewerPanel() = default;
+ViewerPanel::~ViewerPanel() {
+    // Critical: Mark as destroying to prevent queued signal delivery
+    destroying_.store(true, std::memory_order_release);
+    
+    // Ensure no more queued signals target this widget
+    disconnect(nullptr, nullptr, this, nullptr);
+}
 
 void ViewerPanel::set_playback_controller(ve::playback::PlaybackController* controller) {
     playback_controller_ = controller;
     if (controller) {
+        // NOTE: QtPlaybackController connection disabled - PlaybackController is not polymorphic
+        // The system uses ve::playback::PlaybackController callbacks, not Qt signals
+        ve::log::debug("ViewerPanel: PlaybackController is not polymorphic - Qt signal connection skipped");
         controller->add_video_callback([this](const ve::decode::VideoFrame& f) {
+            // CRITICAL ANALYSIS: This callback executes on DECODER THREAD!
+            ve::log::debug("ViewerPanel::video_callback called on thread: " + std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id())));
+            
+            // Critical: Check destruction flag before any operations
+            if (destroying_.load(std::memory_order_acquire)) {
+                ve::log::debug("ViewerPanel callback called on destroying widget - ignoring");
+                return;
+            }
+            
             ve::decode::VideoFrame copy = f;
-            QMetaObject::invokeMethod(this,[this,copy](){ display_frame(copy); }, Qt::QueuedConnection);
+            ve::log::debug("ViewerPanel::video_callback frame copied, pts=" + std::to_string(copy.pts) + ", size=" + std::to_string(copy.data.size()));
+            
+            // Use QPointer for extra safety - use QTimer for better Qt compatibility
+            if (QPointer<ViewerPanel> safe_self = this; safe_self) {
+                ve::log::debug("ViewerPanel::video_callback queuing QTimer::singleShot for UI thread");
+                QTimer::singleShot(0, safe_self, [safe_self, copy]() {
+                    ve::log::debug("ViewerPanel::QTimer lambda executing on UI thread: " + std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id())));
+                    if (!safe_self || safe_self->destroying_.load(std::memory_order_acquire)) {
+                        ve::log::debug("ViewerPanel lambda called on destroyed/destroying widget - aborting");
+                        return;
+                    }
+                    ve::log::debug("ViewerPanel::lambda calling display_frame with pts=" + std::to_string(copy.pts));
+                    safe_self->display_frame(copy);
+                    ve::log::debug("ViewerPanel::lambda display_frame completed successfully");
+                });
+            }
         });
         controller->add_state_callback([this](ve::playback::PlaybackState st){
-            QMetaObject::invokeMethod(this,[this,st](){ if (play_pause_button_) play_pause_button_->setText(st==ve::playback::PlaybackState::Playing?"Pause":"Play"); update_playback_controls(); }, Qt::QueuedConnection);
+            // Critical: Check destruction flag before any operations
+            if (destroying_.load(std::memory_order_acquire)) {
+                ve::log::debug("ViewerPanel state callback called on destroying widget - ignoring");
+                return;
+            }
+            
+            // Use QPointer for extra safety - use QTimer for Qt compatibility
+            if (QPointer<ViewerPanel> safe_self = this; safe_self) {
+                QTimer::singleShot(0, safe_self, [safe_self, st]() {
+                    if (!safe_self || safe_self->destroying_.load(std::memory_order_acquire)) {
+                        ve::log::debug("ViewerPanel state lambda called on destroyed/destroying widget - aborting");
+                        return;
+                    }
+                    if (safe_self->play_pause_button_) {
+                        safe_self->play_pause_button_->setText(st == ve::playback::PlaybackState::Playing ? "Pause" : "Play");
+                    }
+                    safe_self->update_playback_controls();
+                });
+            }
         });
     }
     update_playback_controls();
@@ -110,6 +166,17 @@ void ViewerPanel::disable_gpu_pipeline() {
 }
 
 void ViewerPanel::display_frame(const ve::decode::VideoFrame& frame) {
+    // CRITICAL ANALYSIS: This should execute on UI thread
+    ve::log::debug("ViewerPanel::display_frame called on thread: " + std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id())) + 
+                   ", pts=" + std::to_string(frame.pts) + ", size=" + std::to_string(frame.data.size()) + 
+                   ", dimensions=" + std::to_string(frame.width) + "x" + std::to_string(frame.height));
+    
+    // Critical: Check if widget is being destroyed
+    if (destroying_.load(std::memory_order_acquire)) {
+        ve::log::debug("ViewerPanel::display_frame called on destroying widget - ignoring");
+        return;
+    }
+    
     if (!display_enabled_) return;
     VE_PROFILE_SCOPE_UNIQ("viewer.display_frame");
 #if VE_HEAP_DEBUG && defined(_MSC_VER)
@@ -184,17 +251,94 @@ void ViewerPanel::display_frame(const ve::decode::VideoFrame& frame) {
             }
         }
     } else {
+        ve::log::debug("ViewerPanel::display_frame calling update_frame_display (CPU path)");
         update_frame_display();
+        ve::log::debug("ViewerPanel::display_frame update_frame_display completed");
     }
 
     render_in_progress_ = false;
     if (pending_frame_valid_) {
         auto next = pending_frame_;
         pending_frame_valid_ = false;
-        QMetaObject::invokeMethod(this, [this, next]() {
-            display_frame(next);
-        }, Qt::QueuedConnection);
+        // Use QTimer for Qt compatibility and QPointer protection
+        QPointer<ViewerPanel> safe_self(this);
+        QTimer::singleShot(0, this, [safe_self, next]() {
+            if (safe_self && !safe_self->destroying_.load(std::memory_order_acquire)) {
+                safe_self->display_frame(next);
+            }
+        });
     }
+}
+
+void ViewerPanel::onUiFrame(UiImageFramePtr frame) {
+    // Critical: Check if widget is being destroyed
+    if (destroying_.load(std::memory_order_acquire)) {
+        ve::log::debug("ViewerPanel::onUiFrame called on destroying widget - ignoring");
+        return;
+    }
+    
+    if (!display_enabled_) return;
+    
+    // Store frame in thread-safe mailbox (latest wins)
+    {
+        QMutexLocker lock(&ui_frame_mutex_);
+        latest_ui_frame_ = std::move(frame);
+    }
+    
+    // Defer paint to UI thread with QPointer protection using QTimer for Qt compatibility
+    QPointer<ViewerPanel> safe_self(this);
+    QTimer::singleShot(0, this, [safe_self]() {
+        if (!safe_self) {
+            ve::log::debug("ViewerPanel lambda called on destroyed widget - aborting");
+            return;
+        }
+        
+        if (safe_self->destroying_.load(std::memory_order_acquire)) {
+            ve::log::debug("ViewerPanel lambda called on destroying widget - aborting");
+            return;
+        }
+        
+        if (!safe_self->display_enabled_) return;
+        
+        UiImageFramePtr frame_to_paint;
+        {
+            QMutexLocker lock(&safe_self->ui_frame_mutex_);
+            frame_to_paint = safe_self->latest_ui_frame_;
+        }
+        
+        if (!frame_to_paint || !frame_to_paint->isValid()) {
+            return;
+        }
+        
+        // Paint the deep-owned QImage directly to display
+        if (safe_self->video_display_label_) {
+            QPixmap pixmap = QPixmap::fromImage(frame_to_paint->image());
+            
+            // Scale to fit widget if enabled
+            if (safe_self->preview_scale_to_widget_) {
+                QSize widget_size = safe_self->video_display_label_->size();
+                if (widget_size.isValid() && !widget_size.isEmpty()) {
+                    pixmap = pixmap.scaled(widget_size, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                }
+            }
+            
+            safe_self->video_display_label_->setPixmap(pixmap);
+        }
+        
+        // Update frame stats for FPS overlay
+        safe_self->fps_frames_accum_++;
+        qint64 now_ms = QDateTime::currentMSecsSinceEpoch();
+        if (safe_self->fps_last_ms_ == 0) safe_self->fps_last_ms_ = now_ms;
+        
+        qint64 elapsed = now_ms - safe_self->fps_last_ms_;
+        if (elapsed >= 500 && safe_self->fps_overlay_) {
+            double inst_fps = elapsed > 0 ? (safe_self->fps_frames_accum_ * 1000.0 / elapsed) : 0.0;
+            safe_self->fps_overlay_->setText(QString("%1 fps UI-SAFE").arg(inst_fps, 0, 'f', 1));
+            safe_self->fps_overlay_->adjustSize();
+            safe_self->fps_frames_accum_ = 0;
+            safe_self->fps_last_ms_ = now_ms;
+        }
+    });
 }
 
 void ViewerPanel::update_time_display(int64_t time_us) {
@@ -230,13 +374,37 @@ void ViewerPanel::setup_ui() {
 }
 
 void ViewerPanel::update_frame_display() {
-    if (!has_frame_) { if (video_display_label_) video_display_label_->setText("No Video"); return; }
-    QPixmap pix = convert_frame_to_pixmap(current_frame_); if (pix.isNull()) { if (video_display_label_) video_display_label_->setText("Invalid Frame"); return; }
-    QSize ds = video_display_label_ ? video_display_label_->size() : size(); QPixmap scaled = pix.scaled(ds, aspect_ratio_mode_, Qt::FastTransformation); if (video_display_label_) video_display_label_->setPixmap(scaled);
+    ve::log::debug("ViewerPanel::update_frame_display starting, has_frame_=" + std::to_string(has_frame_));
+    if (!has_frame_) { 
+        ve::log::debug("ViewerPanel::update_frame_display no frame available");
+        if (video_display_label_) video_display_label_->setText("No Video"); 
+        return; 
+    }
+    
+    ve::log::debug("ViewerPanel::update_frame_display calling convert_frame_to_pixmap");
+    QPixmap pix = convert_frame_to_pixmap(current_frame_); 
+    if (pix.isNull()) { 
+        ve::log::error("ViewerPanel::update_frame_display convert_frame_to_pixmap returned null pixmap!");
+        if (video_display_label_) video_display_label_->setText("Invalid Frame"); 
+        return; 
+    }
+    
+    ve::log::debug("ViewerPanel::update_frame_display pixmap created successfully, scaling and setting");
+    QSize ds = video_display_label_ ? video_display_label_->size() : size(); 
+    QPixmap scaled = pix.scaled(ds, aspect_ratio_mode_, Qt::FastTransformation); 
+    if (video_display_label_) video_display_label_->setPixmap(scaled);
+    ve::log::debug("ViewerPanel::update_frame_display completed successfully");
 }
 
 QPixmap ViewerPanel::convert_frame_to_pixmap(const ve::decode::VideoFrame& frame) {
-    if (frame.data.empty()) return QPixmap();
+    ve::log::debug("ViewerPanel::convert_frame_to_pixmap starting - format=" + std::to_string(static_cast<int>(frame.format)) + 
+                   ", dimensions=" + std::to_string(frame.width) + "x" + std::to_string(frame.height) + 
+                   ", data_size=" + std::to_string(frame.data.size()));
+    
+    if (frame.data.empty()) {
+        ve::log::error("ViewerPanel::convert_frame_to_pixmap frame data is empty!");
+        return QPixmap();
+    }
     QImage image;
     auto convert_yuv_like = [this,&frame]() -> QPixmap {
         int tw = frame.width, th = frame.height;
@@ -252,9 +420,19 @@ QPixmap ViewerPanel::convert_frame_to_pixmap(const ve::decode::VideoFrame& frame
                 return it->pix;
             }
         }
+        ve::log::debug("ViewerPanel::convert_frame_to_pixmap calling to_rgba_scaled_view with target size " + std::to_string(tw) + "x" + std::to_string(th));
         if (auto view = ve::decode::to_rgba_scaled_view(frame, tw, th)) {
+            ve::log::debug("ViewerPanel::convert_frame_to_pixmap to_rgba_scaled_view SUCCESS - creating QImage from view data");
+            ve::log::debug("RgbaView: data=" + std::to_string(reinterpret_cast<uintptr_t>(view->data)) + 
+                           ", width=" + std::to_string(view->width) + 
+                           ", height=" + std::to_string(view->height) + 
+                           ", stride=" + std::to_string(view->stride));
+            
+            // CRITICAL: This might be where the crash occurs - QImage constructor with external data
             QImage tmp(view->data, view->width, view->height, view->stride, QImage::Format_RGBA8888);
+            ve::log::debug("ViewerPanel::convert_frame_to_pixmap QImage created, converting to QPixmap");
             QPixmap p = QPixmap::fromImage(tmp); // copies pixel data internally
+            ve::log::debug("ViewerPanel::convert_frame_to_pixmap QPixmap created successfully");
             if (preview_scale_to_widget_ && pix_cache_capacity_ > 0) {
                 if (int(pix_cache_.size()) >= pix_cache_capacity_) {
                     pix_cache_.pop_front();
@@ -363,6 +541,40 @@ bool ViewerPanel::load_media(const QString& filePath) {
     QMessageBox::warning(this, "Media Load Failed", QString("Could not decode video from:\n%1").arg(QFileInfo(filePath).fileName()));
     ve::log::warn("Failed to decode video from: " + filePath.toStdString());
     return false;
+}
+
+void ViewerPanel::onUiFrameReady(UiImageFramePtr frame) {
+    // Debug: Verify slot reception
+    ve::log::debug("ViewerPanel::onUiFrameReady called - Qt signal-slot connection working!");
+    
+    // Critical: Check destruction flag before any operations
+    if (destroying_.load(std::memory_order_acquire)) {
+        ve::log::debug("ViewerPanel::onUiFrameReady - widget destroying, ignoring frame");
+        return;
+    }
+    
+    // Guard against widget destruction during execution
+    QPointer<ViewerPanel> self(this);
+    
+    // Defer execution to avoid potential timing issues
+    QTimer::singleShot(0, this, [self, frame]() {
+        if (!self || self->destroying_.load(std::memory_order_acquire)) {
+            return;
+        }
+        
+        // Process the UI frame - convert to QPixmap and display
+        if (frame && frame->isValid()) {
+            // Get QImage from UiImageFrame
+            const QImage& image = frame->image();
+            QPixmap pixmap = QPixmap::fromImage(image);
+            
+            if (self->video_display_label_ && !pixmap.isNull()) {
+                QSize displaySize = self->video_display_label_->size();
+                QPixmap scaledPixmap = pixmap.scaled(displaySize, self->aspect_ratio_mode_, Qt::FastTransformation);
+                self->video_display_label_->setPixmap(scaledPixmap);
+            }
+        }
+    });
 }
 
 void ViewerPanel::dragEnterEvent(QDragEnterEvent* e) {

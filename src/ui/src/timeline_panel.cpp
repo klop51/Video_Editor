@@ -217,7 +217,7 @@ void TimelinePanel::set_current_time(ve::TimePoint time) {
     if (painting_) {
         repaint_pending_ = true;
     } else {
-        QMetaObject::invokeMethod(this, "update", Qt::QueuedConnection);
+        QTimer::singleShot(0, this, [this]() { update(); });
     }
 }
 

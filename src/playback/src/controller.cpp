@@ -497,13 +497,22 @@ void PlaybackController::playback_thread_main() {
             }
 
             // Read video frame (decode path)
-            VE_PROFILE_SCOPE_UNIQ("playback.decode_video");
+            // TEMPORARY: Disable profiling scope to test if ScopedTimer destructor is causing crash
+            // VE_PROFILE_SCOPE_UNIQ("playback.decode_video");
+            ve::log::info(std::string("PlaybackController: About to call decoder_->read_video()"));
             auto video_frame = decoder_->read_video();
+            ve::log::info(std::string("PlaybackController: decoder_->read_video() returned successfully"));
             
             if (video_frame) {
+                ve::log::info(std::string("PlaybackController: VideoFrame is valid, accessing properties..."));
+                ve::log::info(std::string("PlaybackController: VideoFrame pts: ") + std::to_string(video_frame->pts));
+                ve::log::info(std::string("PlaybackController: VideoFrame dimensions: ") + std::to_string(video_frame->width) + "x" + std::to_string(video_frame->height));
                 // Future: traverse snapshot (immutable) to determine which clip/segment is active
                 // For now we rely solely on decoder PTS ordering.
                 // Cache store (basic) - store raw data buffer
+                // TEMPORARY: Disable frame caching to test if this is causing the memory corruption
+                ve::log::info(std::string("PlaybackController: TEMPORARILY SKIPPING frame cache to test memory corruption theory"));
+                /*
                 ve::cache::CachedFrame cf; cf.width = video_frame->width; cf.height = video_frame->height; cf.data = video_frame->data; // copy
                 cf.format = video_frame->format;
                 cf.color_space = video_frame->color_space;
@@ -513,8 +522,11 @@ void PlaybackController::playback_thread_main() {
                                              ", size=" + std::to_string(cf.width) + "x" + std::to_string(cf.height)));
                 frame_cache_.put(putKey, std::move(cf));
                 VE_DEBUG_ONLY(ve::log::info("Cache size now=" + std::to_string(frame_cache_.size())));
+                */
                 
+                ve::log::info(std::string("PlaybackController: About to store video_frame->pts: ") + std::to_string(video_frame->pts));
                 current_time_us_.store(video_frame->pts);
+                ve::log::info(std::string("PlaybackController: Successfully stored pts to current_time_us_"));
 
                 // Advance time for next frame (matching cache hit logic)
                 int64_t delta = step_.next_delta_us();
@@ -526,20 +538,41 @@ void PlaybackController::playback_thread_main() {
                 }
 
                 { // video callback dispatch (profiling removed to avoid variable shadow warning on MSVC)
+                    ve::log::info(std::string("PlaybackController: About to acquire callbacks_mutex_ for video callback dispatch"));
                     std::vector<CallbackEntry<VideoFrameCallback>> copy;
-                    { std::scoped_lock lk(callbacks_mutex_); copy = video_video_entries_; }
-                    VE_DEBUG_ONLY(ve::log::info("Dispatching " + std::to_string(copy.size()) + " video callbacks (decode) for pts=" + std::to_string(video_frame->pts)));
-                    for(auto &entry : copy) if(entry.fn) entry.fn(*video_frame);
-                    VE_DEBUG_ONLY(ve::log::info("Dispatched video callbacks (decode) for pts=" + std::to_string(video_frame->pts)));
+                    { 
+                        std::scoped_lock lk(callbacks_mutex_); 
+                        ve::log::info(std::string("PlaybackController: Acquired callbacks_mutex_, copying ") + std::to_string(video_video_entries_.size()) + " callbacks");
+                        copy = video_video_entries_; 
+                    }
+                    ve::log::info(std::string("PlaybackController: Released callbacks_mutex_, dispatching ") + std::to_string(copy.size()) + " video callbacks for pts=" + std::to_string(video_frame->pts));
+                    
+                    for(size_t i = 0; i < copy.size(); ++i) {
+                        auto &entry = copy[i];
+                        if(entry.fn) {
+                            ve::log::info(std::string("PlaybackController: About to invoke callback ") + std::to_string(i) + " for pts=" + std::to_string(video_frame->pts));
+                            entry.fn(*video_frame);
+                            ve::log::info(std::string("PlaybackController: Successfully invoked callback ") + std::to_string(i) + " for pts=" + std::to_string(video_frame->pts));
+                        } else {
+                            ve::log::info(std::string("PlaybackController: Skipping null callback ") + std::to_string(i));
+                        }
+                    }
+                    ve::log::info(std::string("PlaybackController: Completed all video callback dispatches for pts=") + std::to_string(video_frame->pts));
                 }
 
                 // High-performance frame timing for smooth playback
+                ve::log::info(std::string("PlaybackController: About to start frame timing logic, first_frame=") + (first_frame ? "true" : "false"));
                 if (!first_frame) {
+                    ve::log::info(std::string("PlaybackController: About to call frame_duration_guess_us()"));
                     // Use fixed frame duration based on detected FPS for consistent timing
                     int64_t frame_duration_us = frame_duration_guess_us();
+                    ve::log::info(std::string("PlaybackController: frame_duration_guess_us() returned ") + std::to_string(frame_duration_us));
                     auto target_interval = std::chrono::microseconds(frame_duration_us);
+                    ve::log::info(std::string("PlaybackController: Created target_interval"));
                     auto frame_end = std::chrono::steady_clock::now();
+                    ve::log::info(std::string("PlaybackController: Got frame_end timestamp"));
                     auto actual_duration = frame_end - last_frame_time;
+                    ve::log::info(std::string("PlaybackController: Calculated actual_duration"));
 
                     // Balanced optimization for 4K 60fps content - targeting 80-83% performance
                     bool is_4k_60fps = (video_frame->width >= 3840 && video_frame->height >= 2160 && probed_fps_ >= 59.0);
@@ -592,17 +625,33 @@ void PlaybackController::playback_thread_main() {
                     }
                 }
 
+                ve::log::info(std::string("PlaybackController: About to set first_frame=false and update last_frame_time"));
                 first_frame = false;
                 last_frame_time = std::chrono::steady_clock::now();
+                ve::log::info(std::string("PlaybackController: Updated first_frame and last_frame_time"));
 
                 // Update performance stats
+                ve::log::info(std::string("PlaybackController: About to calculate frame_time"));
                 auto frame_time = std::chrono::duration<double, std::milli>(last_frame_time - frame_start);
+                ve::log::info(std::string("PlaybackController: About to call update_frame_stats"));
                 update_frame_stats(frame_time.count());
+                ve::log::info(std::string("PlaybackController: Called update_frame_stats successfully"));
+                
+                ve::log::info(std::string("PlaybackController: About to exit video frame processing block - VideoFrame optional going out of scope"));
+                ve::log::info(std::string("PlaybackController: VideoFrame address before destruction: ") + std::to_string(reinterpret_cast<uintptr_t>(&(*video_frame))));
+                // Let video_frame unique_ptr go out of scope here - this will call VideoFrame destructor
 
                 // Periodic frame log (every 30 frames) for diagnostics
                 if ((stats_.frames_displayed % 30) == 0) {
                     ve::log::debug("Playback frames displayed=" + std::to_string(stats_.frames_displayed));
                 }
+                
+                ve::log::info(std::string("PlaybackController: Successfully exited video frame processing block - VideoFrame destroyed"));
+                
+                // DEBUG: Force garbage collection and check heap state after VideoFrame destruction
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                ve::log::info("PlaybackController: DEBUG checkpoint after VideoFrame destruction - heap should be stable");
+                
             } else {
                 // Handle null video frame - could be EOF, memory error, or decode failure
                 ve::log::warn("decoder_->read_video() returned null frame - checking if end of stream");
@@ -628,20 +677,50 @@ void PlaybackController::playback_thread_main() {
             }
             
             // Read audio frame
-            auto audio_frame = [&](){ VE_PROFILE_SCOPE_UNIQ("playback.decode_audio"); return decoder_->read_audio(); }();
+            ve::log::info("PlaybackController: About to read audio frame");
+            auto audio_frame = [&](){ /* VE_PROFILE_SCOPE_UNIQ("playback.decode_audio"); */ return decoder_->read_audio(); }();
+            ve::log::info("PlaybackController: Audio frame read completed, checking if valid");
+            
+            ve::log::info("PlaybackController: Audio frame pointer check - valid: " + std::string(audio_frame ? "true" : "false"));
+            
             if (audio_frame) {
+                ve::log::info("PlaybackController: Audio frame is valid, entering audio callback dispatch block");
+                ve::log::info("PlaybackController: About to start audio callback dispatch");
                 { // audio callback dispatch (profiling removed to avoid variable shadow warning on MSVC)
+                    ve::log::info("PlaybackController: Creating audio callback copy vector");
                     std::vector<CallbackEntry<AudioFrameCallback>> copy;
+                    
+                    ve::log::info("PlaybackController: About to acquire callbacks_mutex_ for audio callbacks");
                     { std::scoped_lock lk(callbacks_mutex_); copy = audio_entries_; }
+                    ve::log::info("PlaybackController: Released callbacks_mutex_, copied " + std::to_string(copy.size()) + " audio callbacks");
+                    
                     if (copy.size() > 1) {
                         ve::log::warn("WARNING_MULTIPLE_AUDIO_SINKS: " + std::to_string(copy.size()) +
                                       " audio callbacks registered; this can cause echo.");
                     }
-                    VE_DEBUG_ONLY(ve::log::info("Dispatching " + std::to_string(copy.size()) + " audio callbacks for pts=" + std::to_string(audio_frame->pts)));
-                    for(auto &entry : copy) if(entry.fn) entry.fn(*audio_frame);
-                    VE_DEBUG_ONLY(ve::log::info("Dispatched audio callbacks for pts=" + std::to_string(audio_frame->pts)));
+                    
+                    ve::log::info("Dispatching " + std::to_string(copy.size()) + " audio callbacks for pts=" + std::to_string(audio_frame->pts));
+                    
+                    for(size_t i = 0; i < copy.size(); ++i) {
+                        ve::log::info("PlaybackController: About to invoke audio callback " + std::to_string(i));
+                        auto &entry = copy[i];
+                        if(entry.fn) {
+                            ve::log::info("PlaybackController: Callback " + std::to_string(i) + " is valid, calling");
+                            entry.fn(*audio_frame);
+                            ve::log::info("PlaybackController: Successfully invoked audio callback " + std::to_string(i));
+                        } else {
+                            ve::log::info("PlaybackController: Callback " + std::to_string(i) + " is null, skipping");
+                        }
+                    }
+                    
+                    ve::log::info("Dispatched all audio callbacks for pts=" + std::to_string(audio_frame->pts));
                 }
+                ve::log::info("PlaybackController: Completed audio callback dispatch block");
+            } else {
+                ve::log::info("PlaybackController: Audio frame is null, skipping audio callbacks");
             }
+            
+            ve::log::info("PlaybackController: Audio frame processing completed, about to process timeline audio");
             
             // Process timeline audio (mix multiple tracks)
             if (timeline_audio_manager_ && timeline_) {
@@ -671,6 +750,8 @@ void PlaybackController::playback_thread_main() {
                 set_state(PlaybackState::Paused);
             }
         }
+        
+        ve::log::info(std::string("PlaybackController: Completed main loop iteration, about to continue to next iteration"));
     }
     
     ve::log::debug("Playback thread ended");
@@ -725,7 +806,12 @@ void PlaybackController::decode_one_frame_if_paused(int64_t seek_target_us) {
         ve::cache::FrameKey putKey; putKey.pts_us = frame->pts; frame_cache_.put(putKey, std::move(cf));
         std::vector<CallbackEntry<VideoFrameCallback>> copy;
         { std::scoped_lock lk(callbacks_mutex_); copy = video_video_entries_; }
-        for(auto &entry : copy) if(entry.fn) entry.fn(*frame);
+        ve::log::info(std::string("PlaybackController: Invoking ") + std::to_string(copy.size()) + " video callbacks for frame pts=" + std::to_string(frame->pts));
+        for(auto &entry : copy) if(entry.fn) {
+            ve::log::info(std::string("PlaybackController: About to call callback ID: ") + std::to_string(entry.id));
+            entry.fn(*frame);
+            ve::log::info(std::string("PlaybackController: Callback ID ") + std::to_string(entry.id) + " completed successfully");
+        }
     } else {
         // Fallback: keep current_time at seek target
         current_time_us_.store(seek_target_us);
@@ -863,7 +949,11 @@ bool PlaybackController::initialize_audio_pipeline() {
     
     // Register audio callback to receive frames from decoder
     audio_callback_id_ = add_audio_callback([this](const decode::AudioFrame& frame) {
+        ve::log::info("AudioCallback: Entered audio callback with pts=" + std::to_string(frame.pts));
+        ve::log::info("AudioCallback: Checking audio pipeline and mute state");
+        
         if (audio_pipeline_ && !master_muted_.load()) {
+            ve::log::info("AudioCallback: Audio pipeline is valid and not muted, proceeding with processing");
             // PTS-based deduplication to prevent echo
             int64_t last_pts = last_audio_pts_.exchange(frame.pts);
             if (last_pts == frame.pts) {
@@ -894,6 +984,9 @@ bool PlaybackController::initialize_audio_pipeline() {
             ve::TimePoint timestamp(frame.pts, 1000000); // pts is in microseconds
             
             // Create audio frame with the converted parameters
+            ve::log::info("AudioCallback: About to create audio frame - rate=" + std::to_string(frame.sample_rate) + 
+                         ", channels=" + std::to_string(frame.channels) + ", samples=" + std::to_string(sample_count));
+            
             auto audio_frame = ve::audio::AudioFrame::create_from_data(
                 static_cast<uint32_t>(frame.sample_rate),
                 static_cast<uint16_t>(frame.channels),
@@ -904,9 +997,13 @@ bool PlaybackController::initialize_audio_pipeline() {
                 frame.data.size()
             );
             
+            ve::log::info("AudioCallback: Audio frame creation completed, checking validity");
+            
             if (audio_frame) {
+                ve::log::info("AudioCallback: Audio frame is valid, about to process with audio pipeline");
                 // Send to audio pipeline for processing and output
                 audio_pipeline_->process_audio_frame(audio_frame);
+                ve::log::info("AudioCallback: Audio pipeline processing completed successfully");
                 
                 // Update stats
                 audio_stats_.frames_processed++;

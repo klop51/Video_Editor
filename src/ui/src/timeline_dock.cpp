@@ -125,7 +125,7 @@ void TimelineWidget::set_current_time(ve::TimePoint time) {
         ve::log::info("Timeline playhead: " + std::to_string(seconds) + "s at pixel " + std::to_string(pixel_pos));
     }
     // Defer repaint to avoid painting on caller's stack (reduces re-entrancy risk)
-    QMetaObject::invokeMethod(this, [this]() { this->update(); }, Qt::QueuedConnection);
+    QTimer::singleShot(0, this, [this]() { this->update(); });
 }
 
 void TimelineWidget::set_playback_controller(ve::playback::PlaybackController* controller) {
@@ -177,7 +177,7 @@ void TimelineWidget::paintEvent(QPaintEvent* event) {
     // Release guard and schedule pending repaint if requested during paint
     painting_.store(false);
     if (repaint_pending_.exchange(false)) {
-        QMetaObject::invokeMethod(this, [this]() { this->update(); }, Qt::QueuedConnection);
+        QTimer::singleShot(0, this, [this]() { this->update(); });
     }
 }
 
@@ -381,9 +381,9 @@ void TimelineDock::set_zoom(double zoom_factor) {
 void TimelineDock::set_current_time(ve::TimePoint time) {
     // Set the time immediately, but defer repaint to avoid repaint during caller's stack
     timeline_widget_->set_current_time(time);
-    QMetaObject::invokeMethod(timeline_widget_, [w=timeline_widget_]() {
+    QTimer::singleShot(0, timeline_widget_, [w=timeline_widget_]() {
         if (w) w->update();
-    }, Qt::QueuedConnection);
+    });
 }
 
 void TimelineDock::set_playback_controller(ve::playback::PlaybackController* controller) {

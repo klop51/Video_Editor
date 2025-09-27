@@ -3,6 +3,7 @@
 #include "../../decode/include/decode/decoder.hpp"
 #include "../../decode/include/decode/frame.hpp"
 #include "../../core/include/core/time.hpp"
+#include "../../core/include/core/log.hpp"
 #include "../../audio/include/audio/audio_pipeline.hpp"
 #include "../../audio/include/audio/timeline_audio_manager.hpp"
 #include <functional>
@@ -54,7 +55,14 @@ public:
     void set_audio_callback(AudioFrameCallback callback) { std::scoped_lock lk(callbacks_mutex_); audio_entries_.clear(); if(callback) audio_entries_.emplace_back(CallbackEntry<AudioFrameCallback>{{next_callback_id_++}, std::move(callback)}); }
     void set_state_callback(StateChangeCallback callback) { std::scoped_lock lk(callbacks_mutex_); state_entries_.clear(); if(callback) state_entries_.emplace_back(CallbackEntry<StateChangeCallback>{{next_callback_id_++}, std::move(callback)}); }
     // New multi-listener add/remove APIs (return handle id)
-    CallbackId add_video_callback(VideoFrameCallback callback) { if(!callback) return 0; std::scoped_lock lk(callbacks_mutex_); CallbackId id = next_callback_id_++; video_video_entries_.emplace_back(CallbackEntry<VideoFrameCallback>{{id}, std::move(callback)}); return id; }
+    CallbackId add_video_callback(VideoFrameCallback callback) { 
+        if(!callback) return 0; 
+        std::scoped_lock lk(callbacks_mutex_); 
+        CallbackId id = next_callback_id_++; 
+        video_video_entries_.emplace_back(CallbackEntry<VideoFrameCallback>{{id}, std::move(callback)}); 
+        ve::log::info(std::string("PlaybackController: Video callback registered with ID: ") + std::to_string(id) + ", total callbacks: " + std::to_string(video_video_entries_.size()));
+        return id; 
+    }
     CallbackId add_audio_callback(AudioFrameCallback callback) { if(!callback) return 0; std::scoped_lock lk(callbacks_mutex_); CallbackId id = next_callback_id_++; audio_entries_.emplace_back(CallbackEntry<AudioFrameCallback>{{id}, std::move(callback)}); return id; }
     CallbackId add_state_callback(StateChangeCallback callback) { if(!callback) return 0; std::scoped_lock lk(callbacks_mutex_); CallbackId id = next_callback_id_++; state_entries_.emplace_back(CallbackEntry<StateChangeCallback>{{id}, std::move(callback)}); return id; }
     bool remove_video_callback(CallbackId id);
