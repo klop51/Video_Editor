@@ -12,6 +12,12 @@
 #include <cstdint>
 #include <cstring>
 
+extern "C" {
+#include <libswresample/swresample.h>
+#include <libavutil/channel_layout.h>
+#include <libavutil/samplefmt.h>
+}
+
 namespace ve::audio {
 
 std::unique_ptr<AudioPipeline> AudioPipeline::create(const AudioPipelineConfig& config) {
@@ -24,6 +30,7 @@ AudioPipeline::AudioPipeline(const AudioPipelineConfig& config)
 }
 
 AudioPipeline::~AudioPipeline() {
+    free_resampler();
     shutdown();
 }
 
@@ -81,6 +88,8 @@ void AudioPipeline::shutdown() {
     mixer_.reset();
     output_.reset();
     device_driven_rendering_enabled_.store(false);
+
+    free_resampler();
 
     // Clear buffer
     {
@@ -142,6 +151,14 @@ bool AudioPipeline::start_output() {
     auto result = output_->start();
     if (result == AudioOutputError::Success) {
         set_state(AudioPipelineState::Playing);
+        
+        // Preroll ~100 ms of silence so early callbacks never underrun.
+        const size_t preroll = (config_.sample_rate / 10) * config_.channel_count;
+        std::vector<float> zeros(preroll, 0.0f);
+        {
+            std::lock_guard<std::mutex> lk(fifo_mtx_);
+            fifo_write(zeros.data(), zeros.size());
+        }
         return true;
     }
 
@@ -364,7 +381,9 @@ bool AudioPipeline::initialize_output() {
         // Reset and try shared mode with minimal buffers
         output_->shutdown();
         output_config.exclusive_mode = false;
-        output_config.buffer_duration_ms = 5; // Minimal buffer for shared mode
+        // Use a safer buffer for shared mode to avoid periodic underruns.
+        // 20–50 ms is typical; pick 50 ms for stability (latency still fine for playback).
+        output_config.buffer_duration_ms = 50;
         output_ = AudioOutput::create(output_config);
         if (!output_) {
             return false;
@@ -395,6 +414,9 @@ bool AudioPipeline::initialize_output() {
     }
 
     device_driven_rendering_enabled_.store(true);
+    
+    // resampler will be lazily created on first frame, but it's safe to pre-clear cache
+    swr_in_rate_ = 0; swr_in_ch_ = 0; swr_in_layout_ = 0; swr_in_fmt_ = 0;
     return true; // Already initialized above
 }
 
@@ -513,6 +535,13 @@ size_t AudioPipeline::audio_render_callback(void* buffer, uint32_t frame_count, 
         // zero-fill remainder
         auto* out = static_cast<float*>(buffer);
         std::memset(out + got, 0, (need - got) * sizeof(float));
+        
+        // track underruns for diagnostics
+        {
+            std::lock_guard<std::mutex> lock(stats_mutex_);
+            stats_.buffer_underruns++;
+            // (optional) If underruns persist, consider raising buffer_duration_ms to 80–100 ms.
+        }
     }
     
     return frame_count;
@@ -629,54 +658,65 @@ void AudioPipeline::convert_audio_format(const AudioFrame* source, AudioFrame* t
 
 // Helper: robust conversion to device format
 bool AudioPipeline::convert_to_device_format(const AudioFrame& in, std::vector<float>& out, const AudioPipelineConfig& cfg) {
-    // Simple conversion - we'll improve this with proper resampling later if needed
-    uint32_t in_rate = in.sample_rate();
-    uint16_t in_channels = in.channel_count();
-    uint32_t in_samples = in.sample_count();
-    
-    // For now, handle same-rate cases and basic channel conversion
-    if (in_rate != cfg.sample_rate) {
-        // TODO: Add proper resampling with libswresample
-        // For now, skip frames that need resampling to avoid artifacts
-        return false;
-    }
-    
-    // Convert to float32 and handle channel conversion
-    const size_t out_samples = in_samples * cfg.channel_count;
-    out.resize(out_samples);
-    
-    if (in.format() == SampleFormat::Float32) {
-        const float* in_data = reinterpret_cast<const float*>(in.data());
-        
-        if (in_channels == cfg.channel_count) {
-            // Same channel count - direct copy
-            std::memcpy(out.data(), in_data, in_samples * in_channels * sizeof(float));
-        } else if (in_channels == 6 && cfg.channel_count == 2) {
-            // 6ch -> 2ch downmix (5.1 -> stereo)
-            for (uint32_t i = 0; i < in_samples; ++i) {
-                const float* src = &in_data[i * 6];
-                float* dst = &out[i * 2];
-                
-                // Simple 5.1 to stereo downmix
-                // L, R, C, LFE, Ls, Rs -> L, R
-                dst[0] = src[0] + 0.707f * src[2] + 0.5f * src[4]; // L + 0.707*C + 0.5*Ls
-                dst[1] = src[1] + 0.707f * src[2] + 0.5f * src[5]; // R + 0.707*C + 0.5*Rs
-            }
-        } else if (in_channels == 1 && cfg.channel_count == 2) {
-            // Mono -> Stereo
-            for (uint32_t i = 0; i < in_samples; ++i) {
-                out[i * 2] = in_data[i];     // L
-                out[i * 2 + 1] = in_data[i]; // R
-            }
-        } else {
-            // Unsupported channel conversion for now
-            return false;
+    const uint32_t in_rate = in.sample_rate();
+    const uint16_t in_channels = in.channel_count();
+    const uint32_t in_samples = in.sample_count();
+
+    // Map our SampleFormat to AVSampleFormat
+    auto to_avfmt = [](SampleFormat f) -> int {
+        switch (f) {
+            case SampleFormat::Float32: return AV_SAMPLE_FMT_FLT;
+            // Extend here if you support other input formats
+            default: return AV_SAMPLE_FMT_NONE;
         }
-    } else {
-        // TODO: Add format conversion for other sample formats
+    };
+
+    const int av_in_fmt = to_avfmt(in.format());
+    const int av_out_fmt = AV_SAMPLE_FMT_FLT; // device is float32
+
+    if (av_in_fmt == AV_SAMPLE_FMT_NONE) {
+        return false; // unsupported input format for now
+    }
+
+    // Determine channel layout (fallback if unknown)
+    uint64_t in_layout_mask = 0; // fallback - will be set below
+    if (!in_layout_mask) {
+        AVChannelLayout layout{};
+        av_channel_layout_default(&layout, in_channels);
+        in_layout_mask = layout.u.mask;
+        av_channel_layout_uninit(&layout);
+    }
+
+    // Device/output layout: stereo
+    AVChannelLayout out_layout{};
+    av_channel_layout_default(&out_layout, cfg.channel_count);
+    const uint64_t out_layout_mask = out_layout.u.mask;
+    av_channel_layout_uninit(&out_layout);
+
+    // Ensure (or reconfigure) the resampler
+    if (!ensure_resampler(in_rate, in_channels, in_layout_mask, av_in_fmt)) {
         return false;
     }
-    
+
+    // Prepare input pointers
+    const uint8_t* in_planes[1] = { reinterpret_cast<const uint8_t*>(in.data()) };
+
+    // Estimate output frames (safe headroom)
+    const int out_est = (int)(in_samples * (double)cfg.sample_rate / (double)in_rate + 32);
+    const size_t need_floats = (size_t)out_est * cfg.channel_count;
+    size_t start = out.size();
+    out.resize(start + need_floats);
+    uint8_t* out_ptr = reinterpret_cast<uint8_t*>(out.data() + start);
+
+    // Convert
+    int got = swr_convert(swr_, &out_ptr, out_est, in_planes, (int)in_samples);
+    if (got < 0) {
+        out.resize(start);
+        return false;
+    }
+
+    // Shrink to actual size (interleaved float32)
+    out.resize(start + (size_t)got * cfg.channel_count);
     return true;
 }
 
@@ -691,10 +731,15 @@ void AudioPipeline::fifo_init_seconds(double seconds) {
 size_t AudioPipeline::fifo_write(const float* samples, size_t count) {
     size_t written = 0;
     while (written < count) {
-        if (fifo_size_ == fifo_capacity_) break; // full: drop or overwrite? (keep drop for now)
+        if (fifo_size_ == fifo_capacity_) {
+            // Overwrite oldest (advance tail) to keep continuity.
+            fifo_tail_ = (fifo_tail_ + 1) % fifo_capacity_;
+            // fifo_size_ stays at capacity
+        } else {
+            ++fifo_size_;
+        }
         device_fifo_[fifo_head_] = samples[written++];
         fifo_head_ = (fifo_head_ + 1) % fifo_capacity_;
-        ++fifo_size_;
     }
     return written;
 }
@@ -707,6 +752,52 @@ size_t AudioPipeline::fifo_read(float* dst, size_t count) {
         --fifo_size_;
     }
     return read;
+}
+
+// --- Resampler helpers ---
+bool AudioPipeline::ensure_resampler(uint32_t in_rate, uint16_t in_ch, uint64_t in_layout, int in_fmt) {
+    // Reuse if unchanged
+    if (swr_ && swr_in_rate_ == in_rate && swr_in_ch_ == in_ch &&
+        swr_in_layout_ == in_layout && swr_in_fmt_ == in_fmt) {
+        return true;
+    }
+
+    if (swr_) {
+        swr_free(&swr_);
+    }
+
+    AVChannelLayout in_l{};
+    in_l.order = AV_CHANNEL_ORDER_NATIVE;
+    in_l.nb_channels = (int)in_ch;
+    in_l.u.mask = in_layout;
+    
+    AVChannelLayout out_l{}; 
+    av_channel_layout_default(&out_l, config_.channel_count);
+
+    int ret = swr_alloc_set_opts2(&swr_,
+        &out_l, AV_SAMPLE_FMT_FLT, (int)config_.sample_rate,
+        &in_l, (AVSampleFormat)in_fmt, (int)in_rate,
+        0, nullptr);
+
+    if (ret < 0 || !swr_ || swr_init(swr_) < 0) {
+        if (swr_) swr_free(&swr_);
+        return false;
+    }
+
+    swr_in_rate_ = in_rate;
+    swr_in_ch_ = in_ch;
+    swr_in_layout_ = in_layout;
+    swr_in_fmt_ = in_fmt;
+    av_channel_layout_uninit(&out_l);
+    return true;
+}
+
+void AudioPipeline::free_resampler() {
+    if (swr_) {
+        swr_free(&swr_);
+        swr_ = nullptr;
+    }
+    swr_in_rate_ = 0; swr_in_ch_ = 0; swr_in_layout_ = 0; swr_in_fmt_ = 0;
 }
 
 } // namespace ve::audio

@@ -15,6 +15,10 @@
 #include <functional>
 #include <vector>
 
+// FFmpeg resampler
+struct SwrContext;
+struct AVChannelLayout;
+
 #include "audio/audio_frame.hpp"
 #include "audio/simple_mixer.hpp"
 #include "audio/audio_output.hpp"
@@ -167,6 +171,17 @@ private:
     size_t fifo_size_ = 0;               // number of valid float samples
     size_t fifo_capacity_ = 0;           // total float slots
     std::mutex fifo_mtx_;
+
+    // --- Resampler state (persistent across frames) ---
+    SwrContext* swr_ = nullptr;
+    // cached input spec to avoid re-init when unchanged
+    uint32_t swr_in_rate_ = 0;
+    uint16_t swr_in_ch_ = 0;
+    uint64_t swr_in_layout_ = 0; // AV_CHANNEL_LAYOUT_* mask or 0
+    int      swr_in_fmt_ = 0;    // AVSampleFormat
+
+    bool ensure_resampler(uint32_t in_rate, uint16_t in_ch, uint64_t in_layout, int in_fmt);
+    void free_resampler();
 
     // Helpers
     void fifo_init_seconds(double seconds);
