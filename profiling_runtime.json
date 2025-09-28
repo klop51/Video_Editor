@@ -1,5 +1,8 @@
 {
   "samples": [
-
+    { "name": "to_rgba_scaled_view.sws_scale", "count": 1, "total_ms": 3.1814, "avg_ms": 3.1814, "min_ms": 3.1814, "max_ms": 3.1814, "p50_ms": 3.1814, "p95_ms": 3.1814 },
+    { "name": "to_rgba_scaled_view", "count": 1, "total_ms": 4.0313, "avg_ms": 4.0313, "min_ms": 4.0313, "max_ms": 4.0313, "p50_ms": 4.0313, "p95_ms": 4.0313 },
+    { "name": "to_rgba_scaled_view.ffmpeg", "count": 1, "total_ms": 3.5778, "avg_ms": 3.5778, "min_ms": 3.5778, "max_ms": 3.5778, "p50_ms": 3.5778, "p95_ms": 3.5778 },
+    { "name": "viewer.display_frame", "count": 2, "total_ms": 8.024, "avg_ms": 4.012, "min_ms": 0.3084, "max_ms": 7.7156, "p50_ms": 0.3084, "p95_ms": 0.3084 }
   ]
 }

@@ -164,13 +164,13 @@ private:
     static constexpr size_t BUFFER_SIZE = 8; // Audio buffer size
     
     // Device-format staging for robust render callback
-    // Lock-free-ish ring buffer (guarded by a light mutex for now)
-    std::vector<float> device_fifo_;     // capacity set at init: seconds * sample_rate * channels
-    size_t fifo_head_ = 0;               // write index
-    size_t fifo_tail_ = 0;               // read index
-    size_t fifo_size_ = 0;               // number of valid float samples
+    // Lock-free SPSC ring buffer
+    std::vector<float> device_fifo_;     // capacity: seconds * sample_rate * channels
+    std::atomic<size_t> fifo_head_{0};   // write index (producer)
+    std::atomic<size_t> fifo_tail_{0};   // read index (consumer)
+    std::atomic<size_t> fifo_size_{0};   // valid float samples
     size_t fifo_capacity_ = 0;           // total float slots
-    std::mutex fifo_mtx_;
+    // NOTE: SPSC ring -> no mutex needed for normal push/pop
 
     // --- Resampler state (persistent across frames) ---
     SwrContext* swr_ = nullptr;
@@ -182,6 +182,14 @@ private:
 
     bool ensure_resampler(uint32_t in_rate, uint16_t in_ch, uint64_t in_layout, int in_fmt);
     void free_resampler();
+
+    // --- Drift controller ---
+    // We want FIFO ~ 2–3 device periods worth of samples.
+    std::atomic<size_t> last_period_frames_{0};   // frames per callback (per channel)
+    std::atomic<size_t> target_fifo_samples_{0};  // interleaved samples (frames*channels * K)
+    double fifo_level_ema_ = 0.0;                 // smooth FIFO level (samples)
+    std::atomic<int> pending_comp_samples_{0};    // to be applied on next convert()
+    void update_drift_control(uint32_t callback_frames, uint16_t channels);
 
     // Helpers
     void fifo_init_seconds(double seconds);

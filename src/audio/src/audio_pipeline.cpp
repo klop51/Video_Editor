@@ -54,8 +54,8 @@ bool AudioPipeline::initialize() {
         return false;
     }
 
-    // Pre-size device FIFO to ~2 seconds of audio in device format
-    fifo_init_seconds(2.0);
+    // Pre-size device FIFO to ~2.5 seconds of audio in device format
+    fifo_init_seconds(2.5);
 
     // Start processing thread
     processing_thread_should_exit_.store(false);
@@ -132,10 +132,8 @@ bool AudioPipeline::process_audio_frame(std::shared_ptr<AudioFrame> frame) {
         // on conversion failure, skip quietly
         return true;
     }
-    {
-        std::lock_guard<std::mutex> lk(fifo_mtx_);
-        fifo_write(devSamples.data(), devSamples.size());
-    }
+    // Lock-free SPSC push
+    fifo_write(devSamples.data(), devSamples.size());
 
     // Update statistics  
     update_stats(frame);
@@ -155,10 +153,8 @@ bool AudioPipeline::start_output() {
         // Preroll ~100 ms of silence so early callbacks never underrun.
         const size_t preroll = (config_.sample_rate / 10) * config_.channel_count;
         std::vector<float> zeros(preroll, 0.0f);
-        {
-            std::lock_guard<std::mutex> lk(fifo_mtx_);
-            fifo_write(zeros.data(), zeros.size());
-        }
+        // Lock-free SPSC push
+        fifo_write(zeros.data(), zeros.size());
         return true;
     }
 
@@ -417,6 +413,9 @@ bool AudioPipeline::initialize_output() {
     
     // resampler will be lazily created on first frame, but it's safe to pre-clear cache
     swr_in_rate_ = 0; swr_in_ch_ = 0; swr_in_layout_ = 0; swr_in_fmt_ = 0;
+    // Initialize drift target once device format is known
+    last_period_frames_.store(0);
+    target_fifo_samples_.store(0);
     return true; // Already initialized above
 }
 
@@ -524,12 +523,12 @@ size_t AudioPipeline::audio_render_callback(void* buffer, uint32_t frame_count, 
         return frame_count;
     }
     
+    // Track device period and update drift target
+    update_drift_control(frame_count, channels);
     const size_t need = static_cast<size_t>(frame_count) * channels;
     size_t got = 0;
-    {
-        std::lock_guard<std::mutex> lk(fifo_mtx_);
-        got = fifo_read(static_cast<float*>(buffer), need);
-    }
+    // Lock-free SPSC pop — no mutex
+    got = fifo_read(static_cast<float*>(buffer), need);
     
     if (got < need) {
         // zero-fill remainder
@@ -708,6 +707,12 @@ bool AudioPipeline::convert_to_device_format(const AudioFrame& in, std::vector<f
     out.resize(start + need_floats);
     uint8_t* out_ptr = reinterpret_cast<uint8_t*>(out.data() + start);
 
+    // Apply any pending drift compensation before converting.
+    // swr_set_compensation will add/drop 'delta' samples across 'distance' output samples.
+    if (int delta = pending_comp_samples_.exchange(0); delta != 0) {
+        // Spread over ~1 second to keep it imperceptible.
+        swr_set_compensation(swr_, delta, (int)cfg.sample_rate);
+    }
     // Convert
     int got = swr_convert(swr_, &out_ptr, out_est, in_planes, (int)in_samples);
     if (got < 0) {
@@ -725,31 +730,39 @@ void AudioPipeline::fifo_init_seconds(double seconds) {
     const size_t cap = static_cast<size_t>(seconds * config_.sample_rate * config_.channel_count);
     device_fifo_.assign(cap, 0.0f);
     fifo_capacity_ = device_fifo_.size();
-    fifo_head_ = fifo_tail_ = fifo_size_ = 0;
+    fifo_head_.store(0, std::memory_order_relaxed);
+    fifo_tail_.store(0, std::memory_order_relaxed);
+    fifo_size_.store(0, std::memory_order_relaxed);
 }
 
 size_t AudioPipeline::fifo_write(const float* samples, size_t count) {
     size_t written = 0;
     while (written < count) {
-        if (fifo_size_ == fifo_capacity_) {
+        size_t sz = fifo_size_.load(std::memory_order_acquire);
+        if (sz == fifo_capacity_) {
             // Overwrite oldest (advance tail) to keep continuity.
-            fifo_tail_ = (fifo_tail_ + 1) % fifo_capacity_;
+            size_t tail = fifo_tail_.load(std::memory_order_relaxed);
+            fifo_tail_.store((tail + 1) % fifo_capacity_, std::memory_order_release);
             // fifo_size_ stays at capacity
         } else {
-            ++fifo_size_;
+            fifo_size_.store(sz + 1, std::memory_order_release);
         }
-        device_fifo_[fifo_head_] = samples[written++];
-        fifo_head_ = (fifo_head_ + 1) % fifo_capacity_;
+        size_t head = fifo_head_.load(std::memory_order_relaxed);
+        device_fifo_[head] = samples[written++];
+        fifo_head_.store((head + 1) % fifo_capacity_, std::memory_order_release);
     }
     return written;
 }
 
 size_t AudioPipeline::fifo_read(float* dst, size_t count) {
     size_t read = 0;
-    while (read < count && fifo_size_ > 0) {
-        dst[read++] = device_fifo_[fifo_tail_];
-        fifo_tail_ = (fifo_tail_ + 1) % fifo_capacity_;
-        --fifo_size_;
+    while (read < count && fifo_size_.load(std::memory_order_acquire) > 0) {
+        size_t tail = fifo_tail_.load(std::memory_order_relaxed);
+        dst[read++] = device_fifo_[tail];
+        fifo_tail_.store((tail + 1) % fifo_capacity_, std::memory_order_release);
+        // decrement size
+        size_t sz = fifo_size_.load(std::memory_order_relaxed);
+        fifo_size_.store(sz - 1, std::memory_order_release);
     }
     return read;
 }
@@ -798,6 +811,40 @@ void AudioPipeline::free_resampler() {
         swr_ = nullptr;
     }
     swr_in_rate_ = 0; swr_in_ch_ = 0; swr_in_layout_ = 0; swr_in_fmt_ = 0;
+}
+
+// Keep FIFO near a stable target by commanding tiny resample adjustments
+void AudioPipeline::update_drift_control(uint32_t callback_frames, uint16_t channels) {
+    // Establish period and target (4 periods) on first few callbacks
+    if (last_period_frames_.load() == 0 && callback_frames > 0) {
+        last_period_frames_.store(callback_frames);
+        size_t tgt = static_cast<size_t>(callback_frames) * channels * 4; // ~4 periods
+        target_fifo_samples_.store(tgt, std::memory_order_release);
+        fifo_level_ema_ = (double)tgt;
+    }
+    // Snapshot current FIFO level
+    size_t fifo_now = fifo_size_.load(std::memory_order_acquire);
+    // EMA to avoid reacting to noise
+    const double alpha = 0.02; // gentler smoothing (less breathing)
+    fifo_level_ema_ = (1.0 - alpha) * fifo_level_ema_ + alpha * (double)fifo_now;
+    size_t tgt_samples = target_fifo_samples_.load(std::memory_order_acquire);
+    if (tgt_samples == 0) return;
+
+    // Error (samples, interleaved)
+    double err = fifo_level_ema_ - (double)tgt_samples;
+    // Convert to frames (per channel) for nicer scaling
+    double err_frames = err / (double)channels;
+
+    // Map error to a tiny compensation: clamp to ±0.33% over 1s
+    // 0.33% of 48kHz ≈ 160 samples per second (per channel)
+    const int max_per_sec = (int)(config_.sample_rate / 300); // ~0.33%
+    int desired = (int)std::clamp(err_frames * 0.03, -(double)max_per_sec, (double)max_per_sec);
+
+    // If we're close enough, don't compensate
+    if (std::abs(desired) < 2) desired = 0; // deadband smaller
+
+    // Post the new delta to be applied on the next resample call
+    pending_comp_samples_.store(desired);
 }
 
 } // namespace ve::audio
