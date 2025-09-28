@@ -189,6 +189,12 @@ private:
     std::unique_ptr<ve::audio::TimelineAudioManager> timeline_audio_manager_;
     CallbackId audio_callback_id_{0};
     
+    // Probed audio characteristics for universal video file compatibility
+    uint32_t probed_audio_sample_rate_{48000};  // Video file's native format
+    uint16_t probed_audio_channels_{2};
+    uint32_t device_audio_sample_rate_{48000};  // WASAPI device's negotiated format
+    uint16_t device_audio_channels_{2};
+    
     // Timeline playback state
     std::unordered_map<std::string, std::unique_ptr<decode::IDecoder>> timeline_decoders_;  // Cache decoders by media path
     mutable std::mutex timeline_decoders_mutex_;

@@ -196,13 +196,26 @@ bool PlaybackController::load_media(const std::string& path) {
         }
     }
     
-    // Get duration from media probe
+    // Get duration from media probe and extract audio stream information
     auto probe_result = ve::media::probe_file(path);
+    uint32_t probed_sample_rate = 48000;  // Default fallback
+    uint16_t probed_channels = 2;         // Default fallback
+    bool found_audio_stream = false;
+    
     if (probe_result.success && probe_result.duration_us > 0) {
         duration_us_ = probe_result.duration_us;
-        // Derive fps from first video stream if present
+        
+        // Extract audio stream characteristics for universal compatibility
         for(const auto& s : probe_result.streams) {
-            if(s.type == "video" && s.fps > 0) { 
+            if(s.type == "audio" && s.sample_rate > 0 && s.channels > 0) {
+                probed_sample_rate = static_cast<uint32_t>(s.sample_rate);
+                probed_channels = static_cast<uint16_t>(s.channels);
+                found_audio_stream = true;
+                ve::log::info("Detected audio stream: " + std::to_string(s.sample_rate) + " Hz, " + 
+                             std::to_string(s.channels) + " channels, codec: " + s.codec);
+                break; // Use first audio stream
+            }
+            else if(s.type == "video" && s.fps > 0) { 
                 probed_fps_ = s.fps; 
                 // Initialize drift-proof stepping with detected fps
                 if (s.fps == 29.97) {
@@ -217,15 +230,24 @@ bool PlaybackController::load_media(const std::string& path) {
                     step_.num = static_cast<int64_t>(s.fps + 0.5); step_.den = 1;
                 }
                 step_.rem = 0; // reset accumulator
-                break; 
             }
         }
+        
+        if (!found_audio_stream) {
+            ve::log::warn("No audio stream detected in video file, using defaults: " + 
+                         std::to_string(probed_sample_rate) + " Hz, " + std::to_string(probed_channels) + " channels");
+        }
+        
         ve::log::info("Media duration: " + std::to_string(duration_us_) + " us (" + 
                      std::to_string(static_cast<double>(duration_us_) / 1000000.0) + " seconds)");
     } else {
-        ve::log::warn("Could not determine media duration");
+        ve::log::warn("Could not determine media duration, using default audio format");
         duration_us_ = 0;
     }
+    
+    // Store probed audio characteristics for pipeline configuration
+    probed_audio_sample_rate_ = probed_sample_rate;
+    probed_audio_channels_ = probed_channels;
     
     ve::log::info("Media loaded successfully: " + path);
     set_state(PlaybackState::Stopped);
@@ -860,12 +882,24 @@ bool PlaybackController::initialize_audio_pipeline() {
     // Add a small delay to ensure cleanup completes
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
     
-    // Create audio pipeline configuration
+    // Create audio pipeline configuration using probed video file characteristics
     ve::audio::AudioPipelineConfig pipeline_config;
-    pipeline_config.sample_rate = 48000;
-    pipeline_config.channel_count = 2;
-    pipeline_config.buffer_size = 480;  // Match WASAPI device period frames for optimal audio synchronization
+    pipeline_config.sample_rate = probed_audio_sample_rate_;
+    pipeline_config.channel_count = probed_audio_channels_;
     pipeline_config.format = ve::audio::SampleFormat::Float32;
+    
+    // Calculate optimal buffer size based on sample rate (maintain ~10ms periods)
+    // Standard WASAPI period is typically 480 frames @ 48kHz = 10ms
+    // Scale proportionally for other sample rates: buffer_frames = (sample_rate * 10ms) / 1000ms
+    uint32_t optimal_buffer_size = static_cast<uint32_t>((probed_audio_sample_rate_ * 10) / 1000);
+    
+    // Ensure buffer size is reasonable (clamp between 128 and 2048 frames)
+    pipeline_config.buffer_size = std::clamp(optimal_buffer_size, 128u, 2048u);
+    
+    ve::log::info("Dynamic audio configuration: " + std::to_string(pipeline_config.sample_rate) + " Hz, " +
+                 std::to_string(pipeline_config.channel_count) + " channels, " +
+                 std::to_string(pipeline_config.buffer_size) + " frames (~" +
+                 std::to_string((double)pipeline_config.buffer_size * 1000.0 / pipeline_config.sample_rate) + " ms)");
     
     // Create the audio pipeline
     audio_pipeline_ = ve::audio::AudioPipeline::create(pipeline_config);
@@ -879,6 +913,20 @@ bool PlaybackController::initialize_audio_pipeline() {
         ve::log::error("Failed to initialize audio pipeline");
         audio_pipeline_.reset();
         return false;
+    }
+    
+    // Check what format was actually negotiated by the device after initialization
+    const auto& final_config = audio_pipeline_->get_config();
+    device_audio_sample_rate_ = final_config.sample_rate;
+    device_audio_channels_ = final_config.channel_count;
+    
+    // Log the final negotiation result for universal video compatibility
+    if (device_audio_sample_rate_ != probed_audio_sample_rate_ || device_audio_channels_ != probed_audio_channels_) {
+        ve::log::info("Audio format negotiation completed: video(" + std::to_string(probed_audio_sample_rate_) + "Hz/" + 
+                     std::to_string(probed_audio_channels_) + "ch) → device(" + std::to_string(device_audio_sample_rate_) + 
+                     "Hz/" + std::to_string(device_audio_channels_) + "ch) - automatic resampling enabled");
+    } else {
+        ve::log::info("Audio format negotiation: perfect match achieved - no resampling needed for optimal performance");
     }
     
     // Start audio output
@@ -958,9 +1006,10 @@ bool PlaybackController::initialize_audio_pipeline() {
     });
     
     // Initialize audio stats with actual values
-    audio_stats_.sample_rate = pipeline_config.sample_rate;
-    audio_stats_.channels = pipeline_config.channel_count;
-    audio_stats_.buffer_size = pipeline_config.buffer_size;
+    // Use the final negotiated configuration for stats
+    audio_stats_.sample_rate = device_audio_sample_rate_;
+    audio_stats_.channels = device_audio_channels_;
+    audio_stats_.buffer_size = final_config.buffer_size;
     audio_stats_.frames_processed = 0;
     audio_stats_.total_frames_processed = 0;
     audio_stats_.buffer_underruns = 0;

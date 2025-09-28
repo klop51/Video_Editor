@@ -787,18 +787,76 @@ AudioOutputError AudioOutput::initialize_format() {
         return AudioOutputError::Unknown;
     }
 
-    // Use the mix format as our target format
-    config_.sample_rate = mix_format->nSamplesPerSec;
-    config_.channel_count = mix_format->nChannels;
-
-    if (mix_format->wFormatTag == WAVE_FORMAT_IEEE_FLOAT) {
-        config_.format = SampleFormat::Float32;
-    } else if (mix_format->wFormatTag == WAVE_FORMAT_PCM) {
-        if (mix_format->wBitsPerSample == 16) {
-            config_.format = SampleFormat::Int16;
-        } else if (mix_format->wBitsPerSample == 32) {
-            config_.format = SampleFormat::Int32;
+    // Store original requested configuration for comparison
+    uint32_t requested_sample_rate = config_.sample_rate;
+    uint32_t requested_channels = config_.channel_count;
+    
+    // Create a WAVEFORMATEX for our requested format to test device support
+    WAVEFORMATEX requested_format = {};
+    requested_format.wFormatTag = WAVE_FORMAT_IEEE_FLOAT;
+    requested_format.nChannels = static_cast<WORD>(config_.channel_count);
+    requested_format.nSamplesPerSec = config_.sample_rate;
+    requested_format.wBitsPerSample = 32; // Float32
+    requested_format.nBlockAlign = static_cast<WORD>((requested_format.wBitsPerSample / 8) * requested_format.nChannels);
+    requested_format.nAvgBytesPerSec = requested_format.nSamplesPerSec * requested_format.nBlockAlign;
+    requested_format.cbSize = 0;
+    
+    // Test if device supports our requested format
+    WAVEFORMATEX* closest_match = nullptr;
+    hr = audio_client_->IsFormatSupported(AUDCLNT_SHAREMODE_SHARED, &requested_format, &closest_match);
+    
+    if (hr == S_OK) {
+        // Device supports our exact format - keep our configuration
+        ve::log::info("WASAPI device supports requested format: " + std::to_string(config_.sample_rate) + " Hz, " + 
+                     std::to_string(config_.channel_count) + " channels");
+        config_.format = SampleFormat::Float32; // We always prefer Float32
+    } else if (hr == S_FALSE && closest_match) {
+        // Device suggests a close format - use it for better compatibility
+        config_.sample_rate = closest_match->nSamplesPerSec;
+        config_.channel_count = closest_match->nChannels;
+        
+        if (closest_match->wFormatTag == WAVE_FORMAT_IEEE_FLOAT) {
+            config_.format = SampleFormat::Float32;
+        } else if (closest_match->wFormatTag == WAVE_FORMAT_PCM) {
+            if (closest_match->wBitsPerSample == 16) {
+                config_.format = SampleFormat::Int16;
+            } else if (closest_match->wBitsPerSample == 32) {
+                config_.format = SampleFormat::Int32;
+            }
         }
+        
+        ve::log::warn("WASAPI device suggested different format: " + std::to_string(config_.sample_rate) + " Hz, " + 
+                     std::to_string(config_.channel_count) + " channels (requested: " + 
+                     std::to_string(requested_sample_rate) + " Hz, " + std::to_string(requested_channels) + " channels)");
+        CoTaskMemFree(closest_match);
+    } else {
+        // Device doesn't support our format - fall back to device mix format
+        config_.sample_rate = mix_format->nSamplesPerSec;
+        config_.channel_count = mix_format->nChannels;
+
+        if (mix_format->wFormatTag == WAVE_FORMAT_IEEE_FLOAT) {
+            config_.format = SampleFormat::Float32;
+        } else if (mix_format->wFormatTag == WAVE_FORMAT_PCM) {
+            if (mix_format->wBitsPerSample == 16) {
+                config_.format = SampleFormat::Int16;
+            } else if (mix_format->wBitsPerSample == 32) {
+                config_.format = SampleFormat::Int32;
+            }
+        }
+        
+        ve::log::warn("WASAPI device rejected requested format, using device mix format: " + 
+                     std::to_string(config_.sample_rate) + " Hz, " + std::to_string(config_.channel_count) + 
+                     " channels (requested: " + std::to_string(requested_sample_rate) + " Hz, " + 
+                     std::to_string(requested_channels) + " channels)");
+    }
+    
+    // Log the negotiation result
+    if (config_.sample_rate != requested_sample_rate || config_.channel_count != requested_channels) {
+        ve::log::info("Audio format negotiation: video=" + std::to_string(requested_sample_rate) + "Hz/" + 
+                     std::to_string(requested_channels) + "ch → device=" + std::to_string(config_.sample_rate) + 
+                     "Hz/" + std::to_string(config_.channel_count) + "ch (resampling will be applied)");
+    } else {
+        ve::log::info("Audio format negotiation: perfect match - no resampling needed");
     }
 
     // Calculate buffer sizes

@@ -149,6 +149,7 @@ private:
     // Audio processing thread
     std::thread processing_thread_;
     std::atomic<bool> processing_thread_should_exit_{false};
+    std::atomic<bool> device_driven_rendering_enabled_{false};
     void processing_thread_main();
 
     // Audio buffering
@@ -157,6 +158,10 @@ private:
     std::atomic<size_t> buffer_read_pos_{0};
     std::atomic<size_t> buffer_write_pos_{0};
     static constexpr size_t BUFFER_SIZE = 8; // Audio buffer size
+    
+    // Frame continuity members (currently unused - simplified approach)
+    // std::shared_ptr<AudioFrame> last_rendered_frame_;
+    // std::atomic<uint32_t> frame_repeat_count_{0};
 
     // Statistics
     mutable std::mutex stats_mutex_;
@@ -179,6 +184,7 @@ private:
     void process_audio_buffer();
     std::shared_ptr<AudioFrame> mix_buffered_audio(uint32_t frame_count);
     std::shared_ptr<AudioFrame> resize_audio_frame(const std::shared_ptr<AudioFrame>& source_frame, uint32_t target_frame_count);
+    void convert_audio_format(const AudioFrame* source, AudioFrame* target);
     
     // Audio callback for AudioOutput integration
     size_t audio_render_callback(void* buffer, uint32_t frame_count, SampleFormat format, uint16_t channels);
