@@ -47,6 +47,9 @@ bool AudioPipeline::initialize() {
         return false;
     }
 
+    // Pre-size device FIFO to ~2 seconds of audio in device format
+    fifo_init_seconds(2.0);
+
     // Start processing thread
     processing_thread_should_exit_.store(false);
     processing_thread_ = std::thread(&AudioPipeline::processing_thread_main, this);
@@ -113,12 +116,16 @@ bool AudioPipeline::process_audio_frame(std::shared_ptr<AudioFrame> frame) {
         monitoring_system_->process_audio_frame(*frame);
     }
 
-    // Add frame to buffer
+    // Convert to device format here (rate/channels/format) and push to device FIFO
+    std::vector<float> devSamples;
+    devSamples.reserve(frame->sample_count() * config_.channel_count); // avoid re-alloc on convert
+    if (!convert_to_device_format(*frame, devSamples, config_)) {
+        // on conversion failure, skip quietly
+        return true;
+    }
     {
-        std::lock_guard<std::mutex> lock(buffer_mutex_);
-        size_t write_pos = buffer_write_pos_.load();
-        audio_buffer_[write_pos] = frame;
-        buffer_write_pos_.store((write_pos + 1) % BUFFER_SIZE);
+        std::lock_guard<std::mutex> lk(fifo_mtx_);
+        fifo_write(devSamples.data(), devSamples.size());
     }
 
     // Update statistics  
@@ -416,104 +423,19 @@ void AudioPipeline::process_audio_buffer() {
     }
 }
 
-std::shared_ptr<AudioFrame> AudioPipeline::mix_buffered_audio(uint32_t frame_count) {
-    // Smart audio buffering: accumulate available frames and provide smooth playback
-    std::shared_ptr<AudioFrame> latest_frame;
-    
+std::shared_ptr<AudioFrame> AudioPipeline::mix_buffered_audio(uint32_t /*frame_count*/) {
+    // Strict FIFO: pop the next enqueued frame, or nullptr if empty.
+    std::shared_ptr<AudioFrame> next;
     {
         std::lock_guard<std::mutex> lock(buffer_mutex_);
-        
-        // Look for ANY available frame in the circular buffer, not just at read_pos
-        size_t search_pos = buffer_read_pos_.load();
-        for (size_t i = 0; i < BUFFER_SIZE; ++i) {
-            size_t check_pos = (search_pos + i) % BUFFER_SIZE;
-            if (audio_buffer_[check_pos]) {
-                latest_frame = audio_buffer_[check_pos];
-                audio_buffer_[check_pos].reset();
-                
-                // Update read position to continue from the next position
-                buffer_read_pos_.store((check_pos + 1) % BUFFER_SIZE);
-                break;
-            }
+        size_t r = buffer_read_pos_.load();
+        if (audio_buffer_[r]) {
+            next = audio_buffer_[r];
+            audio_buffer_[r].reset();
+            buffer_read_pos_.store((r + 1) % BUFFER_SIZE);
         }
     }
-
-    // If no new frame available, return silence - but don't advance timestamps manually
-    if (!latest_frame) {
-        // Create a silent frame with a neutral timestamp to avoid timing drift
-        // Use a simple timestamp that won't interfere with actual video audio timing
-        TimePoint silent_timestamp(0, 1); // Simple zero timestamp
-        auto silent_frame = AudioFrame::create(
-            config_.sample_rate,
-            config_.channel_count,
-            frame_count,
-            SampleFormat::Float32, // Use float32 for consistency with audio pipeline
-            silent_timestamp
-        );
-        
-        // AudioFrame::create() automatically zero-initializes data (silent)
-        // Don't manually advance timestamps - let the actual audio frames control timing
-        
-        // Log silent frame generation occasionally (this is normal during video playback gaps)
-        static auto last_silent_log = std::chrono::steady_clock::now();
-        static int silent_count = 0;
-        silent_count++;
-        auto now = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::seconds>(now - last_silent_log).count() >= 5) {
-            ve::log::info("AudioPipeline: Generated " + std::to_string(silent_count) + 
-                         " silent frames in last 5 seconds - normal during video decoder gaps");
-            last_silent_log = now;
-            silent_count = 0;
-        }
-        
-        return silent_frame;
-    }
-    
-    // Debug: Log when we get real audio frames (not silent ones)
-    if (latest_frame) {
-        static auto last_real_audio_log = std::chrono::steady_clock::now();
-        static int real_audio_count = 0;
-        real_audio_count++;
-        auto now = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::seconds>(now - last_real_audio_log).count() >= 5) {
-            ve::log::info("AudioPipeline: Received " + std::to_string(real_audio_count) + 
-                         " REAL audio frames in last 5 seconds - this should be much higher for smooth audio");
-            last_real_audio_log = now;
-            real_audio_count = 0;
-        }
-    }
-
-    // Check if mixer is properly initialized and has channels
-    if (!mixer_ || !mixer_->is_initialized()) {
-        // Resize frame to match requested count for WASAPI compatibility
-        if (latest_frame->sample_count() != frame_count) {
-            return resize_audio_frame(latest_frame, frame_count);
-        }
-        return latest_frame; // Fallback to direct passthrough
-    }
-
-    // If no channels exist, resize frame to match requested count
-    if (mixer_->get_channel_count() == 0) {
-        if (latest_frame->sample_count() != frame_count) {
-            return resize_audio_frame(latest_frame, frame_count);
-        }
-        return latest_frame;
-    }
-
-    // Use the mixer to process and mix audio channels
-    // Create output frame with requested frame count and latest frame timestamp
-    auto mixed_frame = mixer_->mix_channels(frame_count, latest_frame->timestamp());
-    
-    // Return mixed frame if successful, otherwise fallback to resized original
-    if (mixed_frame) {
-        return mixed_frame;
-    } else {
-        // Fallback: resize original frame to match requirements
-        if (latest_frame->sample_count() != frame_count) {
-            return resize_audio_frame(latest_frame, frame_count);
-        }
-        return latest_frame;
-    }
+    return next; // no synthetic frames here
 }
 
 void AudioPipeline::processing_thread_main() {
@@ -572,88 +494,27 @@ void AudioPipeline::disable_professional_monitoring() {
 }
 
 size_t AudioPipeline::audio_render_callback(void* buffer, uint32_t frame_count, SampleFormat format, uint16_t channels) {
-    const size_t bytes_per_sample = AudioFrame::bytes_per_sample(format);
-    const size_t bytes_per_frame = bytes_per_sample * channels;
-
-    auto fill_silence = [&](uint32_t frames_to_fill) -> size_t {
-        const size_t total_bytes = static_cast<size_t>(frames_to_fill) * bytes_per_frame;
-        if (total_bytes > 0) {
-            std::memset(buffer, 0, total_bytes);
-        }
-        return frames_to_fill;
-    };
-
-    if (bytes_per_sample == 0) {
-        return fill_silence(frame_count);
+    // Contract: device output is float32, channel_count == config_.channel_count
+    // Enforce at runtime to catch surprises
+    if (format != SampleFormat::Float32 || channels != config_.channel_count) {
+        // Fallback: zero (should not happen after initialize_output sync)
+        std::memset(buffer, 0, frame_count * channels * sizeof(float));
+        return frame_count;
     }
-
-    if (state_.load() != AudioPipelineState::Playing) {
-        return fill_silence(frame_count);
+    
+    const size_t need = static_cast<size_t>(frame_count) * channels;
+    size_t got = 0;
+    {
+        std::lock_guard<std::mutex> lk(fifo_mtx_);
+        got = fifo_read(static_cast<float*>(buffer), need);
     }
-
-    auto audio_frame = get_mixed_audio(frame_count);
-    if (!audio_frame) {
-        static auto last_frame_warning = std::chrono::steady_clock::now();
-        static uint32_t silence_count = 0;
-        silence_count++;
-        
-        auto now = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::seconds>(now - last_frame_warning).count() >= 5) {
-            ve::log::warn("AudioPipeline: No audio frames available for rendering (silence count: " + 
-                         std::to_string(silence_count) + " in last 5 seconds) - this causes frame skipping");
-            last_frame_warning = now;
-            silence_count = 0;
-        }
-        return fill_silence(frame_count);
+    
+    if (got < need) {
+        // zero-fill remainder
+        auto* out = static_cast<float*>(buffer);
+        std::memset(out + got, 0, (need - got) * sizeof(float));
     }
-
-    // Handle format conversion when device format differs from video format
-    if (audio_frame->format() != format ||
-        audio_frame->channel_count() != channels ||
-        audio_frame->sample_count() != frame_count) {
-        
-        static auto last_format_warning = std::chrono::steady_clock::now();
-        auto now = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::seconds>(now - last_format_warning).count() >= 5) {
-            ve::log::warn("AudioPipeline: Converting audio format - video(" +
-                         std::to_string(audio_frame->channel_count()) + "ch/" + std::to_string(static_cast<int>(audio_frame->format())) + 
-                         "fmt/" + std::to_string(audio_frame->sample_count()) + " frames) → device(" +
-                         std::to_string(channels) + "ch/" + std::to_string(static_cast<int>(format)) + "fmt/" + 
-                         std::to_string(frame_count) + " frames)");
-            last_format_warning = now;
-        }
-        
-        // Create a new frame with the target device format
-        auto converted_frame = AudioFrame::create(
-            config_.sample_rate,
-            channels,
-            frame_count,
-            format,
-            audio_frame->timestamp()
-        );
-        
-        if (!converted_frame) {
-            return fill_silence(frame_count);
-        }
-        
-        // Perform channel conversion and format conversion
-        convert_audio_format(audio_frame.get(), converted_frame.get());
-        audio_frame = converted_frame;
-    }
-
-    const size_t target_bytes = static_cast<size_t>(frame_count) * bytes_per_frame;
-    const size_t available_bytes = audio_frame->data_size();
-    const size_t bytes_to_copy = std::min(target_bytes, available_bytes);
-
-    if (bytes_to_copy > 0) {
-        std::memcpy(buffer, audio_frame->data(), bytes_to_copy);
-    }
-
-    if (bytes_to_copy < target_bytes) {
-        auto* dst = static_cast<uint8_t*>(buffer) + bytes_to_copy;
-        std::memset(dst, 0, target_bytes - bytes_to_copy);
-    }
-
+    
     return frame_count;
 }
 
@@ -764,6 +625,88 @@ void AudioPipeline::convert_audio_format(const AudioFrame* source, AudioFrame* t
         uint32_t silence_samples = remaining_frames * target_channels;
         std::memset(target_data + (frames_to_process * target_channels), 0, silence_samples * sizeof(float));
     }
+}
+
+// Helper: robust conversion to device format
+bool AudioPipeline::convert_to_device_format(const AudioFrame& in, std::vector<float>& out, const AudioPipelineConfig& cfg) {
+    // Simple conversion - we'll improve this with proper resampling later if needed
+    uint32_t in_rate = in.sample_rate();
+    uint16_t in_channels = in.channel_count();
+    uint32_t in_samples = in.sample_count();
+    
+    // For now, handle same-rate cases and basic channel conversion
+    if (in_rate != cfg.sample_rate) {
+        // TODO: Add proper resampling with libswresample
+        // For now, skip frames that need resampling to avoid artifacts
+        return false;
+    }
+    
+    // Convert to float32 and handle channel conversion
+    const size_t out_samples = in_samples * cfg.channel_count;
+    out.resize(out_samples);
+    
+    if (in.format() == SampleFormat::Float32) {
+        const float* in_data = reinterpret_cast<const float*>(in.data());
+        
+        if (in_channels == cfg.channel_count) {
+            // Same channel count - direct copy
+            std::memcpy(out.data(), in_data, in_samples * in_channels * sizeof(float));
+        } else if (in_channels == 6 && cfg.channel_count == 2) {
+            // 6ch -> 2ch downmix (5.1 -> stereo)
+            for (uint32_t i = 0; i < in_samples; ++i) {
+                const float* src = &in_data[i * 6];
+                float* dst = &out[i * 2];
+                
+                // Simple 5.1 to stereo downmix
+                // L, R, C, LFE, Ls, Rs -> L, R
+                dst[0] = src[0] + 0.707f * src[2] + 0.5f * src[4]; // L + 0.707*C + 0.5*Ls
+                dst[1] = src[1] + 0.707f * src[2] + 0.5f * src[5]; // R + 0.707*C + 0.5*Rs
+            }
+        } else if (in_channels == 1 && cfg.channel_count == 2) {
+            // Mono -> Stereo
+            for (uint32_t i = 0; i < in_samples; ++i) {
+                out[i * 2] = in_data[i];     // L
+                out[i * 2 + 1] = in_data[i]; // R
+            }
+        } else {
+            // Unsupported channel conversion for now
+            return false;
+        }
+    } else {
+        // TODO: Add format conversion for other sample formats
+        return false;
+    }
+    
+    return true;
+}
+
+// ===== FIFO helpers (non-RT allocations happen at init only) =====
+void AudioPipeline::fifo_init_seconds(double seconds) {
+    const size_t cap = static_cast<size_t>(seconds * config_.sample_rate * config_.channel_count);
+    device_fifo_.assign(cap, 0.0f);
+    fifo_capacity_ = device_fifo_.size();
+    fifo_head_ = fifo_tail_ = fifo_size_ = 0;
+}
+
+size_t AudioPipeline::fifo_write(const float* samples, size_t count) {
+    size_t written = 0;
+    while (written < count) {
+        if (fifo_size_ == fifo_capacity_) break; // full: drop or overwrite? (keep drop for now)
+        device_fifo_[fifo_head_] = samples[written++];
+        fifo_head_ = (fifo_head_ + 1) % fifo_capacity_;
+        ++fifo_size_;
+    }
+    return written;
+}
+
+size_t AudioPipeline::fifo_read(float* dst, size_t count) {
+    size_t read = 0;
+    while (read < count && fifo_size_ > 0) {
+        dst[read++] = device_fifo_[fifo_tail_];
+        fifo_tail_ = (fifo_tail_ + 1) % fifo_capacity_;
+        --fifo_size_;
+    }
+    return read;
 }
 
 } // namespace ve::audio

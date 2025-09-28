@@ -159,6 +159,20 @@ private:
     std::atomic<size_t> buffer_write_pos_{0};
     static constexpr size_t BUFFER_SIZE = 8; // Audio buffer size
     
+    // Device-format staging for robust render callback
+    // Lock-free-ish ring buffer (guarded by a light mutex for now)
+    std::vector<float> device_fifo_;     // capacity set at init: seconds * sample_rate * channels
+    size_t fifo_head_ = 0;               // write index
+    size_t fifo_tail_ = 0;               // read index
+    size_t fifo_size_ = 0;               // number of valid float samples
+    size_t fifo_capacity_ = 0;           // total float slots
+    std::mutex fifo_mtx_;
+
+    // Helpers
+    void fifo_init_seconds(double seconds);
+    size_t fifo_write(const float* samples, size_t count); // returns written
+    size_t fifo_read(float* dst, size_t count);            // returns read
+    
     // Frame continuity members (currently unused - simplified approach)
     // std::shared_ptr<AudioFrame> last_rendered_frame_;
     // std::atomic<uint32_t> frame_repeat_count_{0};
@@ -185,6 +199,9 @@ private:
     std::shared_ptr<AudioFrame> mix_buffered_audio(uint32_t frame_count);
     std::shared_ptr<AudioFrame> resize_audio_frame(const std::shared_ptr<AudioFrame>& source_frame, uint32_t target_frame_count);
     void convert_audio_format(const AudioFrame* source, AudioFrame* target);
+    
+    // Helper: robust conversion to device format
+    bool convert_to_device_format(const AudioFrame& in, std::vector<float>& out, const AudioPipelineConfig& cfg);
     
     // Audio callback for AudioOutput integration
     size_t audio_render_callback(void* buffer, uint32_t frame_count, SampleFormat format, uint16_t channels);

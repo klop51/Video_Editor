@@ -16,6 +16,7 @@
 #include <chrono>
 #include <thread>
 #include <algorithm>
+#include <cstdint>
 
 // Windows.h compatibility - undefine potential conflicting macros
 #ifdef Int16
@@ -208,8 +209,9 @@ bool PlaybackController::load_media(const std::string& path) {
         // Extract audio stream characteristics for universal compatibility
         for(const auto& s : probe_result.streams) {
             if(s.type == "audio" && s.sample_rate > 0 && s.channels > 0) {
-                probed_sample_rate = static_cast<uint32_t>(s.sample_rate);
-                probed_channels = static_cast<uint16_t>(s.channels);
+                // Safe conversions with range checks
+                probed_sample_rate = static_cast<uint32_t>(std::min(s.sample_rate, static_cast<int64_t>(UINT32_MAX)));
+                probed_channels = static_cast<uint16_t>(std::min(s.channels, static_cast<int64_t>(UINT16_MAX)));
                 found_audio_stream = true;
                 ve::log::info("Detected audio stream: " + std::to_string(s.sample_rate) + " Hz, " + 
                              std::to_string(s.channels) + " channels, codec: " + s.codec);
@@ -625,9 +627,6 @@ void PlaybackController::playback_thread_main() {
                     ve::log::debug("Playback frames displayed=" + std::to_string(stats_.frames_displayed));
                 }
                 
-                // DEBUG: Force garbage collection and check heap state after VideoFrame destruction
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                
             } else {
                 // Handle null video frame - could be EOF, memory error, or decode failure
                 ve::log::warn("decoder_->read_video() returned null frame - checking if end of stream");
@@ -652,8 +651,10 @@ void PlaybackController::playback_thread_main() {
                 }
             }
             
-            // Read audio frame
+            // Read audio frame (single read to maintain perfect video timing)
             auto audio_frame = [&](){ /* VE_PROFILE_SCOPE_UNIQ("playbook.decode_audio"); */ return decoder_->read_audio(); }();
+            
+            
             
             if (audio_frame) {
                 { // audio callback dispatch (profiling removed to avoid variable shadow warning on MSVC)
