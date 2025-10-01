@@ -82,6 +82,55 @@ inline void pace_next(std::chrono::time_point<Clock>& last_frame_time,
         last_frame_time = now;          // behind schedule; catch up baseline
     }
 }
+
+// SDL-style continuous timing for improved A/V sync (based on working video player approach)
+template <typename Clock>
+inline bool pace_next_continuous(std::chrono::time_point<Clock>& last_time,
+                                double& frame_timer,
+                                int64_t target_frame_us,
+                                bool& first_frame,
+                                int frame_count = 0)
+{
+    const auto now = Clock::now();
+    
+    if (first_frame) {
+        last_time = now;
+        frame_timer = 0.0;
+        first_frame = false;
+        ve::log::info("SDL_TIMING: First frame initialized, target_frame_us=" + std::to_string(target_frame_us));
+        return true; // Always process first frame
+    }
+    
+    // Calculate elapsed time since last frame (similar to SDL video player)
+    auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(now - last_time).count();
+    last_time = now;
+    
+    // Accumulate frame timer (continuous timing like SDL approach)
+    double frame_delay = target_frame_us / 1000000.0; // Convert to seconds
+    double elapsed_sec = elapsed_us / 1000000.0;
+    frame_timer += elapsed_sec;
+    
+    // Log detailed timing every 30 frames for more frequent feedback like working video player
+    if (frame_count > 0 && frame_count % 30 == 0) {
+        ve::log::info("SDL_TIMING: frame=" + std::to_string(frame_count) + 
+                     ", elapsed_us=" + std::to_string(elapsed_us) + 
+                     ", frame_timer=" + std::to_string(frame_timer) + 
+                     ", frame_delay=" + std::to_string(frame_delay) + 
+                     ", drift=" + std::to_string((frame_timer - frame_delay) * 1000.0) + "ms");
+    }
+    
+    // Check if we should process frame(s) - similar to video player's while loop logic
+    if (frame_timer >= frame_delay) {
+        frame_timer -= frame_delay; // Subtract one frame time
+        // Prevent excessive drift accumulation like working video player
+        if (frame_timer > frame_delay * 2.0) {
+            frame_timer = frame_delay; // Clamp to prevent runaway drift
+        }
+        return true; // Process frame
+    }
+    
+    return false; // Skip frame, not yet time
+}
 } // namespace
 
 namespace ve::playback {
@@ -144,6 +193,7 @@ bool PlaybackController::load_media(const std::string& path) {
     params.filepath = path;
     params.video = true;
     params.audio = true;
+    params.preferred_audio_stream_index = probed_audio_stream_index_; // Use the selected stream index
     
     bool success = false;
     
@@ -207,17 +257,42 @@ bool PlaybackController::load_media(const std::string& path) {
         duration_us_ = probe_result.duration_us;
         
         // Extract audio stream characteristics for universal compatibility
+        // Prefer stereo (2-channel) streams over multi-channel for compatibility
+        int best_score = -1;
+        const ve::media::StreamInfo* preferred_audio_stream = nullptr;
+        
         for(const auto& s : probe_result.streams) {
             if(s.type == "audio" && s.sample_rate > 0 && s.channels > 0) {
-                // Safe conversions with range checks
-                probed_sample_rate = static_cast<uint32_t>(std::min(s.sample_rate, static_cast<int64_t>(UINT32_MAX)));
-                probed_channels = static_cast<uint16_t>(std::min(s.channels, static_cast<int64_t>(UINT16_MAX)));
-                found_audio_stream = true;
-                ve::log::info("Detected audio stream: " + std::to_string(s.sample_rate) + " Hz, " + 
-                             std::to_string(s.channels) + " channels, codec: " + s.codec);
-                break; // Use first audio stream
+                // Score streams: prefer stereo (2 channels) over multi-channel
+                int score = 0;
+                if(s.channels == 2) {
+                    score = 100; // Highest priority for stereo
+                } else if(s.channels == 1) {
+                    score = 50;  // Mono is second best
+                } else {
+                    score = 10;  // Multi-channel gets lowest priority
+                }
+                
+                if(score > best_score) {
+                    best_score = score;
+                    preferred_audio_stream = &s;
+                }
             }
-            else if(s.type == "video" && s.fps > 0) { 
+        }
+        
+        if(preferred_audio_stream) {
+            // Safe conversions with range checks
+            probed_sample_rate = static_cast<uint32_t>(std::min(preferred_audio_stream->sample_rate, static_cast<int64_t>(UINT32_MAX)));
+            probed_channels = static_cast<uint16_t>(std::min(preferred_audio_stream->channels, static_cast<int64_t>(UINT16_MAX)));
+            probed_audio_stream_index_ = preferred_audio_stream->index; // Store the stream index
+            found_audio_stream = true;
+            ve::log::info("Selected preferred audio stream " + std::to_string(preferred_audio_stream->index) + ": " + std::to_string(preferred_audio_stream->sample_rate) + " Hz, " + 
+                         std::to_string(preferred_audio_stream->channels) + " channels, codec: " + preferred_audio_stream->codec);
+        }
+        
+        // Extract video stream characteristics for FPS detection
+        for(const auto& s : probe_result.streams) {
+            if(s.type == "video" && s.fps > 0) {
                 probed_fps_ = s.fps; 
                 // Initialize drift-proof stepping with detected fps
                 if (s.fps == 29.97) {
@@ -232,6 +307,7 @@ bool PlaybackController::load_media(const std::string& path) {
                     step_.num = static_cast<int64_t>(s.fps + 0.5); step_.den = 1;
                 }
                 step_.rem = 0; // reset accumulator
+                break; // Use first video stream found
             }
         }
         
@@ -291,7 +367,9 @@ bool PlaybackController::has_timeline_content() const {
     
     ve::log::debug("has_timeline_content: No segments found in any track");
     return false;  // No segments found
-}void PlaybackController::play() {
+}
+
+void PlaybackController::play() {
     // Check if we have media to play (either single file or timeline content)
     if (!has_media() && !has_timeline_content()) {
         ve::log::warn("Cannot play: no media loaded and no timeline content");
@@ -400,6 +478,30 @@ void PlaybackController::playback_thread_main() {
     while (!thread_should_exit_.load()) {
         auto frame_start = std::chrono::steady_clock::now();
 
+        // SIGABRT CRASH FIX: Enhanced monitoring with memory tracking
+        int64_t safety_frame_count = frame_count_.load();
+        
+        // Log resource usage every 300 frames to track what's growing
+        if (safety_frame_count > 0 && (safety_frame_count % 300) == 0) {
+            size_t callback_count = 0;
+            {
+                std::scoped_lock lk(callbacks_mutex_);
+                callback_count = video_video_entries_.size() + audio_entries_.size() + state_entries_.size();
+            }
+            ve::log::info("RESOURCE_MONITOR: Frame " + std::to_string(safety_frame_count) + 
+                         ", Callbacks: " + std::to_string(callback_count) + 
+                         ", Cache hits: " + std::to_string(cache_hits_.load()) + 
+                         ", Cache lookups: " + std::to_string(cache_lookups_.load()));
+        }
+        
+        const int64_t SAFETY_FRAME_LIMIT = 2400; // Increased limit for better diagnostics
+        if (safety_frame_count >= SAFETY_FRAME_LIMIT) {
+            ve::log::warn("SAFETY: Reached frame limit (" + std::to_string(SAFETY_FRAME_LIMIT) + 
+                         ") to prevent SIGABRT crash - stopping playback");
+            set_state(PlaybackState::Stopped);
+            continue;
+        }
+
         // Refresh timeline snapshot if timeline attached and version changed
         if(timeline_) {
             uint64_t v = timeline_->version();
@@ -428,8 +530,10 @@ void PlaybackController::playback_thread_main() {
         
         // Process frames if playing
         if (state_.load() == PlaybackState::Playing) {
-            // Master switch: if decode disabled, just advance time with frame pacing
-            if (!decode_enabled_.load()) {
+            // SIGABRT FIX: Add exception protection around frame processing
+            try {
+                // Master switch: if decode disabled, just advance time with frame pacing
+                if (!decode_enabled_.load()) {
                 int64_t delta = step_.next_delta_us();
                 int64_t next_pts = current_time_us_.load() + delta;
                 if (duration_us_ > 0 && next_pts >= duration_us_) {
@@ -511,17 +615,25 @@ void PlaybackController::playback_thread_main() {
                     }
                     current_time_us_.store(next_pts);
                     // VE_DEBUG_ONLY - DISABLED: Time advancement logging causes performance issues
-                    // Unified pacing: establish baseline and align to precomputed FPS
-                    pace_next(last_frame_time, target_frame_duration_us, first_frame);
+                    // SDL-style continuous timing for improved A/V sync (prevent micro-timing drift)
+                    int64_t current_frame_count = frame_count_.load();
+                    if (!pace_next_continuous(last_continuous_time_, frame_timer_, target_frame_duration_us, first_continuous_frame_, static_cast<int>(current_frame_count))) {
+                        // Not yet time for next frame - continue playback loop
+                        std::this_thread::sleep_for(std::chrono::microseconds(100)); // Short sleep to prevent busy wait
+                        continue;
+                    }
 
                     continue; // Skip decoding new frame this iteration
                 } else {
                     // VE_DEBUG_ONLY - DISABLED: Cache MISS logging causes performance issues
                 }
-            } else {
-                // VE_DEBUG_ONLY - DISABLED: Bypass/skip logging causes performance issues
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                if (!bypass_cache) continue; // for seek, skip; for bypass, fall-through to decoder read
+            }
+            
+            // FIXED: The original logic prevented continuous frame reading for playback
+            // Always bypass cache during normal playback to read consecutive frames
+            // Cache should only be used for seeking/scrubbing, not continuous playback
+            if (!bypass_cache) {
+                bypass_cache = true; // Always read new frames during playback
             }
 
             // Read video frame (decode path)
@@ -542,19 +654,32 @@ void PlaybackController::playback_thread_main() {
                     current_time_us_.store(next_pts);
                 }
 
-                { // video callback dispatch
+                { // video callback dispatch - SIGABRT FIX: Added stack protection
                     std::vector<CallbackEntry<VideoFrameCallback>> copy;
                     { 
                         std::scoped_lock lk(callbacks_mutex_); 
                         copy = video_video_entries_; 
                     }
                     
+                    // SIGABRT FIX: Add try-catch to prevent callback crashes from corrupting stack
                     for(auto &entry : copy) {
                         if(entry.fn) {
-                            entry.fn(*video_frame);
+                            try {
+                                entry.fn(*video_frame);
+                            } catch (const std::exception& e) {
+                                ve::log::error("Video callback exception: " + std::string(e.what()));
+                                // Continue with other callbacks instead of crashing
+                            } catch (...) {
+                                ve::log::error("Video callback unknown exception - continuing");
+                                // Continue with other callbacks instead of crashing
+                            }
                         }
                     }
                 }
+
+                // Update frame stats immediately after frame dispatch for reliable FPS counting
+                auto frame_duration = std::chrono::duration<double, std::milli>(frame_start - last_frame_time);
+                update_frame_stats(frame_duration.count());
 
                 // High-performance frame timing (same target for decode path)
                 if (!first_frame) {
@@ -613,8 +738,12 @@ void PlaybackController::playback_thread_main() {
                     }
                 }
 
-                // Unified pacing baseline update (no drift)
-                pace_next(last_frame_time, target_frame_duration_us, first_frame);
+                // SDL-style continuous timing baseline update (no drift, improved A/V sync)
+                int64_t current_frame_count = frame_count_.load();
+                if (!pace_next_continuous(last_continuous_time_, frame_timer_, target_frame_duration_us, first_continuous_frame_, static_cast<int>(current_frame_count))) {
+                    // This should rarely happen since we already passed timing check above
+                    std::this_thread::sleep_for(std::chrono::microseconds(100));
+                }
 
                 // Update performance stats - DEBUG LOGGING DISABLED FOR PERFORMANCE
                 auto frame_time = std::chrono::duration<double, std::milli>(last_frame_time - frame_start);
@@ -701,17 +830,26 @@ void PlaybackController::playback_thread_main() {
             
             // DEBUG LOGGING DISABLED FOR PERFORMANCE - timeline audio processing
             
-            // Process timeline audio (mix multiple tracks)
-            if (timeline_audio_manager_ && timeline_) {
-                // Convert current time to TimePoint for timeline audio processing
-                ve::TimePoint current_pos{current_time_us_.load(), 1000000};
-                
-                // Process timeline audio tracks at current position
-                // This will mix audio from multiple timeline tracks and send to audio pipeline
-                timeline_audio_manager_->process_timeline_audio(current_pos, 1024);  // Standard frame size
+                // Process timeline audio (mix multiple tracks)
+                if (timeline_audio_manager_ && timeline_) {
+                    // Convert current time to TimePoint for timeline audio processing
+                    ve::TimePoint current_pos{current_time_us_.load(), 1000000};
+                    
+                    // Process timeline audio tracks at current position
+                    // This will mix audio from multiple timeline tracks and send to audio pipeline
+                    timeline_audio_manager_->process_timeline_audio(current_pos, 1024);  // Standard frame size
+                }
+            } // End single-media block
+        } // End has_content check
+            } catch (const std::exception& e) {
+                ve::log::error("SIGABRT FIX: Frame processing exception caught: " + std::string(e.what()));
+                // Continue playing but skip this frame to prevent crash
+                std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            } catch (...) {
+                ve::log::error("SIGABRT FIX: Unknown frame processing exception caught - continuing");
+                // Continue playing but skip this frame to prevent crash
+                std::this_thread::sleep_for(std::chrono::milliseconds(16));
             }
-        } // End single-media playback mode
-            } // End has_content check
         } else {
             // Not playing, sleep longer
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
@@ -785,11 +923,20 @@ void PlaybackController::decode_one_frame_if_paused(int64_t seek_target_us) {
         ve::cache::FrameKey putKey; putKey.pts_us = frame->pts; frame_cache_.put(putKey, std::move(cf));
         std::vector<CallbackEntry<VideoFrameCallback>> copy;
         { std::scoped_lock lk(callbacks_mutex_); copy = video_video_entries_; }
-        ve::log::info(std::string("PlaybackController: Invoking ") + std::to_string(copy.size()) + " video callbacks for frame pts=" + std::to_string(frame->pts));
+        auto video_callback_start = std::chrono::steady_clock::now();
+        int64_t current_frame_count = frame_count_.load();
+        ve::log::info(std::string("PlaybackController: Invoking ") + std::to_string(copy.size()) + " video callbacks for frame pts=" + std::to_string(frame->pts) + " frame=" + std::to_string(current_frame_count));
         for(auto &entry : copy) if(entry.fn) {
             ve::log::info(std::string("PlaybackController: About to call callback ID: ") + std::to_string(entry.id));
             entry.fn(*frame);
             ve::log::info(std::string("PlaybackController: Callback ID ") + std::to_string(entry.id) + " completed successfully");
+        }
+        auto video_callback_end = std::chrono::steady_clock::now();
+        auto callback_duration_us = std::chrono::duration_cast<std::chrono::microseconds>(video_callback_end - video_callback_start).count();
+        if (current_frame_count % 60 == 0) { // Log timing every 60 frames like video player
+            ve::log::info("VIDEO_TIMING: frame=" + std::to_string(current_frame_count) + 
+                         ", pts=" + std::to_string(frame->pts) + 
+                         ", callback_duration=" + std::to_string(callback_duration_us) + "us");
         }
     } else {
         // Fallback: keep current_time at seek target

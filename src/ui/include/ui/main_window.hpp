@@ -253,7 +253,7 @@ private:
     QTimer* position_update_timer_;
     std::atomic<bool> updating_position_{false};  // Patch 3: Prevent overlapping timer callbacks
     bool timeline_sync_enabled_{false};            // UI toggle for playhead -> timeline sync
-    bool fps_status_enabled_{false};               // UI toggle for FPS status label updates
+    bool fps_status_enabled_{true};                // UI toggle for FPS status label updates - enabled by default
     bool position_ui_enabled_{true};               // UI toggle for time label updates
     bool playback_ui_ticks_enabled_{false};        // Master switch; default off for stability
     std::atomic<bool> timeline_time_update_pending_{false}; // Coalesce queued timeline time updates

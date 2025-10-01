@@ -1,9 +1,14 @@
 {
   "samples": [
-    { "name": "playback.cache_hit", "count": 5, "total_ms": 11.8971, "avg_ms": 2.37942, "min_ms": 1.9899, "max_ms": 3.1395, "p50_ms": 2.3038, "p95_ms": 2.4131 },
-    { "name": "to_rgba_scaled_view", "count": 3493, "total_ms": 8670.58, "avg_ms": 2.48227, "min_ms": 2.3475, "max_ms": 5.3312, "p50_ms": 2.3848, "p95_ms": 2.9153 },
-    { "name": "to_rgba_scaled_view.sws_scale", "count": 3493, "total_ms": 8635.12, "avg_ms": 2.47212, "min_ms": 2.3422, "max_ms": 5.0734, "p50_ms": 2.3765, "p95_ms": 2.8981 },
-    { "name": "viewer.display_frame", "count": 3502, "total_ms": 18229.2, "avg_ms": 5.20536, "min_ms": 0.2195, "max_ms": 28.375, "p50_ms": 4.9898, "p95_ms": 6.3973 },
-    { "name": "to_rgba_scaled_view.ffmpeg", "count": 3493, "total_ms": 8660.19, "avg_ms": 2.4793, "min_ms": 2.3461, "max_ms": 5.0878, "p50_ms": 2.383, "p95_ms": 2.9125 }
+    { "name": "to_rgba_scaled_view", "count": 755, "total_ms": 2837.29, "avg_ms": 3.758, "min_ms": 3.3942, "max_ms": 6.0825, "p50_ms": 3.5203, "p95_ms": 5.6428 },
+    { "name": "gl_widget.paintGL", "count": 756, "total_ms": 2025.78, "avg_ms": 2.6796, "min_ms": 0.6817, "max_ms": 4.6534, "p50_ms": 2.6632, "p95_ms": 3.0077 },
+    { "name": "playback.cache_hit", "count": 1, "total_ms": 2.3346, "avg_ms": 2.3346, "min_ms": 2.3346, "max_ms": 2.3346, "p50_ms": 2.3346, "p95_ms": 2.3346 },
+    { "name": "to_rgba_scaled_view.sws_scale", "count": 755, "total_ms": 2824.82, "avg_ms": 3.74148, "min_ms": 3.3844, "max_ms": 6.0701, "p50_ms": 3.5061, "p95_ms": 5.6318 },
+    { "name": "to_rgba_scaled_view.ffmpeg", "count": 755, "total_ms": 2832.3, "avg_ms": 3.75139, "min_ms": 3.3922, "max_ms": 6.0798, "p50_ms": 3.5166, "p95_ms": 5.64 },
+    { "name": "viewer.display_frame", "count": 755, "total_ms": 19713, "avg_ms": 26.1099, "min_ms": 20.4913, "max_ms": 34.3159, "p50_ms": 26.0535, "p95_ms": 30.0257 },
+    { "name": "gl_widget.upload.pbo.map", "count": 748, "total_ms": 410.568, "avg_ms": 0.548887, "min_ms": 0.4546, "max_ms": 1.0931, "p50_ms": 0.5155, "p95_ms": 0.7439 },
+    { "name": "gl_widget.upload.pbo.tex", "count": 748, "total_ms": 0.6136, "avg_ms": 0.000820321, "min_ms": 0.0006, "max_ms": 0.0035, "p50_ms": 0.0007, "p95_ms": 0.0015 },
+    { "name": "gl_widget.upload.pbo", "count": 748, "total_ms": 425.88, "avg_ms": 0.569359, "min_ms": 0.4644, "max_ms": 1.8861, "p50_ms": 0.5285, "p95_ms": 0.7776 },
+    { "name": "gl_widget.draw", "count": 751, "total_ms": 600.979, "avg_ms": 0.800239, "min_ms": 0.695, "max_ms": 1.9774, "p50_ms": 0.7602, "p95_ms": 1.0276 }
   ]
 }

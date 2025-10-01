@@ -1,6 +1,7 @@
 // TOKEN:GL_VIDEO_WIDGET_2025_08_30_A - Sentinel for stale artifact detection
 #include "ui/gl_video_widget.hpp"
 #include "core/profiling.hpp" // profiling
+#include "core/log.hpp" // for GL debug logging
 #include <QOpenGLContext>
 #include <QOpenGLExtraFunctions>
 #include <cstring>
@@ -32,10 +33,15 @@ GLVideoWidget::~GLVideoWidget() {
 }
 
 void GLVideoWidget::set_frame(const uint8_t* rgba, int w, int h, int stride_bytes, int64_t pts) {
-    if (!rgba || w <= 0 || h <= 0) return;
+    // Removed per-frame debug logging to prevent spam
+    if (!rgba || w <= 0 || h <= 0) {
+        ve::log::warn("GL_DEBUG: set_frame rejected - invalid parameters");
+        return;
+    }
     const int required_stride = w * 4; // RGBA8 bytes per row
     if (stride_bytes < required_stride) {
         qWarning() << "GLVideoWidget::set_frame stride too small" << stride_bytes << "<" << required_stride << "w=" << w << "h=" << h;
+        ve::log::warn("GL_DEBUG: set_frame rejected - stride too small");
         return; // avoid potential over-read
     }
     if (stride_bytes > required_stride * 64) { // arbitrary sanity cap
@@ -58,6 +64,7 @@ void GLVideoWidget::set_frame(const uint8_t* rgba, int w, int h, int stride_byte
         pending_.pts = pts;
         new_frame_ = true;
     }
+    // Removed per-frame completion logging to prevent spam
     update();
 }
 
@@ -90,32 +97,42 @@ void GLVideoWidget::ensure_texture(int w, int h) {
 
 void GLVideoWidget::ensure_program() {
     if (program_) return;
+    ve::log::info("GL_DEBUG: Creating shader program...");
     const char* vs_src = "attribute vec2 aPos; attribute vec2 aUV; varying vec2 vUV; void main(){vUV=aUV; gl_Position=vec4(aPos,0.0,1.0);}";
     const char* fs_src = "varying vec2 vUV; uniform sampler2D uTex; void main(){ gl_FragColor = texture2D(uTex, vUV); }";
     GLuint vs = glCreateShader(GL_VERTEX_SHADER); glShaderSource(vs,1,&vs_src,nullptr); glCompileShader(vs);
-    GLint ok = 0; glGetShaderiv(vs, GL_COMPILE_STATUS, &ok); if(!ok){ char log[512]; GLsizei len=0; glGetShaderInfoLog(vs,512,&len,log); qWarning() << "GLVideoWidget vertex shader compile failed:" << log; }
+    GLint ok = 0; glGetShaderiv(vs, GL_COMPILE_STATUS, &ok); if(!ok){ char log[512]; GLsizei len=0; glGetShaderInfoLog(vs,512,&len,log); ve::log::error("GL_ERROR: vertex shader compile failed: " + std::string(log)); }
     GLuint fs = glCreateShader(GL_FRAGMENT_SHADER); glShaderSource(fs,1,&fs_src,nullptr); glCompileShader(fs);
-    ok = 0; glGetShaderiv(fs, GL_COMPILE_STATUS, &ok); if(!ok){ char log[512]; GLsizei len=0; glGetShaderInfoLog(fs,512,&len,log); qWarning() << "GLVideoWidget fragment shader compile failed:" << log; }
+    ok = 0; glGetShaderiv(fs, GL_COMPILE_STATUS, &ok); if(!ok){ char log[512]; GLsizei len=0; glGetShaderInfoLog(fs,512,&len,log); ve::log::error("GL_ERROR: fragment shader compile failed: " + std::string(log)); }
     program_ = glCreateProgram(); glAttachShader(program_,vs); glAttachShader(program_,fs); glLinkProgram(program_);
-    GLint linked = 0; glGetProgramiv(program_, GL_LINK_STATUS, &linked); if(!linked){ char log[512]; GLsizei len=0; glGetProgramInfoLog(program_,512,&len,log); qWarning() << "GLVideoWidget program link failed:" << log; }
+    GLint linked = 0; glGetProgramiv(program_, GL_LINK_STATUS, &linked); if(!linked){ char log[512]; GLsizei len=0; glGetProgramInfoLog(program_,512,&len,log); ve::log::error("GL_ERROR: program link failed: " + std::string(log)); }
     glDeleteShader(vs); glDeleteShader(fs);
     attr_pos_ = glGetAttribLocation(program_, "aPos");
     attr_uv_  = glGetAttribLocation(program_, "aUV");
     uni_tex_  = glGetUniformLocation(program_, "uTex");
+    ve::log::info("GL_DEBUG: Shader program created, attr_pos_=" + std::to_string(attr_pos_) + " attr_uv_=" + std::to_string(attr_uv_) + " uni_tex_=" + std::to_string(uni_tex_));
     if(attr_pos_ < 0 || attr_uv_ < 0) {
-        qWarning() << "GLVideoWidget invalid attribute locations" << attr_pos_ << attr_uv_;
+        ve::log::error("GL_ERROR: invalid attribute locations attr_pos_=" + std::to_string(attr_pos_) + " attr_uv_=" + std::to_string(attr_uv_));
     }
 }
 
 void GLVideoWidget::paintGL() {
     VE_PROFILE_SCOPE_UNIQ("gl_widget.paintGL");
+    // Removed per-frame paintGL debug logging to prevent spam
     PendingFrame local; bool has_new = false;
     {
         QMutexLocker lock(&mutex_);
-        if (new_frame_) { local = pending_; new_frame_ = false; has_new = true; }
+        if (new_frame_) { 
+            local = pending_; 
+            new_frame_ = false; 
+            has_new = true; 
+            // Removed per-frame new frame debug logging to prevent spam
+        }
     }
     if (has_new && local.w > 0 && local.h > 0 && !local.rgba.isEmpty()) {
+    // Removed per-frame texture upload debug logging to prevent spam
     ensure_texture(local.w, local.h);
+    // Removed per-frame ensure_texture debug logging to prevent spam
 #if VE_ENABLE_PBO_UPLOAD
     bool pbo_ok = false;
     if (!pbo_runtime_disabled_) {
@@ -123,11 +140,13 @@ void GLVideoWidget::paintGL() {
     }
     if (!pbo_ok) {
         VE_PROFILE_SCOPE_DETAILED("gl_widget.upload.fallback");
+        // Removed per-frame direct upload debug logging to prevent spam
         glBindTexture(GL_TEXTURE_2D, texture_id_);
         glTexSubImage2D(GL_TEXTURE_2D,0,0,0,local.w,local.h,GL_RGBA,GL_UNSIGNED_BYTE,local.rgba.constData());
     }
 #else
     VE_PROFILE_SCOPE_DETAILED("gl_widget.upload");
+    // Removed per-frame direct upload debug logging to prevent spam
     glBindTexture(GL_TEXTURE_2D, texture_id_);
     glTexSubImage2D(GL_TEXTURE_2D,0,0,0,local.w,local.h,GL_RGBA,GL_UNSIGNED_BYTE,local.rgba.constData());
 #endif
@@ -135,10 +154,15 @@ void GLVideoWidget::paintGL() {
     _CrtCheckMemory();
 #endif
     }
+    // Removed per-frame viewport setup debug logging to prevent spam
     glViewport(0,0,width(),height());
     glClearColor(0.f,0.f,0.f,1.f);
     glClear(GL_COLOR_BUFFER_BIT);
-    if (!texture_id_) return;
+    if (!texture_id_) {
+        // Keep warning for no texture (not per-frame, only when missing)
+        return;
+    }
+    // Removed per-frame rendering debug logging to prevent spam
     ensure_program();
 
     float widget_w = static_cast<float>(width());
@@ -151,18 +175,26 @@ void GLVideoWidget::paintGL() {
     float verts[] = { x0,y0,0.f,1.f,  x1,y0,1.f,1.f,  x0,y1,0.f,0.f,  x1,y1,1.f,0.f };
     if(attr_pos_ >=0 && attr_uv_ >=0) {
     VE_PROFILE_SCOPE_DETAILED("gl_widget.draw");
+        // Removed per-frame quad rendering debug logging to prevent spam
         glUseProgram(program_);
         glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, texture_id_); if(uni_tex_>=0) glUniform1i(uni_tex_,0);
         glEnableVertexAttribArray(static_cast<GLuint>(attr_pos_));
         glEnableVertexAttribArray(static_cast<GLuint>(attr_uv_));
         glVertexAttribPointer(static_cast<GLuint>(attr_pos_),2,GL_FLOAT,GL_FALSE,4*sizeof(float),verts);
         glVertexAttribPointer(static_cast<GLuint>(attr_uv_),2,GL_FLOAT,GL_FALSE,4*sizeof(float),verts+2);
+        // Removed per-frame glDrawArrays debug logging to prevent spam
         glDrawArrays(GL_TRIANGLE_STRIP,0,4);
+        // Check for OpenGL errors
+        GLenum error = glGetError();
+        if (error != GL_NO_ERROR) {
+            ve::log::error("GL_ERROR: OpenGL error after glDrawArrays: " + std::to_string(error));
+        }
         glDisableVertexAttribArray(static_cast<GLuint>(attr_pos_));
         glDisableVertexAttribArray(static_cast<GLuint>(attr_uv_));
         glUseProgram(0);
+        // Removed per-frame quad completion debug logging to prevent spam
     } else {
-        qWarning() << "GLVideoWidget skipping draw due to invalid attributes";
+        ve::log::error("GL_ERROR: skipping draw due to invalid attributes attr_pos_=" + std::to_string(attr_pos_) + " attr_uv_=" + std::to_string(attr_uv_));
     }
 }
 

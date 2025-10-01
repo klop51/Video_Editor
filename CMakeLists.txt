@@ -449,6 +449,26 @@ if(ENABLE_TOOLS)
         src/core/include
     )
 
+    # ITU Downmix Matrix Validation Test - Tests proper voice/background balance
+    add_executable(itu_downmix_validation
+        itu_downmix_validation.cpp
+    )
+
+    target_link_libraries(itu_downmix_validation PRIVATE
+        ve_audio
+        ve_core
+    )
+
+    target_include_directories(itu_downmix_validation PRIVATE
+        src/audio/include
+        src/core/include
+    )
+
+    # Disable warnings for this test executable
+    if(MSVC)
+        target_compile_options(itu_downmix_validation PRIVATE /W0)
+    endif()
+
     # Disable warnings for this test executable
     if(MSVC)
         target_compile_options(simple_mixer_validation PRIVATE /W0)

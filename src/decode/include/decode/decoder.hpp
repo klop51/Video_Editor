@@ -13,6 +13,8 @@ struct OpenParams {
     bool video = true;
     bool audio = true;
     bool hw_accel = true; // future use
+    int preferred_audio_stream_index = -1; // -1 means auto-select
+    int preferred_video_stream_index = -1; // -1 means auto-select
 };
 
 struct StreamSelection {

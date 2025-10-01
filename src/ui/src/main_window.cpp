@@ -799,19 +799,26 @@ void MainWindow::create_menus() {
     // GPU pipeline toggle (experimental)
     QAction* toggleGpuAction = new QAction("Enable GPU Pipeline", this);
     toggleGpuAction->setCheckable(true);
-    toggleGpuAction->setChecked(false);
+    // Sync menu state with actual GPU pipeline state (ViewerPanel enables GPU by default)
+    bool gpu_currently_enabled = viewer_panel_ ? viewer_panel_->gpu_pipeline_enabled() : false;
+    toggleGpuAction->setChecked(gpu_currently_enabled);
+    toggleGpuAction->setText(gpu_currently_enabled ? "Disable GPU Pipeline" : "Enable GPU Pipeline");
     connect(toggleGpuAction, &QAction::toggled, this, [this, toggleGpuAction](bool on){
         if(!viewer_panel_) return;
+        ve::log::info("MainWindow: GPU Pipeline toggle requested, switching to: " + std::string(on ? "ENABLED" : "DISABLED"));
         if(on) {
             if(!viewer_panel_->enable_gpu_pipeline()) {
+                ve::log::error("MainWindow: Failed to enable GPU pipeline");
                 QMessageBox::warning(this, "GPU Pipeline", "Failed to initialize GPU pipeline.");
                 toggleGpuAction->setChecked(false);
             } else {
                 toggleGpuAction->setText("Disable GPU Pipeline");
+                ve::log::info("MainWindow: GPU Pipeline successfully enabled");
             }
         } else {
             viewer_panel_->disable_gpu_pipeline();
             toggleGpuAction->setText("Enable GPU Pipeline");
+            ve::log::info("MainWindow: GPU Pipeline successfully disabled");
         }
     });
     dev_menu->addAction(toggleGpuAction);

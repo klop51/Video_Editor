@@ -34,6 +34,8 @@ private:
     int width_ = 0;
     int height_ = 0;
     ve::decode::PixelFormat format_ = ve::decode::PixelFormat::Unknown;
+    std::vector<uint8_t> converted_data_; // For storing converted RGB data
+    ve::decode::VideoFrame converted_rgba_frame_; // For storing converted RGBA frame
 };
 
 // Manager for GPU frame resources with caching

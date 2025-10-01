@@ -138,6 +138,10 @@ public:
     std::string get_last_error() const;
     void clear_error();
 
+    // Byte-based FIFO interface for WASAPI integration
+    size_t fifo_write(const uint8_t* bytes, size_t frame_count);
+    size_t fifo_read(uint8_t* bytes, size_t frame_count);
+
 private:
     AudioPipeline(const AudioPipelineConfig& config);
 
@@ -190,6 +194,9 @@ private:
     double fifo_level_ema_ = 0.0;                 // smooth FIFO level (samples)
     std::atomic<int> pending_comp_samples_{0};    // to be applied on next convert()
     void update_drift_control(uint32_t callback_frames, uint16_t channels);
+
+    // Gap concealment state: remember last output sample per channel
+    std::vector<float> last_tail_; // size == config_.channel_count, updated each callback
 
     // Helpers
     void fifo_init_seconds(double seconds);

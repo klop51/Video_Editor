@@ -36,8 +36,8 @@ int main() {
                 case SyncEventType::DriftDetected: event_type = "DRIFT_DETECTED"; break;
             }
             
-            ve::log::info("Sync Event: {} - Offset: {:.2f}ms - {}", 
-                         event_type, event.offset_ms, event.description);
+            ve::log::info("Sync Event: " + std::string(event_type) + 
+                         " - Offset: " + std::to_string(event.offset_ms) + "ms - " + event.description);
         });
         
         // Start validation

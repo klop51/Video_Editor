@@ -9,6 +9,7 @@
 #include "core/log.hpp"
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 
@@ -16,6 +17,79 @@ extern "C" {
 #include <libswresample/swresample.h>
 #include <libavutil/channel_layout.h>
 #include <libavutil/samplefmt.h>
+#include <libavutil/opt.h>
+}
+
+static int idx_for(const AVChannelLayout& in, AVChannel ch) {
+    // Returns index of a standard channel in the input layout, or -1 if not present.
+    return av_channel_layout_index_from_channel(&in, ch);
+}
+
+// ITU-ish coefficients (in linear gain)
+// C and Surrounds at -3 dB (0.7071), LFE optional at -6 dB (0.5)
+static void build_stereo_downmix_matrix(const AVChannelLayout& in, double* M, int in_ch,
+                                        double center = 0.70710678, double sur = 0.70710678,
+                                        double back = 0.5, double lfe = 0.5, bool include_lfe = true)
+{
+    // M is a row-major 2 x in_ch matrix:
+    //   row 0 -> Left output, row 1 -> Right output
+    // Zero everything then add known contributions.
+    for (int i=0;i<2*in_ch;i++) M[i] = 0.0;
+
+    auto add = [&](int outRow, int inIdx, double g){
+        if (inIdx >= 0) M[outRow*in_ch + inIdx] += g;
+    };
+
+    const int L   = idx_for(in, AV_CHAN_FRONT_LEFT);
+    const int R   = idx_for(in, AV_CHAN_FRONT_RIGHT);
+    const int C   = idx_for(in, AV_CHAN_FRONT_CENTER);
+    const int LFE = idx_for(in, AV_CHAN_LOW_FREQUENCY);
+
+    const int Ls  = idx_for(in, AV_CHAN_SIDE_LEFT);    // 5.1 sides (common)
+    const int Rs  = idx_for(in, AV_CHAN_SIDE_RIGHT);
+    const int Lb  = idx_for(in, AV_CHAN_BACK_LEFT);    // 7.1 backs
+    const int Rb  = idx_for(in, AV_CHAN_BACK_RIGHT);
+
+    // Base: carry through L/R fully
+    add(0, L, 1.0);
+    add(1, R, 1.0);
+
+    // Center (dialog) split equally to L/R at -3 dB
+    add(0, C, center);
+    add(1, C, center);
+
+    // Surrounds (or backs) to respective sides
+    add(0, Ls, sur);
+    add(1, Rs, sur);
+    // If only BACK channels exist (7.1), add them at a bit lower gain to avoid crowding
+    add(0, Lb, back);
+    add(1, Rb, back);
+
+    // LFE (optional). Many players use -6 dB; set include_lfe=false if you prefer to omit.
+    if (include_lfe) {
+        add(0, LFE, lfe * 0.5); // half to L, half to R
+        add(1, LFE, lfe * 0.5);
+    }
+}
+
+// Preset A: Balanced (default) – dialog present, ambience intact
+static void build_downmix_balanced(const AVChannelLayout& in, double* M, int in_ch) {
+    build_stereo_downmix_matrix(in, M, in_ch,
+        /*center=*/0.70710678,  // -3 dB
+        /*sur=*/  0.70710678,   // -3 dB
+        /*back=*/ 0.70710678,   // -3 dB (a bit more ambience for 7.1)
+        /*lfe=*/  0.5,          // -6 dB total (0.25 per side)
+        /*include_lfe=*/true);
+}
+
+// Preset B: Dialog-light (more ambience) – use if backgrounds still feel weak
+static void build_downmix_dialog_light(const AVChannelLayout& in, double* M, int in_ch) {
+    build_stereo_downmix_matrix(in, M, in_ch,
+        /*center=*/0.63,        // ≈ -4 dB
+        /*sur=*/  0.79,         // ≈ -2 dB
+        /*back=*/ 0.71,         // ≈ -3 dB
+        /*lfe=*/  0.4,          // ≈ -8 dB total (0.2 per side)
+        /*include_lfe=*/true);
 }
 
 namespace ve::audio {
@@ -118,6 +192,26 @@ bool AudioPipeline::process_audio_frame(std::shared_ptr<AudioFrame> frame) {
 
     if (!frame || frame->sample_count() == 0) {
         return true; // Skip empty frames
+    }
+
+    // On first audio frame: log "sr/ch/samples"
+    static bool first_frame_logged = false;
+    if (!first_frame_logged) {
+        ve::log::info("First audio frame: " + 
+                      std::to_string(frame->sample_rate()) + "Hz/" +
+                      std::to_string(frame->channel_count()) + "ch/" +
+                      std::to_string(frame->sample_count()) + " samples, format=" + 
+                      std::string(AudioFrame::format_string(frame->format())));
+        
+        // Log potential channel mismatch issues
+        if (frame->channel_count() != config_.channel_count) {
+            ve::log::info("CHANNEL MISMATCH: Input=" + std::to_string(frame->channel_count()) + 
+                         "ch, Device=" + std::to_string(config_.channel_count) + 
+                         "ch [Will use " + (frame->channel_count() > 2 ? "ITU downmix matrix" : "upmix/processing") + "]");
+        } else {
+            ve::log::info("CHANNEL MATCH: Input and device both " + std::to_string(frame->channel_count()) + "ch");
+        }
+        first_frame_logged = true;
     }
 
     // Process through professional monitoring system if enabled
@@ -416,6 +510,8 @@ bool AudioPipeline::initialize_output() {
     // Initialize drift target once device format is known
     last_period_frames_.store(0);
     target_fifo_samples_.store(0);
+    // Prepare gap concealment tail (start at silence)
+    last_tail_.assign(config_.channel_count, 0.0f);
     return true; // Already initialized above
 }
 
@@ -520,30 +616,64 @@ size_t AudioPipeline::audio_render_callback(void* buffer, uint32_t frame_count, 
     if (format != SampleFormat::Float32 || channels != config_.channel_count) {
         // Fallback: zero (should not happen after initialize_output sync)
         std::memset(buffer, 0, frame_count * channels * sizeof(float));
-        return frame_count;
+        return frame_count; // return FRAMES, not bytes
     }
     
     // Track device period and update drift target
     update_drift_control(frame_count, channels);
-    const size_t need = static_cast<size_t>(frame_count) * channels;
-    size_t got = 0;
-    // Lock-free SPSC pop — no mutex
-    got = fifo_read(static_cast<float*>(buffer), need);
+
+    // Pull exactly frame_count frames * channels from our SPSC FIFO
+    const size_t samples_needed = static_cast<size_t>(frame_count) * channels;
+    size_t samples_got = 0;
     
-    if (got < need) {
-        // zero-fill remainder
+    // Lock-free SPSC pop — no mutex
+    samples_got = fifo_read(static_cast<float*>(buffer), samples_needed);
+    
+    const size_t frames_got = samples_got / channels;
+    
+    if (samples_got < samples_needed) {
         auto* out = static_cast<float*>(buffer);
-        std::memset(out + got, 0, (need - got) * sizeof(float));
+        const size_t shortfall_samples = samples_needed - samples_got;
+        const size_t shortfall_frames = shortfall_samples / channels;
+
+        // Get period size for gap concealment logic
+        const uint32_t period_frames = std::max<uint32_t>(1U, 
+            static_cast<uint32_t>(last_period_frames_.load(std::memory_order_acquire)));
+        const size_t half_period_samples = (period_frames * channels) / 2;
+
+        // If the shortfall is small (≤ half a period), conceal by repeating last-tail per channel
+        if (shortfall_samples > 0 && shortfall_samples <= half_period_samples && 
+            !last_tail_.empty() && last_tail_.size() == channels) {
+            
+            // Apply gap concealment: fade from last known samples
+            for (size_t i = 0; i < shortfall_samples; ++i) {
+                const size_t ch = i % channels;
+                const float fade = 1.0f - (float(i) / float(shortfall_samples));
+                out[samples_got + i] = last_tail_[ch] * fade;
+            }
+        } else {
+            // Larger gap: zero-fill
+            std::memset(out + samples_got, 0, shortfall_samples * sizeof(float));
+        }
         
-        // track underruns for diagnostics
+        // Track underruns for diagnostics
         {
             std::lock_guard<std::mutex> lock(stats_mutex_);
             stats_.buffer_underruns++;
-            // (optional) If underruns persist, consider raising buffer_duration_ms to 80–100 ms.
+        }
+    }
+
+    // Update last_tail_ from end of this block for future concealment
+    const size_t total_samples = std::min(samples_needed, samples_got + (samples_needed - samples_got));
+    if (total_samples >= channels && last_tail_.size() == channels) {
+        float* outF = static_cast<float*>(buffer);
+        for (uint16_t c = 0; c < channels; ++c) {
+            last_tail_[c] = outF[total_samples - channels + c];
         }
     }
     
-    return frame_count;
+    // Return FRAMES written, not bytes (output layer converts to bytes for ReleaseBuffer)
+    return frame_count; // Always return what was requested - we filled gaps with concealment/silence
 }
 
 std::shared_ptr<AudioFrame> AudioPipeline::resize_audio_frame(const std::shared_ptr<AudioFrame>& source_frame, uint32_t target_frame_count) {
@@ -677,20 +807,38 @@ bool AudioPipeline::convert_to_device_format(const AudioFrame& in, std::vector<f
         return false; // unsupported input format for now
     }
 
-    // Determine channel layout (fallback if unknown)
-    uint64_t in_layout_mask = 0; // fallback - will be set below
-    if (!in_layout_mask) {
-        AVChannelLayout layout{};
-        av_channel_layout_default(&layout, in_channels);
-        in_layout_mask = layout.u.mask;
-        av_channel_layout_uninit(&layout);
+    // Fast path: if no conversion needed, copy directly (like video player approach)
+    if (in_rate == cfg.sample_rate && in_channels == cfg.channel_count && av_in_fmt == av_out_fmt) {
+        static bool fast_path_logged = false;
+        static int audio_frame_count = 0;
+        if (!fast_path_logged) {
+            ve::log::info("Audio fast path: no conversion needed (" + 
+                         std::to_string(in_rate) + "Hz/" + std::to_string(in_channels) + "ch/float32)");
+            fast_path_logged = true;
+        }
+        
+        // Log audio processing timing every 100 frames like video player
+        audio_frame_count++;
+        if (audio_frame_count % 100 == 0) {
+            ve::log::info("AUDIO_TIMING: processed " + std::to_string(audio_frame_count) + 
+                         " frames via fast path, current_samples=" + std::to_string(in_samples));
+        }
+        
+        // Direct copy - no resampling needed
+        size_t start = out.size();
+        size_t total_samples = in_samples * in_channels;
+        out.resize(start + total_samples);
+        std::memcpy(out.data() + start, in.data(), total_samples * sizeof(float));
+        return true;
     }
 
-    // Device/output layout: stereo
-    AVChannelLayout out_layout{};
-    av_channel_layout_default(&out_layout, cfg.channel_count);
-    const uint64_t out_layout_mask = out_layout.u.mask;
-    av_channel_layout_uninit(&out_layout);
+    // Use default channel layout based on channel count for now
+    // TODO: Extend AudioFrame to store real channel layout mask from source
+    uint64_t in_layout_mask = 0;
+    AVChannelLayout av_layout{}; 
+    av_channel_layout_default(&av_layout, in_channels);
+    in_layout_mask = av_layout.u.mask;
+    av_channel_layout_uninit(&av_layout);
 
     // Ensure (or reconfigure) the resampler
     if (!ensure_resampler(in_rate, in_channels, in_layout_mask, av_in_fmt)) {
@@ -792,8 +940,42 @@ bool AudioPipeline::ensure_resampler(uint32_t in_rate, uint16_t in_ch, uint64_t 
         &in_l, (AVSampleFormat)in_fmt, (int)in_rate,
         0, nullptr);
 
-    if (ret < 0 || !swr_ || swr_init(swr_) < 0) {
-        if (swr_) swr_free(&swr_);
+    if (ret < 0 || !swr_) {
+        return false;
+    }
+
+    {
+        // Prefer safe rematrix behavior
+        av_opt_set_int   (swr_, "rematrix_clip",    1, 0);   // clip instead of wrap if >1.0 sneaks in
+        av_opt_set_double(swr_, "rematrix_maxval",  1.0, 0); // normalize matrix to avoid runaway gain
+        // Optional dither (nice for low-level noise): 1 = triangular
+        av_opt_set_int   (swr_, "dither_method",    1, 0);
+
+        // If output is stereo and input has >2 channels, install an explicit matrix.
+        if (out_l.nb_channels == 2 && in_l.nb_channels > 2) {
+            const int in_ch = in_l.nb_channels;
+            std::vector<double> M(2 * in_ch, 0.0);
+
+            // Choose matrix preset:
+            //  - Balanced (default); change to dialog_light if needed.
+            build_downmix_balanced(in_l, M.data(), in_ch);
+            // build_downmix_dialog_light(in_l, M.data(), in_ch); // <- try this if ambience still low
+
+            if (swr_set_matrix(swr_, M.data(), /*stride=*/in_ch) < 0) {
+                // If setting the matrix fails, fall back to swr's internal defaults.
+                // (But keep rematrix_clip/maxval options active.)
+            } else {
+                // (optional) sanity log — sum of absolute coefficients per output should be <= ~2.5 usually
+                double sumL = 0.0, sumR = 0.0;
+                for (int i=0;i<in_ch;i++){ sumL += std::abs(M[0*in_ch + i]); sumR += std::abs(M[1*in_ch + i]); }
+                ve::log::info("Downmix matrix set: in_ch=" + std::to_string(in_ch) +
+                              " | sumL=" + std::to_string(sumL) + " sumR=" + std::to_string(sumR));
+            }
+        }
+    }
+
+    if (swr_init(swr_) < 0) {
+        swr_free(&swr_);
         return false;
     }
 
@@ -815,12 +997,14 @@ void AudioPipeline::free_resampler() {
 
 // Keep FIFO near a stable target by commanding tiny resample adjustments
 void AudioPipeline::update_drift_control(uint32_t callback_frames, uint16_t channels) {
-    // Establish period and target (4 periods) on first few callbacks
-    if (last_period_frames_.load() == 0 && callback_frames > 0) {
-        last_period_frames_.store(callback_frames);
-        size_t tgt = static_cast<size_t>(callback_frames) * channels * 4; // ~4 periods
+    // Establish or adjust period/target when the callback block size changes
+    size_t prev = last_period_frames_.load(std::memory_order_acquire);
+    if (callback_frames > 0 && callback_frames != prev) {
+        last_period_frames_.store(callback_frames, std::memory_order_release);
+        size_t tgt = static_cast<size_t>(callback_frames) * channels * 4; // ~4 periods target
         target_fifo_samples_.store(tgt, std::memory_order_release);
-        fifo_level_ema_ = (double)tgt;
+        // nudge EMA toward new target to avoid step response
+        fifo_level_ema_ = (fifo_level_ema_ * 0.7) + (double)tgt * 0.3;
     }
     // Snapshot current FIFO level
     size_t fifo_now = fifo_size_.load(std::memory_order_acquire);
@@ -845,6 +1029,59 @@ void AudioPipeline::update_drift_control(uint32_t callback_frames, uint16_t chan
 
     // Post the new delta to be applied on the next resample call
     pending_comp_samples_.store(desired);
+}
+
+size_t AudioPipeline::fifo_write(const uint8_t* bytes, size_t frame_count) {
+    const size_t bytes_per_sample = (config_.format == SampleFormat::Float32 || config_.format == SampleFormat::Int32) ? 4 : 2;
+    const size_t bytes_per_frame = config_.channel_count * bytes_per_sample;
+    
+    // Convert bytes to float samples and write to FIFO
+    const size_t sample_count = frame_count * config_.channel_count;
+    std::vector<float> temp_floats(sample_count);
+    
+    if (config_.format == SampleFormat::Float32) {
+        std::memcpy(temp_floats.data(), bytes, sample_count * sizeof(float));
+    } else if (config_.format == SampleFormat::Int16) {
+        const int16_t* int16_data = reinterpret_cast<const int16_t*>(bytes);
+        for (size_t i = 0; i < sample_count; ++i) {
+            temp_floats[i] = int16_data[i] / 32768.0f;
+        }
+    } else { // Int32
+        const int32_t* int32_data = reinterpret_cast<const int32_t*>(bytes);
+        for (size_t i = 0; i < sample_count; ++i) {
+            temp_floats[i] = int32_data[i] / 2147483648.0f;
+        }
+    }
+    
+    return fifo_write(temp_floats.data(), sample_count) / config_.channel_count; // return frame count
+}
+
+size_t AudioPipeline::fifo_read(uint8_t* bytes, size_t frame_count) {
+    const size_t bytes_per_sample = (config_.format == SampleFormat::Float32 || config_.format == SampleFormat::Int32) ? 4 : 2;
+    const size_t bytes_per_frame = config_.channel_count * bytes_per_sample;
+    
+    // Read float samples and convert to bytes
+    const size_t sample_count = frame_count * config_.channel_count;
+    std::vector<float> temp_floats(sample_count);
+    
+    size_t samples_read = fifo_read(temp_floats.data(), sample_count);
+    size_t frames_read = samples_read / config_.channel_count;
+    
+    if (config_.format == SampleFormat::Float32) {
+        std::memcpy(bytes, temp_floats.data(), samples_read * sizeof(float));
+    } else if (config_.format == SampleFormat::Int16) {
+        int16_t* int16_data = reinterpret_cast<int16_t*>(bytes);
+        for (size_t i = 0; i < samples_read; ++i) {
+            int16_data[i] = static_cast<int16_t>(std::clamp(temp_floats[i] * 32767.0f, -32768.0f, 32767.0f));
+        }
+    } else { // Int32
+        int32_t* int32_data = reinterpret_cast<int32_t*>(bytes);
+        for (size_t i = 0; i < samples_read; ++i) {
+            int32_data[i] = static_cast<int32_t>(std::clamp(temp_floats[i] * 2147483647.0f, -2147483648.0f, 2147483647.0f));
+        }
+    }
+    
+    return frames_read;
 }
 
 } // namespace ve::audio

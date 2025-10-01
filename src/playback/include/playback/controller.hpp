@@ -144,6 +144,12 @@ private:
     std::atomic<bool> bypass_cache_once_{false};
     int64_t duration_us_ = 0;
     double probed_fps_ = 0.0; // derived from probe if available
+    
+    // SDL-style continuous timing for improved A/V sync
+    double frame_timer_ = 0.0;
+    std::chrono::steady_clock::time_point last_continuous_time_;
+    bool first_continuous_frame_ = true;
+    
     struct CallbackEntryBase { CallbackId id; };
     template<typename Fn>
     struct CallbackEntry : CallbackEntryBase { Fn fn; };
@@ -192,6 +198,7 @@ private:
     // Probed audio characteristics for universal video file compatibility
     uint32_t probed_audio_sample_rate_{48000};  // Video file's native format
     uint16_t probed_audio_channels_{2};
+    int probed_audio_stream_index_{-1};  // Selected audio stream index
     uint32_t device_audio_sample_rate_{48000};  // WASAPI device's negotiated format
     uint16_t device_audio_channels_{2};
     

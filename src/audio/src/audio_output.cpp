@@ -7,6 +7,7 @@
  */
 
 #include "audio/audio_output.hpp"
+#include "audio/audio_pipeline.hpp"
 #include "core/log.hpp"
 #include <algorithm>
 #include <cmath>
@@ -312,6 +313,22 @@ AudioOutputError AudioOutput::start() {
         return AudioOutputError::Unknown;
     }
 
+    // Preroll: Fill device buffer before starting event-driven loop
+    UINT32 preroll_padding = 0;
+    if (SUCCEEDED(audio_client_->GetCurrentPadding(&preroll_padding))) {
+        UINT32 preroll_available = buffer_frame_count_ - preroll_padding;
+        if (preroll_available > 0) {
+            BYTE* preroll_data = nullptr;
+            if (SUCCEEDED(render_client_->GetBuffer(preroll_available, &preroll_data))) {
+                UINT32 preroll_got = static_cast<UINT32>(pipeline_->fifo_read(preroll_data, preroll_available));
+                if (FAILED(render_client_->ReleaseBuffer(preroll_got, preroll_got == 0 ? AUDCLNT_BUFFERFLAGS_SILENT : 0))) {
+                    ve::log::error("AudioOutput: preroll ReleaseBuffer failed");
+                }
+                ve::log::info("WASAPI_PREROLL: filled " + std::to_string(preroll_got) + " frames");
+            }
+        }
+    }
+
     playing_ = true;
 
     // Start render thread
@@ -443,119 +460,20 @@ AudioOutputError AudioOutput::submit_frame(std::shared_ptr<AudioFrame> frame) {
         const size_t   bytes_per_frame = out_ch * ((out_fmt == SampleFormat::Float32 || out_fmt == SampleFormat::Int32) ? 4 : 2);
         const uint8_t* ptr = tl_out_bytes.data() + submitted * bytes_per_frame;
 
-        AudioOutputError r = submit_data(ptr, chunk, frame->timestamp());
-        if (r == AudioOutputError::BufferTooSmall) {
+        // Write directly to pipeline FIFO
+        UINT32 written = static_cast<UINT32>(pipeline_->fifo_write(ptr, chunk));
+        if (written < chunk) {
+            // FIFO is full, wait a bit and retry
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
             continue; // retry same chunk
         }
-        if (r != AudioOutputError::Success) return r;
         submitted += chunk;
     }
 
     return AudioOutputError::Success;
 }
 
-AudioOutputError AudioOutput::submit_data(const void* data, uint32_t frame_count,
-                                         const TimePoint& timestamp) {
-    if (!initialized_ || !playing_) {
-        return AudioOutputError::NotInitialized;
-    }
-
-    if (!data || frame_count == 0) {
-        return AudioOutputError::InvalidState;
-    }
-
-#ifdef _WIN32
-    // Check available buffer space before submitting
-    UINT32 padding_frames = 0;
-    HRESULT hr = audio_client_->GetCurrentPadding(&padding_frames);
-    if (FAILED(hr)) {
-        return AudioOutputError::Unknown;
-    }
-    
-    UINT32 available_frames = buffer_frame_count_ - padding_frames;
-    
-    // If not enough space available, only submit what fits
-    UINT32 frames_to_submit = std::min(frame_count, available_frames);
-    if (frames_to_submit == 0) {
-        handle_underrun();
-        return AudioOutputError::BufferTooSmall;
-    }
-
-    // Calculate bytes to copy
-    size_t bytes_to_copy = frames_to_submit * config_.channel_count *
-                          ((config_.format == SampleFormat::Float32) ? 4 :
-                           (config_.format == SampleFormat::Int32) ? 4 : 2);
-    
-    BYTE* buffer_data = nullptr;
-
-    hr = render_client_->GetBuffer(frames_to_submit, &buffer_data);
-    if (FAILED(hr)) {
-        handle_underrun();
-        return AudioOutputError::BufferTooSmall;
-    }
-
-    // CRASH PROTECTION: Re-check padding after GetBuffer to avoid over-release under clock jumps
-    UINT32 safe_frames = frames_to_submit;
-    UINT32 pad2 = 0;
-    if (SUCCEEDED(audio_client_->GetCurrentPadding(&pad2))) {
-        UINT32 avail2 = buffer_frame_count_ - pad2;
-        if (safe_frames > avail2) safe_frames = avail2;
-    }
-    
-    // Copy only safe_frames and release exactly that amount
-    size_t safe_bytes_to_copy = size_t(safe_frames) * config_.channel_count *
-        ((config_.format == SampleFormat::Float32 || config_.format == SampleFormat::Int32) ? 4 : 2);
-
-    // Copy data to buffer
-    memcpy(buffer_data, data, safe_bytes_to_copy);
-
-    hr = render_client_->ReleaseBuffer(safe_frames, 0);
-    if (FAILED(hr)) {
-        set_error(AudioOutputError::Unknown, "Failed to release buffer: " + std::to_string(hr));
-        return AudioOutputError::Unknown;
-    }
-
-    // Update statistics
-    {
-        std::lock_guard<std::mutex> lock(stats_mutex_);
-        stats_.frames_rendered += safe_frames;
-        
-        // PHASE 1 DIAGNOSTIC: Track submit timing every 5 seconds to prevent frame skips
-        static int frame_counter = 0;
-        static auto last_submit_time = std::chrono::high_resolution_clock::now();
-        static auto last_log_time = std::chrono::high_resolution_clock::now();
-        
-        auto current_time = std::chrono::high_resolution_clock::now();
-        auto time_since_last_submit = std::chrono::duration_cast<std::chrono::microseconds>(current_time - last_submit_time).count();
-        auto time_since_last_log = std::chrono::duration_cast<std::chrono::seconds>(current_time - last_log_time).count();
-        
-        // Log timing data every 5 seconds to maintain system stability
-        if (time_since_last_log >= 5) {
-            ve::log::info("PHASE1_SUBMIT_TIMING: frames_submitted=" + std::to_string(safe_frames) + 
-                         ", padding_before=" + std::to_string(padding_frames) +
-                         ", padding_after=" + std::to_string(pad2) +
-                         ", available_frames=" + std::to_string(available_frames) +
-                         ", time_since_last_submit_us=" + std::to_string(time_since_last_submit) +
-                         ", buffer_frame_count=" + std::to_string(buffer_frame_count_));
-            last_log_time = current_time;
-        }
-        
-        last_submit_time = current_time;
-        
-        // Keep original breadcrumb logging every 500 frames (every ~5 seconds @ 100fps) for comparison
-        if (++frame_counter % 500 == 0) {
-            ve::log::info("Audio breadcrumb: frames_to_submit=" + std::to_string(frames_to_submit) + 
-                         ", safe_frames=" + std::to_string(safe_frames) + 
-                         ", buffer_frame_count=" + std::to_string(buffer_frame_count_) +
-                         ", padding_frames=" + std::to_string(padding_frames) +
-                         ", bytes_copied=" + std::to_string(safe_bytes_to_copy));
-        }
-    }
-#endif
-
-    return AudioOutputError::Success;
-}
+// submit_data method removed - now using direct FIFO writes
 
 AudioOutputError AudioOutput::flush() {
     if (!initialized_) {
@@ -940,6 +858,16 @@ AudioOutputError AudioOutput::initialize_format() {
         stats_.buffer_size_frames = buffer_frame_count_;
     }
 
+    // Initialize audio pipeline with lock-free FIFO for real-time operation
+    AudioPipelineConfig pipeline_config;
+    pipeline_config.sample_rate = config_.sample_rate;
+    pipeline_config.channel_count = config_.channel_count;
+    pipeline_config.format = config_.format;
+    pipeline_config.buffer_size = buffer_frame_count_;
+    pipeline_ = AudioPipeline::create(pipeline_config);
+    ve::log::info("AudioOutput: initialized pipeline with " + std::to_string(config_.sample_rate) + 
+                  "Hz, " + std::to_string(config_.channel_count) + " channels");
+
     return AudioOutputError::Success;
 }
 
@@ -985,7 +913,7 @@ void AudioOutput::render_thread_function() {
             continue;
         }
 
-        // Check how much space is available in the buffer
+        // Query padding and compute how much we should write this event
         UINT32 padding_frames = 0;
         HRESULT hr = audio_client_->GetCurrentPadding(&padding_frames);
         if (FAILED(hr)) {
@@ -994,46 +922,60 @@ void AudioOutput::render_thread_function() {
 
         UINT32 available_frames = buffer_frame_count_ - padding_frames;
         if (available_frames == 0) {
-            continue; // Buffer is full, wait for next event
+            continue; // buffer full, wait next event
         }
 
-        // Calculate optimal submission size (device period aligned)
-        UINT32 frames_to_submit = std::min(available_frames, 480u); // 10ms @ 48kHz
+        // Use actual device period; fall back to 10ms if unknown
+        const double period_seconds = min_periodicity_ / 10000000.0; // convert REFERENCE_TIME to seconds
+        const UINT32 period_frames = std::max<UINT32>(1u, (UINT32)std::round(config_.sample_rate * std::max(0.010, period_seconds)));
+        const UINT32 target_frames = std::min<UINT32>(buffer_frame_count_, period_frames * 3); // keep ~30ms in device
 
-        // PHASE 2: Get real audio data from callback or fill with silence
-        size_t bytes_per_frame = config_.channel_count * 
-            ((config_.format == SampleFormat::Float32) ? 4 : 
-             (config_.format == SampleFormat::Int32) ? 4 : 2);
-        
-        std::vector<uint8_t> audio_buffer(frames_to_submit * bytes_per_frame, 0);
-        
+        UINT32 want = 0;
+        if (padding_frames < target_frames) {
+            // top-up toward target this event
+            want = std::min<UINT32>(available_frames, target_frames - padding_frames);
+        }
+        // Always write at least one period if we can
+        want = std::max<UINT32>(want, std::min<UINT32>(available_frames, period_frames));
+        if (want == 0) {
+            continue;
+        }
+
+        // === Direct write path (no extra copies, no second GetBuffer) ===
+        BYTE* pData = nullptr;
+        hr = render_client_->GetBuffer(want, &pData);
+        if (FAILED(hr) || !pData) {
+            handle_underrun();
+            continue;
+        }
+
+        // Ask the pipeline to fill exactly 'want' frames into pData
+        size_t frames_filled = 0;
         if (render_callback_) {
-            // Get real audio data from the callback
-            size_t frames_rendered = render_callback_(audio_buffer.data(), frames_to_submit, config_.format, config_.channel_count);
-            if (frames_rendered < frames_to_submit) {
-                // Fill remaining with silence if callback didn't provide enough data
-                size_t silence_bytes = (frames_to_submit - frames_rendered) * bytes_per_frame;
-                std::memset(audio_buffer.data() + (frames_rendered * bytes_per_frame), 0, silence_bytes);
-            }
+            frames_filled = render_callback_(pData, want, config_.format, config_.channel_count);
         }
-        // If no callback is set, audio_buffer remains filled with silence (initialized to 0)
+        if (frames_filled < want) {
+            // Zero any remainder
+            const size_t bpf = config_.channel_count * ((config_.format == SampleFormat::Float32 || config_.format == SampleFormat::Int32) ? 4 : 2);
+            std::memset(pData + frames_filled * bpf, 0, (want - (UINT32)frames_filled) * bpf);
+        }
+
+        // Release exactly what we wrote
+        hr = render_client_->ReleaseBuffer((UINT32)want, 0);
+        if (FAILED(hr)) {
+            set_error(AudioOutputError::Unknown, "ReleaseBuffer failed");
+            continue;
+        }
         
-        // Use existing submit_data logic but bypass PTS deduplication for render thread
-        auto now_chrono = std::chrono::high_resolution_clock::now();
-        auto now_us = std::chrono::duration_cast<std::chrono::microseconds>(now_chrono.time_since_epoch()).count();
-        TimePoint now(now_us, 1000000);
-        submit_data(audio_buffer.data(), frames_to_submit, now);
-        
-        // Log device-driven submissions every 5 seconds to prevent performance issues
-        static auto last_render_log_time = std::chrono::high_resolution_clock::now();
-        auto current_render_time = std::chrono::high_resolution_clock::now();
-        auto time_since_render_log = std::chrono::duration_cast<std::chrono::seconds>(current_render_time - last_render_log_time).count();
-        
-        if (time_since_render_log >= 5) {
-            ve::log::info("PHASE2_DEVICE_DRIVEN: submitted " + std::to_string(frames_to_submit) + 
-                         " frames, padding=" + std::to_string(padding_frames) + 
-                         ", available=" + std::to_string(available_frames));
-            last_render_log_time = current_render_time;
+        // Light logging every ~5s
+        static auto last_log = std::chrono::high_resolution_clock::now();
+        auto now = std::chrono::high_resolution_clock::now();
+        if (std::chrono::duration_cast<std::chrono::seconds>(now - last_log).count() >= 5) {
+            ve::log::info("PHASE2_DEVICE_DRIVEN: wrote=" + std::to_string(want) +
+                          " padding_before=" + std::to_string(padding_frames) +
+                          " target=" + std::to_string(target_frames) +
+                          " avail=" + std::to_string(available_frames));
+            last_log = now;
         }
     }
 

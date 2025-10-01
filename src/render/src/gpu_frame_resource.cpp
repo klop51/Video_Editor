@@ -1,5 +1,6 @@
 #include "render/gpu_frame_resource.hpp"
 #include "core/log.hpp"
+#include "decode/color_convert.hpp"
 #include <algorithm>
 
 namespace ve::render {
@@ -17,6 +18,8 @@ bool GpuFrameResource::initialize(std::shared_ptr<ve::gfx::GraphicsDevice> devic
 }
 
 bool GpuFrameResource::upload_frame(const ve::decode::VideoFrame& frame) {
+    // Removed per-frame debug logging to prevent spam (was causing potential crashes)
+    
     if (!device_) {
         ve::log::error("GPU frame resource not initialized");
         return false;
@@ -45,7 +48,7 @@ bool GpuFrameResource::upload_frame(const ve::decode::VideoFrame& frame) {
             // In a real implementation, this would be done with shaders
             gl_format = 1; // RGB
             upload_size = static_cast<size_t>(frame.width) * static_cast<size_t>(frame.height) * 3;
-            std::vector<uint8_t> rgb_data(upload_size);
+            converted_data_.resize(upload_size);
 
             // Simple YUV to RGB conversion (not color-accurate)
             const uint8_t* y_plane = frame.data.data();
@@ -73,13 +76,32 @@ bool GpuFrameResource::upload_frame(const ve::decode::VideoFrame& frame) {
                     b = std::max(0, std::min(255, b));
 
                     size_t idx = static_cast<size_t>((y * frame.width + x) * 3);
-                    rgb_data[idx] = static_cast<uint8_t>(r);
-                    rgb_data[idx + 1] = static_cast<uint8_t>(g);
-                    rgb_data[idx + 2] = static_cast<uint8_t>(b);
+                    converted_data_[idx] = static_cast<uint8_t>(r);
+                    converted_data_[idx + 1] = static_cast<uint8_t>(g);
+                    converted_data_[idx + 2] = static_cast<uint8_t>(b);
                 }
             }
 
-            upload_data = rgb_data.data();
+            upload_data = converted_data_.data();
+            break;
+        }
+
+        case ve::decode::PixelFormat::NV12: {
+            // Convert NV12 to RGBA using existing color conversion system
+            // Removed per-frame debug logging to prevent spam
+            auto rgba_frame_opt = ve::decode::to_rgba_scaled(frame, frame.width, frame.height);
+            if (!rgba_frame_opt.has_value()) {
+                ve::log::error("Failed to convert NV12 frame to RGBA");
+                return false;
+            }
+            
+            converted_rgba_frame_ = rgba_frame_opt.value();
+            gl_format = 0; // RGBA
+            upload_data = const_cast<uint8_t*>(converted_rgba_frame_.data.data());
+            upload_size = converted_rgba_frame_.data.size();
+            // Removed per-frame size logging to prevent spam
+            
+            // Removed per-frame pixel debug logging to prevent spam
             break;
         }
 
@@ -91,9 +113,11 @@ bool GpuFrameResource::upload_frame(const ve::decode::VideoFrame& frame) {
     // Create or recreate texture if dimensions changed
     if (texture_id_ == 0 || width_ != frame.width || height_ != frame.height || format_ != frame.format) {
         if (texture_id_ != 0) {
+            ve::log::info("GPU_DEBUG: Destroying existing texture " + std::to_string(texture_id_));
             device_->destroy_texture(texture_id_);
         }
 
+        // Removed per-frame texture creation logging to prevent spam
         texture_id_ = device_->create_texture(frame.width, frame.height, gl_format);
         if (texture_id_ == 0) {
             ve::log::error("Failed to create GPU texture");

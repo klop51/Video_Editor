@@ -21,6 +21,11 @@
 #include "audio/audio_frame.hpp"
 #include "core/time.hpp"
 
+// Forward declarations
+namespace ve::audio {
+    class AudioPipeline;
+}
+
 #ifdef _WIN32
 // Windows Audio Headers
 #include <Audioclient.h>
@@ -112,8 +117,6 @@ public:
 
     // Audio data submission
     AudioOutputError submit_frame(std::shared_ptr<AudioFrame> frame);
-    AudioOutputError submit_data(const float* data, size_t frame_count);
-    AudioOutputError submit_data(const void* data, uint32_t frame_count, const TimePoint& timestamp);
     AudioOutputError flush();
 
     // Factory method
@@ -151,6 +154,9 @@ private:
     bool initialized_ = false;
     bool running_ = false;
     bool playing_ = false;
+
+    // Audio processing pipeline (FIFO-based for real-time operation)
+    std::unique_ptr<AudioPipeline> pipeline_;
 
     // Audio control
     float volume_ = 1.0f;

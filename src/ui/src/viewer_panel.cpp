@@ -58,6 +58,9 @@ ViewerPanel::ViewerPanel(QWidget* parent)
     if (std::getenv("VE_DISABLE_VIEWER_RENDER") != nullptr) {
         display_enabled_ = false;
     }
+    
+    // Enable GPU pipeline by default for better video rendering
+    enable_gpu_pipeline();
 }
 
 ViewerPanel::~ViewerPanel() {
@@ -128,16 +131,31 @@ void ViewerPanel::set_playback_controller(ve::playback::PlaybackController* cont
 }
 
 bool ViewerPanel::enable_gpu_pipeline() {
+    ve::log::info("ViewerPanel: enable_gpu_pipeline() called, gpu_enabled_=" + std::to_string(gpu_enabled_));
     if (gpu_enabled_) return true;
     if (!gpu_initialized_) {
+        ve::log::info("ViewerPanel: Initializing GPU pipeline...");
         gfx_device_ = std::make_shared<ve::gfx::GraphicsDevice>();
-        ve::gfx::GraphicsDeviceInfo info; if (!gfx_device_->create(info)) return false;
-        render_graph_ = ve::render::create_gpu_render_graph(gfx_device_); if (!render_graph_) { gfx_device_.reset(); return false; }
+        ve::gfx::GraphicsDeviceInfo info; 
+        if (!gfx_device_->create(info)) {
+            ve::log::error("ViewerPanel: Failed to create graphics device");
+            return false;
+        }
+        ve::log::info("ViewerPanel: Graphics device created successfully");
+        render_graph_ = ve::render::create_gpu_render_graph(gfx_device_); 
+        if (!render_graph_) { 
+            ve::log::error("ViewerPanel: Failed to create GPU render graph");
+            gfx_device_.reset(); 
+            return false; 
+        }
+        ve::log::info("ViewerPanel: GPU render graph created successfully");
         if (auto* gpu_rg = dynamic_cast<ve::render::GpuRenderGraph*>(render_graph_.get())) { QSize s = video_display_ ? video_display_->size() : size(); gpu_rg->set_viewport(s.width(), s.height()); }
         gpu_initialized_ = true;
     }
     if (!gl_widget_) {
+        ve::log::info("ViewerPanel: Creating GLVideoWidget...");
         gl_widget_ = new GLVideoWidget(this);
+        ve::log::info("ViewerPanel: GLVideoWidget created successfully");
         if (auto* lay = qobject_cast<QBoxLayout*>(layout())) {
             if (video_display_label_) { lay->removeWidget(video_display_label_); video_display_label_->hide(); }
             lay->insertWidget(0, gl_widget_, 1);
@@ -167,6 +185,7 @@ void ViewerPanel::disable_gpu_pipeline() {
 
 void ViewerPanel::display_frame(const ve::decode::VideoFrame& frame) {
     // CRITICAL ANALYSIS: This should execute on UI thread
+    // Removed per-frame display_frame debug logging to prevent spam
     ve::log::debug("ViewerPanel::display_frame called on thread: " + std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id())) + 
                    ", pts=" + std::to_string(frame.pts) + ", size=" + std::to_string(frame.data.size()) + 
                    ", dimensions=" + std::to_string(frame.width) + "x" + std::to_string(frame.height));
@@ -242,7 +261,30 @@ void ViewerPanel::display_frame(const ve::decode::VideoFrame& frame) {
         } else if (auto rgba = ve::decode::to_rgba(current_frame_)) {
             auto& rf = *rgba; size_t needed = static_cast<size_t>(rf.width) * static_cast<size_t>(rf.height) * 4;
             if (rf.data.size() >= needed) gl_widget_->set_frame(rf.data.data(), rf.width, rf.height, rf.width*4, rf.pts);
+            uploaded = true;
         }
+        
+        // If GPU upload failed, fall back to CPU rendering
+        if (!uploaded) {
+            ve::log::warn("GPU frame upload failed, falling back to CPU rendering");
+            ve::log::debug("ViewerPanel::display_frame calling update_frame_display (GPU fallback to CPU path)");
+            update_frame_display();
+            ve::log::debug("ViewerPanel::display_frame GPU fallback update_frame_display completed");
+            render_in_progress_ = false;
+            if (pending_frame_valid_) {
+                auto next = pending_frame_;
+                pending_frame_valid_ = false;
+                // Use QTimer for Qt compatibility and QPointer protection
+                QPointer<ViewerPanel> safe_self(this);
+                QTimer::singleShot(0, this, [safe_self, next]() {
+                    if (safe_self && !safe_self->destroying_.load(std::memory_order_acquire)) {
+                        safe_self->display_frame(next);
+                    }
+                });
+            }
+            return; // Early return since we handled the frame via CPU path
+        }
+        
         if (render_graph_) {
             if (auto* gpu_rg = dynamic_cast<ve::render::GpuRenderGraph*>(render_graph_.get())) {
                 gpu_rg->set_current_frame(current_frame_);
@@ -251,9 +293,9 @@ void ViewerPanel::display_frame(const ve::decode::VideoFrame& frame) {
             }
         }
     } else {
-        ve::log::debug("ViewerPanel::display_frame calling update_frame_display (CPU path)");
+        ve::log::info("ViewerPanel::display_frame calling update_frame_display (CPU path)");
         update_frame_display();
-        ve::log::debug("ViewerPanel::display_frame update_frame_display completed");
+        ve::log::info("ViewerPanel::display_frame update_frame_display completed");
     }
 
     render_in_progress_ = false;
@@ -374,14 +416,14 @@ void ViewerPanel::setup_ui() {
 }
 
 void ViewerPanel::update_frame_display() {
-    ve::log::debug("ViewerPanel::update_frame_display starting, has_frame_=" + std::to_string(has_frame_));
+    ve::log::info("ViewerPanel::update_frame_display starting, has_frame_=" + std::to_string(has_frame_));
     if (!has_frame_) { 
-        ve::log::debug("ViewerPanel::update_frame_display no frame available");
+        ve::log::info("ViewerPanel::update_frame_display no frame available");
         if (video_display_label_) video_display_label_->setText("No Video"); 
         return; 
     }
     
-    ve::log::debug("ViewerPanel::update_frame_display calling convert_frame_to_pixmap");
+    ve::log::info("ViewerPanel::update_frame_display calling convert_frame_to_pixmap");
     QPixmap pix = convert_frame_to_pixmap(current_frame_); 
     if (pix.isNull()) { 
         ve::log::error("ViewerPanel::update_frame_display convert_frame_to_pixmap returned null pixmap!");
@@ -389,15 +431,15 @@ void ViewerPanel::update_frame_display() {
         return; 
     }
     
-    ve::log::debug("ViewerPanel::update_frame_display pixmap created successfully, scaling and setting");
+    ve::log::info("ViewerPanel::update_frame_display pixmap created successfully, scaling and setting");
     QSize ds = video_display_label_ ? video_display_label_->size() : size(); 
     QPixmap scaled = pix.scaled(ds, aspect_ratio_mode_, Qt::FastTransformation); 
     if (video_display_label_) video_display_label_->setPixmap(scaled);
-    ve::log::debug("ViewerPanel::update_frame_display completed successfully");
+    ve::log::info("ViewerPanel::update_frame_display completed successfully");
 }
 
 QPixmap ViewerPanel::convert_frame_to_pixmap(const ve::decode::VideoFrame& frame) {
-    ve::log::debug("ViewerPanel::convert_frame_to_pixmap starting - format=" + std::to_string(static_cast<int>(frame.format)) + 
+    ve::log::info("ViewerPanel::convert_frame_to_pixmap starting - format=" + std::to_string(static_cast<int>(frame.format)) + 
                    ", dimensions=" + std::to_string(frame.width) + "x" + std::to_string(frame.height) + 
                    ", data_size=" + std::to_string(frame.data.size()));
     
@@ -420,19 +462,26 @@ QPixmap ViewerPanel::convert_frame_to_pixmap(const ve::decode::VideoFrame& frame
                 return it->pix;
             }
         }
-        ve::log::debug("ViewerPanel::convert_frame_to_pixmap calling to_rgba_scaled_view with target size " + std::to_string(tw) + "x" + std::to_string(th));
+        ve::log::info("ViewerPanel::convert_frame_to_pixmap calling to_rgba_scaled_view with target size " + std::to_string(tw) + "x" + std::to_string(th));
         if (auto view = ve::decode::to_rgba_scaled_view(frame, tw, th)) {
-            ve::log::debug("ViewerPanel::convert_frame_to_pixmap to_rgba_scaled_view SUCCESS - creating QImage from view data");
-            ve::log::debug("RgbaView: data=" + std::to_string(reinterpret_cast<uintptr_t>(view->data)) + 
+            ve::log::info("ViewerPanel::convert_frame_to_pixmap to_rgba_scaled_view SUCCESS - creating QImage from view data");
+            ve::log::info("RgbaView: data=" + std::to_string(reinterpret_cast<uintptr_t>(view->data)) + 
                            ", width=" + std::to_string(view->width) + 
                            ", height=" + std::to_string(view->height) + 
                            ", stride=" + std::to_string(view->stride));
             
+            // Debug: Check first few pixels to verify RGBA content
+            if (view->data && view->width > 0 && view->height > 0) {
+                const uint8_t* pixels = static_cast<const uint8_t*>(view->data);
+                ve::log::info("ViewerPanel RGBA pixels: P0(" + std::to_string(pixels[0]) + "," + std::to_string(pixels[1]) + "," + std::to_string(pixels[2]) + "," + std::to_string(pixels[3]) + ") " +
+                             "P1(" + std::to_string(pixels[4]) + "," + std::to_string(pixels[5]) + "," + std::to_string(pixels[6]) + "," + std::to_string(pixels[7]) + ")");
+            }
+            
             // CRITICAL: This might be where the crash occurs - QImage constructor with external data
             QImage tmp(view->data, view->width, view->height, view->stride, QImage::Format_RGBA8888);
-            ve::log::debug("ViewerPanel::convert_frame_to_pixmap QImage created, converting to QPixmap");
+            ve::log::info("ViewerPanel::convert_frame_to_pixmap QImage created, converting to QPixmap");
             QPixmap p = QPixmap::fromImage(tmp); // copies pixel data internally
-            ve::log::debug("ViewerPanel::convert_frame_to_pixmap QPixmap created successfully");
+            ve::log::info("ViewerPanel::convert_frame_to_pixmap QPixmap created successfully");
             if (preview_scale_to_widget_ && pix_cache_capacity_ > 0) {
                 if (int(pix_cache_.size()) >= pix_cache_capacity_) {
                     pix_cache_.pop_front();
@@ -441,12 +490,16 @@ QPixmap ViewerPanel::convert_frame_to_pixmap(const ve::decode::VideoFrame& frame
             }
             return p;
         }
+        ve::log::info("ViewerPanel::convert_frame_to_pixmap to_rgba_scaled_view FAILED, trying to_rgba_scaled fallback");
         auto rgba = ve::decode::to_rgba_scaled(frame, tw, th);
         if (!rgba) {
+            ve::log::error("ViewerPanel::convert_frame_to_pixmap to_rgba_scaled also FAILED - no conversion possible!");
             return QPixmap();
         }
+        ve::log::info("ViewerPanel::convert_frame_to_pixmap to_rgba_scaled SUCCESS - creating QImage");
         size_t expect = size_t(rgba->width) * rgba->height * 4;
         if (rgba->data.size() != expect) {
+            ve::log::error("ViewerPanel::convert_frame_to_pixmap size mismatch - expected=" + std::to_string(expect) + " actual=" + std::to_string(rgba->data.size()));
             return QPixmap(); // fallback owning path
         }
         QImage tmp(rgba->data.data(), rgba->width, rgba->height, rgba->width * 4, QImage::Format_RGBA8888);

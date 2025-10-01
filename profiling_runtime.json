@@ -1,8 +1,14 @@
 {
   "samples": [
-    { "name": "to_rgba_scaled_view.sws_scale", "count": 1, "total_ms": 3.1814, "avg_ms": 3.1814, "min_ms": 3.1814, "max_ms": 3.1814, "p50_ms": 3.1814, "p95_ms": 3.1814 },
-    { "name": "to_rgba_scaled_view", "count": 1, "total_ms": 4.0313, "avg_ms": 4.0313, "min_ms": 4.0313, "max_ms": 4.0313, "p50_ms": 4.0313, "p95_ms": 4.0313 },
-    { "name": "to_rgba_scaled_view.ffmpeg", "count": 1, "total_ms": 3.5778, "avg_ms": 3.5778, "min_ms": 3.5778, "max_ms": 3.5778, "p50_ms": 3.5778, "p95_ms": 3.5778 },
-    { "name": "viewer.display_frame", "count": 2, "total_ms": 8.024, "avg_ms": 4.012, "min_ms": 0.3084, "max_ms": 7.7156, "p50_ms": 0.3084, "p95_ms": 0.3084 }
+    { "name": "to_rgba_scaled_view", "count": 6, "total_ms": 24.6863, "avg_ms": 4.11438, "min_ms": 3.5001, "max_ms": 5.1445, "p50_ms": 3.5934, "p95_ms": 4.9506 },
+    { "name": "gl_widget.paintGL", "count": 9, "total_ms": 8.171, "avg_ms": 0.907889, "min_ms": 0.0032, "max_ms": 3.323, "p50_ms": 0.0071, "p95_ms": 2.1021 },
+    { "name": "to_rgba_scaled_view.sws_scale", "count": 6, "total_ms": 21.8162, "avg_ms": 3.63603, "min_ms": 3.4605, "max_ms": 3.9127, "p50_ms": 3.5633, "p95_ms": 3.7684 },
+    { "name": "playback.cache_hit", "count": 1, "total_ms": 2.5015, "avg_ms": 2.5015, "min_ms": 2.5015, "max_ms": 2.5015, "p50_ms": 2.5015, "p95_ms": 2.5015 },
+    { "name": "to_rgba_scaled_view.ffmpeg", "count": 6, "total_ms": 22.2159, "avg_ms": 3.70265, "min_ms": 3.472, "max_ms": 3.9215, "p50_ms": 3.5909, "p95_ms": 3.8747 },
+    { "name": "viewer.display_frame", "count": 6, "total_ms": 155.605, "avg_ms": 25.9342, "min_ms": 23.6067, "max_ms": 29.8079, "p50_ms": 24.9893, "p95_ms": 27.6379 },
+    { "name": "gl_widget.upload.pbo.map", "count": 4, "total_ms": 3.3617, "avg_ms": 0.840425, "min_ms": 0.4993, "max_ms": 1.1459, "p50_ms": 0.5887, "p95_ms": 1.1278 },
+    { "name": "gl_widget.upload.pbo.tex", "count": 4, "total_ms": 0.0063, "avg_ms": 0.001575, "min_ms": 0.0007, "max_ms": 0.0041, "p50_ms": 0.0007, "p95_ms": 0.0008 },
+    { "name": "gl_widget.upload.pbo", "count": 4, "total_ms": 3.5096, "avg_ms": 0.8774, "min_ms": 0.512, "max_ms": 1.2333, "p50_ms": 0.6, "p95_ms": 1.1643 },
+    { "name": "gl_widget.draw", "count": 4, "total_ms": 3.2772, "avg_ms": 0.8193, "min_ms": 0.7683, "max_ms": 0.9229, "p50_ms": 0.7884, "p95_ms": 0.7976 }
   ]
 }

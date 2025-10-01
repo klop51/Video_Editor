@@ -46,6 +46,20 @@ namespace {
 
     // YUV to RGB conversion with proper color space handling
     void yuv_to_rgb(int Y, int U, int V, ColorSpace color_space, ColorRange color_range, uint8_t* rgba_out) {
+        // Debug pixel sampling across frame
+        static int debug_count = 0;
+        static int pixel_count = 0;
+        pixel_count++;
+        
+        // Sample pixels at different positions: first few, middle, and some random positions
+        bool should_debug = (debug_count < 5) || (pixel_count == 1000) || (pixel_count == 100000) || (pixel_count == 500000);
+        
+        if (should_debug) {
+            ve::log::info("YUV_DEBUG: Pixel#" + std::to_string(pixel_count) + " Y=" + std::to_string(Y) + " U=" + std::to_string(U) + " V=" + std::to_string(V) + 
+                         " ColorSpace=" + std::to_string(static_cast<int>(color_space)) + " ColorRange=" + std::to_string(static_cast<int>(color_range)));
+            debug_count++;
+        }
+        
         int C, D, E;
         
         if (color_range == ColorRange::Full) {
@@ -100,6 +114,19 @@ namespace {
         rgba_out[1] = clamp8(G);
         rgba_out[2] = clamp8(B);
         rgba_out[3] = 255;
+        
+        // Debug RGB output sampling
+        static int debug_rgb_count = 0;
+        static int rgb_pixel_count = 0;
+        rgb_pixel_count++;
+        
+        bool should_debug_rgb = (debug_rgb_count < 5) || (rgb_pixel_count == 1000) || (rgb_pixel_count == 100000) || (rgb_pixel_count == 500000);
+        
+        if (should_debug_rgb) {
+            ve::log::info("YUV_RGB_DEBUG: Pixel#" + std::to_string(rgb_pixel_count) + " Computed R=" + std::to_string(R) + " G=" + std::to_string(G) + " B=" + std::to_string(B) + 
+                         " Final RGB=(" + std::to_string(rgba_out[0]) + "," + std::to_string(rgba_out[1]) + "," + std::to_string(rgba_out[2]) + ",255)");
+            debug_rgb_count++;
+        }
     }
 
     // RGB24 to RGBA conversion
@@ -204,6 +231,12 @@ namespace {
 
     std::optional<VideoFrame> convert_nv12_to_rgba(const VideoFrame& src, VideoFrame& out) {
     // NV12 -> RGBA conversion (hot path). Avoid per-frame logging.
+        static int nv12_debug_count = 0;
+        if (nv12_debug_count < 3) {
+            ve::log::info("NV12_CONVERT_DEBUG: convert_nv12_to_rgba called for " + std::to_string(src.width) + "x" + std::to_string(src.height) + 
+                         " color_space=" + std::to_string(static_cast<int>(src.color_space)) + " color_range=" + std::to_string(static_cast<int>(src.color_range)));
+            nv12_debug_count++;
+        }
         
         const int W = src.width;
         const int H = src.height;
@@ -467,6 +500,13 @@ static std::optional<VideoFrame> to_rgba_scaled_ffmpeg(const VideoFrame& src, in
 #endif // VE_HAVE_FFMPEG
 
 std::optional<VideoFrame> to_rgba_scaled(const VideoFrame& src, int target_w, int target_h) noexcept {
+    static int rgba_scaled_debug_count = 0;
+    if (rgba_scaled_debug_count < 3) {
+        ve::log::info("RGBA_SCALED_DEBUG: to_rgba_scaled called for " + std::to_string(src.width) + "x" + std::to_string(src.height) + 
+                     " format=" + std::to_string(static_cast<int>(src.format)) + " target=" + std::to_string(target_w) + "x" + std::to_string(target_h));
+        rgba_scaled_debug_count++;
+    }
+    
     if(src.format == PixelFormat::RGBA32 && (target_w <=0 || target_h <=0 || (target_w==src.width && target_h==src.height))) return src;
 
     auto expected_src_size = [&](const VideoFrame& f)->size_t {
@@ -489,6 +529,12 @@ std::optional<VideoFrame> to_rgba_scaled(const VideoFrame& src, int target_w, in
 
 #if VE_HAVE_FFMPEG
     static bool disable_ffmpeg = (std::getenv("VE_DISABLE_FFMPEG_CONVERT") != nullptr);
+    static int ffmpeg_path_debug_count = 0;
+    if (ffmpeg_path_debug_count < 3) {
+        ve::log::info("FFMPEG_PATH_DEBUG: disable_ffmpeg=" + std::string(disable_ffmpeg ? "true" : "false") + 
+                     " VE_DISABLE_FFMPEG_CONVERT=" + std::string(std::getenv("VE_DISABLE_FFMPEG_CONVERT") ? std::getenv("VE_DISABLE_FFMPEG_CONVERT") : "null"));
+        ffmpeg_path_debug_count++;
+    }
     // Heuristic: very small frames (<=2x2) route to manual path to avoid potential swscale edge-case crashes.
     bool tiny_frame = (src.width * src.height) <= 4;
     if (!disable_ffmpeg && !tiny_frame) {
@@ -497,12 +543,23 @@ std::optional<VideoFrame> to_rgba_scaled(const VideoFrame& src, int target_w, in
             ve::log::error("CRT heap check failed BEFORE ffmpeg swscale in to_rgba_scaled");
         }
 #endif
+        static int ffmpeg_call_debug_count = 0;
+        if (ffmpeg_call_debug_count < 3) {
+            ve::log::info("FFMPEG_CALL_DEBUG: Calling to_rgba_scaled_ffmpeg for " + std::to_string(src.width) + "x" + std::to_string(src.height) + " format=" + std::to_string(static_cast<int>(src.format)));
+            ffmpeg_call_debug_count++;
+        }
+        
         if (auto out = to_rgba_scaled_ffmpeg(src, target_w, target_h)) {
 #ifdef _MSC_VER
             if (_CrtCheckMemory() == 0) {
                 ve::log::error("CRT heap check failed AFTER ffmpeg swscale in to_rgba_scaled");
             }
 #endif
+            static int ffmpeg_success_debug_count = 0;
+            if (ffmpeg_success_debug_count < 3) {
+                ve::log::info("FFMPEG_SUCCESS_DEBUG: to_rgba_scaled_ffmpeg succeeded");
+                ffmpeg_success_debug_count++;
+            }
             return out;
         }
     } else if (!tiny_frame) {
@@ -678,6 +735,26 @@ std::optional<RgbaView> to_rgba_scaled_view(const VideoFrame& src, int target_w,
                     uint8_t g=s[static_cast<size_t>(y)*static_cast<size_t>(src.width)+static_cast<size_t>(x)];
                     size_t di=(static_cast<size_t>(y)*static_cast<size_t>(src.width)+static_cast<size_t>(x))*4;
                     dst[di]=dst[di+1]=dst[di+2]=g; dst[di+3]=255;
+                }
+            }
+            break; }
+        case PixelFormat::NV12: {
+            VE_PROFILE_SCOPE_DETAILED("to_rgba_scaled_view.nv12");
+            static int nv12_scaled_debug_count = 0;
+            if (nv12_scaled_debug_count < 3) {
+                ve::log::info("NV12_SCALED_DEBUG: to_rgba_scaled_view NV12 path called for " + std::to_string(src.width) + "x" + std::to_string(src.height) + 
+                             " color_space=" + std::to_string(static_cast<int>(src.color_space)) + " color_range=" + std::to_string(static_cast<int>(src.color_range)));
+                nv12_scaled_debug_count++;
+            }
+            const int W=src.width,H=src.height;
+            const size_t ysz = static_cast<size_t>(W)*static_cast<size_t>(H); const size_t uvsz = ysz/2; const size_t need = ysz + uvsz;
+            if (src.data.size() < need) { ve::log::error("to_rgba_scaled_view.nv12 undersized buffer (have=" + std::to_string(src.data.size()) + ", need=" + std::to_string(need) + ")"); return std::nullopt; }
+            const uint8_t* Y=src.data.data(); const uint8_t* UV=Y+ysz;
+            for(int y=0;y<H;++y){
+                for(int x=0;x<W;++x){
+                    int Yi=Y[y*W+x]; int Ui=UV[((y/2)*(W/2)+(x/2))*2]; int Vi=UV[((y/2)*(W/2)+(x/2))*2+1];
+                    uint8_t* outp=&dst[(static_cast<size_t>(y)*static_cast<size_t>(W)+static_cast<size_t>(x))*4];
+                    yuv_to_rgb(Yi,Ui,Vi,src.color_space,src.color_range,outp);
                 }
             }
             break; }

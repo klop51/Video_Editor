@@ -46,6 +46,7 @@ ProbeResult probe_file(const std::string& path) noexcept {
     for(unsigned i=0;i<fmt->nb_streams;++i) {
         AVStream* s = fmt->streams[i];
         StreamInfo si;
+        si.index = static_cast<int>(i); // Store the FFmpeg stream index
         if(s->codecpar) {
             si.bitrate = s->codecpar->bit_rate;
             si.width = s->codecpar->width;

@@ -6,6 +6,7 @@
 namespace ve::media {
 
 struct StreamInfo {
+    int index = -1; // FFmpeg stream index
     std::string codec;
     std::string type; // video/audio/other
     int64_t bitrate = 0;

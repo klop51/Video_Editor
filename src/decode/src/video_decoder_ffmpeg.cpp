@@ -529,7 +529,32 @@ public:
         }
         
         video_stream_index_ = av_find_best_stream(fmt_, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
-        audio_stream_index_ = av_find_best_stream(fmt_, AVMEDIA_TYPE_AUDIO, -1, video_stream_index_, nullptr, 0);
+        
+        // Audio stream selection: use preferred index if specified, otherwise auto-select
+        if (params.preferred_audio_stream_index >= 0) {
+            // Validate the preferred stream index
+            if (params.preferred_audio_stream_index < static_cast<int>(fmt_->nb_streams) &&
+                fmt_->streams[params.preferred_audio_stream_index]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+                audio_stream_index_ = params.preferred_audio_stream_index;
+                AVStream* stream = fmt_->streams[audio_stream_index_];
+                int channels = stream->codecpar->ch_layout.nb_channels;
+                ve::log::info("Using preferred audio stream " + std::to_string(audio_stream_index_) + ": " + 
+                             std::to_string(stream->codecpar->sample_rate) + "Hz, " +
+                             std::to_string(channels) + " channels");
+            } else {
+                ve::log::warn("Preferred audio stream index " + std::to_string(params.preferred_audio_stream_index) + 
+                             " is invalid, falling back to auto-selection");
+                audio_stream_index_ = select_best_audio_stream();
+            }
+        } else {
+            // Intelligent audio stream selection: prefer stereo over multi-channel
+            audio_stream_index_ = select_best_audio_stream();
+        }
+
+        // Fallback to FFmpeg's default if our selection failed
+        if (audio_stream_index_ < 0) {
+            audio_stream_index_ = av_find_best_stream(fmt_, AVMEDIA_TYPE_AUDIO, -1, video_stream_index_, nullptr, 0);
+        }
         
         // Apply codec-specific optimizations
         if(params.video && video_stream_index_ >= 0) {
@@ -706,6 +731,16 @@ public:
                 
                 // Map pixel format with comprehensive support
                 vf.format = map_pixel_format(frame_->format);
+                // Removed per-frame pixel format debug logging to prevent spam
+                
+                // Keep color space detection logic but remove per-frame logging
+                const char* color_space_name = 
+                    (vf.color_space == ColorSpace::BT709) ? "BT709" :
+                    (vf.color_space == ColorSpace::BT601) ? "BT601" :
+                    (vf.color_space == ColorSpace::BT2020) ? "BT2020" : "Other";
+                const char* color_range_name = (vf.color_range == ColorRange::Full) ? "Full" : "Limited";
+                // Removed per-frame color space debug logging to prevent spam
+                
                 if (vf.format == PixelFormat::Unknown) {
                     ve::log::error("Unsupported pixel format: " + std::to_string(frame_->format));
                     return std::nullopt;
@@ -719,6 +754,7 @@ public:
                 } else {
 #if defined(_WIN32) && VE_ENABLE_D3D11VA
                 if (frame_->format == AV_PIX_FMT_D3D11) {
+                    // Removed per-frame D3D11 debug logging to prevent spam
                     // D3D11VA temporarily disabled due to stability issues
                     // Handle D3D11VA hardware frame
                     // if (!hw_accel::handle_d3d11_frame(frame_, vf)) {
@@ -735,6 +771,9 @@ public:
                         }
                         continue; // Try next frame
                     }
+                    // After successful D3D11 transfer, the data is in NV12 format
+                    vf.format = PixelFormat::NV12;
+                    // Removed per-frame D3D11 success debug logging to prevent spam
                 } else {
                     // Normal software frame copy
                     if (!copy_frame_data(frame_, vf)) {
@@ -830,6 +869,17 @@ public:
                 if(frame_->format == AV_SAMPLE_FMT_FLTP) {
                     af.format = SampleFormat::FLTP;
                     int samples = frame_->nb_samples;
+                    
+                    // Debug: Log multi-channel detection
+                    static bool channel_info_logged = false;
+                    if (!channel_info_logged) {
+                        ve::log::info("FLTP Audio: " + std::to_string(af.channels) + " channels, " + 
+                                     std::to_string(samples) + " samples, " +
+                                     std::to_string(af.sample_rate) + "Hz" +
+                                     (af.channels > 2 ? " [MULTI-CHANNEL DETECTED - will need downmix]" : " [STEREO - direct processing]"));
+                        channel_info_logged = true;
+                    }
+                    
                     // Interleave planar floats into single buffer
                     af.data.resize(sizeof(float) * static_cast<size_t>(samples) * static_cast<size_t>(af.channels));
                     float* out = reinterpret_cast<float*>(af.data.data());
@@ -935,6 +985,68 @@ private:
         // Most FFmpeg decoders can allocate hw frames internally when get_format selects a hw format
         // and hw_device_ctx is provided. Avoid setting get_buffer2 without a ready frames ctx.
         return true;
+    }
+    
+    // Intelligent audio stream selection: prefer stereo over multi-channel
+    int select_best_audio_stream() {
+        int best_stereo_stream = -1;
+        int best_any_stream = -1;
+        int best_stereo_score = 0;
+        int best_any_score = 0;
+        
+        for (unsigned int i = 0; i < fmt_->nb_streams; i++) {
+            AVStream* stream = fmt_->streams[i];
+            if (stream->codecpar->codec_type != AVMEDIA_TYPE_AUDIO) {
+                continue;
+            }
+            
+            // Get channel count using modern API
+            int channels = stream->codecpar->ch_layout.nb_channels;
+            if (channels <= 0) {
+                continue; // Invalid stream
+            }
+            
+            // Calculate stream "score" (higher is better)
+            int score = 0;
+            
+            // Prefer higher sample rates
+            if (stream->codecpar->sample_rate >= 48000) score += 100;
+            else if (stream->codecpar->sample_rate >= 44100) score += 80;
+            else if (stream->codecpar->sample_rate >= 22050) score += 40;
+            
+            // Prefer common bit depths
+            if (stream->codecpar->bits_per_coded_sample == 16) score += 20;
+            else if (stream->codecpar->bits_per_coded_sample == 24) score += 15;
+            
+            // Track the best stereo stream (2 channels)
+            if (channels == 2) {
+                if (score > best_stereo_score) {
+                    best_stereo_stream = i;
+                    best_stereo_score = score;
+                }
+            }
+            
+            // Track the best stream overall
+            if (score > best_any_score) {
+                best_any_stream = i;
+                best_any_score = score;
+            }
+        }
+        
+        // Prefer stereo if available, otherwise use the best stream
+        int selected = (best_stereo_stream >= 0) ? best_stereo_stream : best_any_stream;
+        
+        if (selected >= 0) {
+            AVStream* stream = fmt_->streams[selected];
+            int channels = stream->codecpar->ch_layout.nb_channels;
+            ve::log::info("Selected audio stream " + std::to_string(selected) + ": " + 
+                         std::to_string(stream->codecpar->sample_rate) + "Hz, " +
+                         std::to_string(channels) + " channels" +
+                         (channels == 2 ? " (preferred stereo)" : 
+                          channels > 2 ? " (multi-channel, will downmix)" : ""));
+        }
+        
+        return selected;
     }
     
     // Transfer hardware frame to system memory if needed
