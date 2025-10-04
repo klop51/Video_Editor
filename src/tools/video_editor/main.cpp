@@ -1,12 +1,21 @@
 // Ensure high DPI policy is applied before constructing QApplication-derived instance.
 #include <QApplication>
 #include "app/application.hpp"
+#include "core/crash_handler.hpp"
 #include "../../core/crash_trap.hpp"
 #include "../../video/UiImageFrame.h"
 #include <iostream>
 #include <exception>
 #ifdef _MSC_VER
 #include <crtdbg.h>
+#endif
+
+#ifdef _MSC_VER
+struct CrtDbgOn {
+    CrtDbgOn() {
+        _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+    }
+} g_crtDbgOn;
 #endif
 
 
@@ -42,6 +51,9 @@ int main(int argc, char** argv) {
     // Install crash traps to catch crashes during startup
     ve::install_crash_traps();
     std::cout << "Crash traps installed" << std::endl;
+
+    CrashHandler::install(L"./crash");
+    std::cout << "Crash handler installed" << std::endl;
     
     // Configure Qt logging for production (minimal output)
     qputenv("QT_FATAL_WARNINGS", "0");  // Don't turn warnings into aborts in production

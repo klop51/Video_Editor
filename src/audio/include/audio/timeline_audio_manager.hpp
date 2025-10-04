@@ -85,6 +85,9 @@ public:
     bool pause_playback();
     bool seek_to(ve::TimePoint position);
     
+    // ChatGPT Stop Token System: Request stop without blocking
+    void requestStop() { is_playing_.store(false); }
+    
     // Track audio control
     bool set_track_mute(ve::timeline::TrackId track_id, bool muted);
     bool set_track_solo(ve::timeline::TrackId track_id, bool solo);

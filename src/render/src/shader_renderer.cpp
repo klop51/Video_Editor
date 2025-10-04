@@ -79,6 +79,10 @@ bool ShaderRenderer::render_frame(std::shared_ptr<GpuFrameResource> frame_resour
                          draw_x, draw_y,
                          draw_width, draw_height);
 
+    if (auto timer = frame_resource->take_timing()) {
+        timer->endAndMaybeLog("TIMING_GPU");
+    }
+
     return true;
 }
 

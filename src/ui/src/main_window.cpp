@@ -38,6 +38,7 @@
 #include <cmath>
 
 #include <QApplication>
+#include <QCoreApplication>
 #include <QMenuBar>
 #include <QToolBar>
 #include <QStatusBar>
@@ -343,6 +344,15 @@ MainWindow::MainWindow(QWidget* parent)
     status_label_->setText("Welcome! Create a new project to get started: File → New Project");
     status_label_->setStyleSheet("color: blue; font-weight: bold;");
     
+    if (qApp) {
+        connect(qApp, &QCoreApplication::aboutToQuit, this, [this]() {
+            if (playback_controller_) {
+                ve::log::info("MainWindow: aboutToQuit received – stopping playback controller");
+                playback_controller_->stopAndJoin();
+            }
+        });
+    }
+
     ve::log::info("Main window created");
 }
 

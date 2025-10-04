@@ -5,6 +5,7 @@ add_library(ve_core STATIC
     src/profiling.cpp
     src/job_system.cpp
     crash_trap.cpp
+    src/crash_handler.cpp
 )
 
 add_library(VideoEditor::core ALIAS ve_core)
@@ -47,6 +48,10 @@ if(NOT spdlog_FOUND)
 endif()
 
 target_link_libraries(ve_core PUBLIC fmt::fmt spdlog::spdlog)
+
+if (WIN32)
+    target_link_libraries(ve_core PRIVATE Dbghelp Psapi)
+endif()
 
 install(TARGETS ve_core EXPORT VideoEditorTargets ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})

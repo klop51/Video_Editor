@@ -46,6 +46,7 @@ struct D3D11Texture {
     DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
     UINT row_pitch = 0;  // Bytes per row
     UINT slice_pitch = 0;  // Bytes per slice
+    bool dynamic = false;
     
     ~D3D11Texture() {
         if (staging_texture) staging_texture->Release();
@@ -626,6 +627,7 @@ public:
         
         unsigned int id = next_texture_id++;
         auto texture = std::make_unique<D3D11Texture>();
+        texture->dynamic = false;
         
         DXGI_FORMAT dxgi_format = get_dxgi_format(format);
         UINT bytes_per_pixel = get_bytes_per_pixel(dxgi_format);
@@ -703,13 +705,71 @@ public:
         return id;
     }
 
+    unsigned int create_dynamic_texture(int width, int height, int format) {
+        if (!device) return 0;
+
+        unsigned int id = next_texture_id++;
+        auto texture = std::make_unique<D3D11Texture>();
+        texture->dynamic = true;
+
+        DXGI_FORMAT dxgi_format = get_dxgi_format(format);
+        UINT bytes_per_pixel = get_bytes_per_pixel(dxgi_format);
+
+        D3D11_TEXTURE2D_DESC desc = {};
+        desc.Width = width;
+        desc.Height = height;
+        desc.MipLevels = 1;
+        desc.ArraySize = 1;
+        desc.Format = dxgi_format;
+        desc.SampleDesc.Count = 1;
+        desc.SampleDesc.Quality = 0;
+        desc.Usage = D3D11_USAGE_DYNAMIC;
+        desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+        desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+        desc.MiscFlags = 0;
+
+        HRESULT hr = device->CreateTexture2D(&desc, nullptr, &texture->texture);
+        if (FAILED(hr)) {
+            ve::log::error("Failed to create dynamic D3D11 texture: 0x" + std::to_string(static_cast<unsigned int>(hr)));
+            return 0;
+        }
+
+        D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc = {};
+        srv_desc.Format = desc.Format;
+        srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+        srv_desc.Texture2D.MipLevels = 1;
+
+        hr = device->CreateShaderResourceView(texture->texture, &srv_desc, &texture->srv);
+        if (FAILED(hr)) {
+            ve::log::error("Failed to create dynamic texture SRV: 0x" + std::to_string(static_cast<unsigned int>(hr)));
+            return 0;
+        }
+
+        texture->width = width;
+        texture->height = height;
+        texture->format = dxgi_format;
+        texture->row_pitch = width * bytes_per_pixel;
+        texture->slice_pitch = texture->row_pitch * height;
+
+        size_t memory_used = calculate_texture_memory(width, height, dxgi_format);
+        used_gpu_memory += memory_used;
+
+        ve::log::debug("Created dynamic D3D11 texture " + std::to_string(id) + " (" + std::to_string(width) + "x" + std::to_string(height) +
+                      ") using " + std::to_string(memory_used / 1024 / 1024) + " MB");
+
+        textures[id] = std::move(texture);
+        return id;
+    }
+
     void destroy_texture(unsigned int texture_id) {
         auto it = textures.find(texture_id);
         if (it != textures.end()) {
             // Update memory tracking before destruction
             auto& texture = it->second;
             size_t memory_freed = calculate_texture_memory(texture->width, texture->height, texture->format);
-            memory_freed += memory_freed; // Double for staging texture
+            if (!texture->dynamic) {
+                memory_freed += memory_freed; // Double for staging texture
+            }
             used_gpu_memory = (used_gpu_memory > memory_freed) ? used_gpu_memory - memory_freed : 0;
             
             ve::log::debug("Destroyed D3D11 texture " + std::to_string(texture_id) + 
@@ -734,30 +794,97 @@ public:
             return;
         }
         
-        // Map the staging texture for CPU write access
-        D3D11_MAPPED_SUBRESOURCE mapped;
-        HRESULT hr = context->Map(texture->staging_texture, 0, D3D11_MAP_WRITE, 0, &mapped);
+        if (texture->dynamic) {
+            D3D11_MAPPED_SUBRESOURCE mapped;
+            HRESULT hr = context->Map(texture->texture, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+            if (FAILED(hr)) {
+                ve::log::error("Failed to map dynamic texture for upload: 0x" + std::to_string(static_cast<unsigned int>(hr)));
+                return;
+            }
+
+            const char* src_data = static_cast<const char*>(data);
+            UINT src_row_pitch = texture->row_pitch;
+
+            for (int y = 0; y < height; ++y) {
+                memcpy(static_cast<char*>(mapped.pData) + y * mapped.RowPitch,
+                       src_data + y * src_row_pitch,
+                       src_row_pitch);
+            }
+
+            context->Unmap(texture->texture, 0);
+        } else {
+            // Map the staging texture for CPU write access
+            D3D11_MAPPED_SUBRESOURCE mapped;
+            HRESULT hr = context->Map(texture->staging_texture, 0, D3D11_MAP_WRITE, 0, &mapped);
+            if (FAILED(hr)) {
+                ve::log::error("Failed to map staging texture for upload: 0x" + std::to_string(static_cast<unsigned int>(hr)));
+                return;
+            }
+
+            const char* src_data = static_cast<const char*>(data);
+            UINT src_row_pitch = texture->row_pitch;
+
+            for (int y = 0; y < height; ++y) {
+                memcpy(static_cast<char*>(mapped.pData) + y * mapped.RowPitch,
+                       src_data + y * src_row_pitch,
+                       src_row_pitch);
+            }
+
+            context->Unmap(texture->staging_texture, 0);
+
+            context->CopyResource(texture->texture, texture->staging_texture);
+        }
+
+        ve::log::debug("Uploaded " + std::to_string(texture->slice_pitch / 1024) + " KB to D3D11 texture " + std::to_string(texture_id));
+    }
+
+    bool map_texture_discard(unsigned int texture_id, D3D11_MAPPED_SUBRESOURCE& mapped, unsigned int* error_code) {
+        auto it = textures.find(texture_id);
+        if (it == textures.end()) {
+            ve::log::error("Texture " + std::to_string(texture_id) + " not found for mapping");
+            return false;
+        }
+
+        auto& texture = it->second;
+        if (!texture->dynamic) {
+            ve::log::error("Texture " + std::to_string(texture_id) + " is not dynamic and cannot be mapped directly");
+            return false;
+        }
+
+        HRESULT hr = context->Map(texture->texture, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
         if (FAILED(hr)) {
-            ve::log::error("Failed to map staging texture for upload: 0x" + std::to_string(static_cast<unsigned int>(hr)));
+            ve::log::error("Failed to map dynamic texture: 0x" + std::to_string(static_cast<unsigned int>(hr)));
+            if (error_code) {
+                *error_code = static_cast<unsigned int>(hr);
+            }
+            return false;
+        }
+
+        if (error_code) {
+            *error_code = static_cast<unsigned int>(S_OK);
+        }
+
+        return true;
+    }
+
+    void unmap_texture(unsigned int texture_id) {
+        auto it = textures.find(texture_id);
+        if (it == textures.end()) {
             return;
         }
-        
-        // Copy data to staging texture
-        const char* src_data = static_cast<const char*>(data);
-        char* dst_data = static_cast<char*>(mapped.pData);
-        UINT src_row_pitch = texture->row_pitch;
-        
-        for (int y = 0; y < height; ++y) {
-            memcpy(dst_data + y * mapped.RowPitch, src_data + y * src_row_pitch, src_row_pitch);
+
+        auto& texture = it->second;
+        if (!texture->dynamic) {
+            return;
         }
-        
-        // Unmap the staging texture
-        context->Unmap(texture->staging_texture, 0);
-        
-        // Copy from staging texture to main GPU texture
-        context->CopyResource(texture->texture, texture->staging_texture);
-        
-        ve::log::debug("Uploaded " + std::to_string(texture->slice_pitch / 1024) + " KB to D3D11 texture " + std::to_string(texture_id));
+
+        context->Unmap(texture->texture, 0);
+    }
+
+    void flush() {
+        if (context) {
+            context->Flush();
+        }
     }
 
     // Buffer Management Methods
@@ -2206,6 +2333,12 @@ public:
 static D3D11GraphicsDevice g_device;
 #else
 // Stub implementation for non-Windows platforms
+struct D3D11_MAPPED_SUBRESOURCE {
+    void* pData = nullptr;
+    unsigned int RowPitch = 0;
+    unsigned int DepthPitch = 0;
+};
+
 struct D3D11GraphicsDevice {
     struct DeviceInfo {
         bool debug_enabled;
@@ -2227,8 +2360,20 @@ struct D3D11GraphicsDevice {
         static uint32_t id_counter = 1; 
         return id_counter++; // Return incremental IDs for testing
     }
+    uint32_t create_dynamic_texture(uint32_t, uint32_t, uint32_t) {
+        static uint32_t dynamic_id_counter = 10000;
+        return dynamic_id_counter++;
+    }
     void destroy_texture(uint32_t) {}
     void upload_texture(uint32_t, const void*, uint32_t, uint32_t, uint32_t) {}
+    bool map_texture_discard(uint32_t, D3D11_MAPPED_SUBRESOURCE&, unsigned int* error_code) {
+        if (error_code) {
+            *error_code = 0u;
+        }
+        return true;
+    }
+    void unmap_texture(uint32_t) {}
+    void flush() {}
     
     // Buffer management stub methods  
     uint32_t create_buffer(size_t, uint32_t, const void*) { 
@@ -2306,12 +2451,28 @@ public:
         return g_device.create_texture(static_cast<uint32_t>(width), static_cast<uint32_t>(height), static_cast<uint32_t>(format));
     }
 
+    unsigned int create_dynamic_texture(int width, int height, int format) {
+        return g_device.create_dynamic_texture(static_cast<uint32_t>(width), static_cast<uint32_t>(height), static_cast<uint32_t>(format));
+    }
+
     void destroy_texture(unsigned int texture_id) {
         g_device.destroy_texture(texture_id);
     }
 
     void upload_texture(unsigned int texture_id, const void* data, int width, int height, int format) {
         g_device.upload_texture(texture_id, data, static_cast<uint32_t>(width), static_cast<uint32_t>(height), static_cast<uint32_t>(format));
+    }
+
+    bool map_texture_discard(unsigned int texture_id, D3D11_MAPPED_SUBRESOURCE& mapped, unsigned int* error_code) {
+        return g_device.map_texture_discard(texture_id, mapped, error_code);
+    }
+
+    void unmap_texture(unsigned int texture_id) {
+        g_device.unmap_texture(texture_id);
+    }
+
+    void flush() {
+        g_device.flush();
     }
 
     // Buffer management methods
@@ -2446,12 +2607,49 @@ unsigned int GraphicsDevice::create_texture(int width, int height, int format) n
     return impl_ ? impl_->create_texture(width, height, format) : 0;
 }
 
+unsigned int GraphicsDevice::create_dynamic_texture(int width, int height, int format) noexcept {
+    return impl_ ? impl_->create_dynamic_texture(width, height, format) : 0;
+}
+
 void GraphicsDevice::destroy_texture(unsigned int texture_id) noexcept {
     if (impl_) impl_->destroy_texture(texture_id);
 }
 
 void GraphicsDevice::upload_texture(unsigned int texture_id, const void* data, int width, int height, int format) noexcept {
     if (impl_) impl_->upload_texture(texture_id, data, width, height, format);
+}
+
+bool GraphicsDevice::map_texture_discard(unsigned int texture_id, MappedTexture& mapped, unsigned int* error_code) noexcept {
+    if (!impl_) return false;
+
+#ifdef _WIN32
+    D3D11_MAPPED_SUBRESOURCE dx_mapped = {};
+    if (!impl_->map_texture_discard(texture_id, dx_mapped, error_code)) {
+        return false;
+    }
+
+    mapped.data = dx_mapped.pData;
+    mapped.row_pitch = dx_mapped.RowPitch;
+    if (error_code) {
+        *error_code = static_cast<unsigned int>(S_OK);
+    }
+    return true;
+#else
+    (void)texture_id;
+    (void)mapped;
+    if (error_code) {
+        *error_code = 0u;
+    }
+    return false;
+#endif
+}
+
+void GraphicsDevice::unmap_texture(unsigned int texture_id) noexcept {
+    if (impl_) impl_->unmap_texture(texture_id);
+}
+
+void GraphicsDevice::flush() noexcept {
+    if (impl_) impl_->flush();
 }
 
 unsigned int GraphicsDevice::create_shader_program(const char* vertex_src, const char* fragment_src) noexcept {

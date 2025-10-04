@@ -139,6 +139,10 @@ uint32_t GraphicsDevice::create_texture(int width, int height, int format) {
     return pImpl ? pImpl->create_texture(width, height, format) : 0;
 }
 
+unsigned int GraphicsDevice::create_dynamic_texture(int width, int height, int format) noexcept {
+    return create_texture(width, height, format);
+}
+
 void GraphicsDevice::destroy_texture(uint32_t texture_id) {
     if (pImpl) pImpl->destroy_texture(texture_id);
 }
@@ -146,6 +150,22 @@ void GraphicsDevice::destroy_texture(uint32_t texture_id) {
 void GraphicsDevice::upload_texture(uint32_t texture_id, const void* data, int width, int height, int format) {
     if (pImpl) pImpl->upload_texture(texture_id, data, width, height, format);
 }
+
+bool GraphicsDevice::map_texture_discard(unsigned int texture_id, MappedTexture& mapped, unsigned int* error_code) noexcept {
+    (void)texture_id;
+    mapped.data = nullptr;
+    mapped.row_pitch = 0;
+    if (error_code) {
+        *error_code = 0u;
+    }
+    return false;
+}
+
+void GraphicsDevice::unmap_texture(unsigned int texture_id) noexcept {
+    (void)texture_id;
+}
+
+void GraphicsDevice::flush() noexcept {}
 
 uint32_t GraphicsDevice::create_shader_program(const char* vertex_src, const char* fragment_src) {
     return pImpl ? pImpl->create_shader_program(vertex_src, fragment_src) : 0;

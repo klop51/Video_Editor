@@ -28,8 +28,18 @@ public:
 
     // Texture management
     unsigned int create_texture(int width, int height, int format) noexcept;
+    unsigned int create_dynamic_texture(int width, int height, int format) noexcept;
     void destroy_texture(unsigned int texture_id) noexcept;
     void upload_texture(unsigned int texture_id, const void* data, int width, int height, int format) noexcept;
+
+    struct MappedTexture {
+        void* data = nullptr;
+        unsigned int row_pitch = 0;
+    };
+
+    bool map_texture_discard(unsigned int texture_id, MappedTexture& mapped, unsigned int* error_code = nullptr) noexcept;
+    void unmap_texture(unsigned int texture_id) noexcept;
+    void flush() noexcept;
 
     // Buffer management (Week 2: Memory Management)
     unsigned int create_buffer(int size, int usage_flags, const void* initial_data = nullptr) noexcept;

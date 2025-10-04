@@ -267,6 +267,7 @@ bool TimelineAudioManager::set_track_pan(ve::timeline::TrackId track_id, float p
 }
 
 bool TimelineAudioManager::process_timeline_audio(ve::TimePoint position, uint32_t frame_count) {
+    // ChatGPT Stop Token System: Check if stopping before processing
     if (!is_playing_.load() || !timeline_) {
         return true;  // Not playing or no timeline
     }

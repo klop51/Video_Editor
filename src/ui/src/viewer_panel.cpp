@@ -15,6 +15,7 @@
 #include "render/render_graph.hpp"
 #include "gfx/vk_device.hpp"
 #include "ui/gl_video_widget.hpp"
+#include "core/stage_timer.hpp"
 #include "core/profiling.hpp"
 #include <algorithm>
 #include "core/log.hpp"
@@ -38,6 +39,12 @@
 #include <QMutexLocker>
 #include <algorithm>
 #include <memory>
+#include <mutex>
+#include <cstring>
+#include <string>
+#include <sstream>
+#include <iomanip>
+#include <cctype>
 #ifdef _MSC_VER
 #include <crtdbg.h>
 #endif
@@ -46,6 +53,14 @@
 #endif
 
 namespace ve::ui {
+
+namespace {
+std::string format_hresult(unsigned int hr) {
+    std::ostringstream oss;
+    oss << std::hex << std::uppercase << hr;
+    return oss.str();
+}
+}
 
 ViewerPanel::ViewerPanel(QWidget* parent)
     : QWidget(parent)
@@ -59,14 +74,33 @@ ViewerPanel::ViewerPanel(QWidget* parent)
         display_enabled_ = false;
     }
     
-    // Enable GPU pipeline by default for better video rendering
-    enable_gpu_pipeline();
+    bool gpu_mode_off = false;
+    if (const char* gpu_mode_env = std::getenv("VE_GPU_MODE")) {
+        std::string mode = gpu_mode_env;
+        std::transform(mode.begin(), mode.end(), mode.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (mode == "off" || mode == "cpu" || mode == "disable" || mode == "disabled" || mode == "software") {
+            gpu_mode_off = true;
+            ve::log::info("ViewerPanel: VE_GPU_MODE requested CPU rendering (" + mode + ")");
+        }
+    }
+
+    if (!gpu_mode_off) {
+        // Enable GPU pipeline by default for better video rendering
+        enable_gpu_pipeline();
+    } else {
+        gpu_enabled_ = false;
+        gpu_initialized_ = false;
+    }
 }
 
 ViewerPanel::~ViewerPanel() {
     // Critical: Mark as destroying to prevent queued signal delivery
     destroying_.store(true, std::memory_order_release);
     
+    if (playback_controller_) {
+        playback_controller_->stopAsync();
+    }
+
     // Ensure no more queued signals target this widget
     disconnect(nullptr, nullptr, this, nullptr);
 }
@@ -87,21 +121,82 @@ void ViewerPanel::set_playback_controller(ve::playback::PlaybackController* cont
                 return;
             }
             
-            ve::decode::VideoFrame copy = f;
-            ve::log::debug("ViewerPanel::video_callback frame copied, pts=" + std::to_string(copy.pts) + ", size=" + std::to_string(copy.data.size()));
-            
+            // Reuse staging buffer to avoid per-frame allocations on decoder thread
+            {
+                std::lock_guard<std::mutex> lock(staging_mutex_);
+                decoder_staging_frame_.width  = f.width;
+                decoder_staging_frame_.height = f.height;
+                decoder_staging_frame_.pts    = f.pts;
+                decoder_staging_frame_.format = f.format;
+                decoder_staging_frame_.color_space = f.color_space;
+                decoder_staging_frame_.color_range = f.color_range;
+                const size_t bytes = f.data.size();
+                if (bytes > 0) {
+                    if (decoder_staging_frame_.data.capacity() < bytes) {
+                        decoder_staging_frame_.data.reserve(bytes);
+                    }
+                    decoder_staging_frame_.data.resize(bytes);
+                    std::memcpy(decoder_staging_frame_.data.data(), f.data.data(), bytes);
+                } else {
+                    decoder_staging_frame_.data.clear();
+                }
+            }
+
             // Use QPointer for extra safety - use QTimer for better Qt compatibility
             if (QPointer<ViewerPanel> safe_self = this; safe_self) {
-                ve::log::debug("ViewerPanel::video_callback queuing QTimer::singleShot for UI thread");
-                QTimer::singleShot(0, safe_self, [safe_self, copy]() {
-                    ve::log::debug("ViewerPanel::QTimer lambda executing on UI thread: " + std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id())));
+                const int prev = safe_self->scheduled_presentations_.fetch_add(1, std::memory_order_acq_rel);
+                if (prev >= ViewerPanel::kMaxScheduledPresentations_) {
+                    safe_self->scheduled_presentations_.fetch_sub(1, std::memory_order_acq_rel);
+                    ve::log::debug("ViewerPanel: dropping frame due to UI backlog (" + std::to_string(prev) + ")");
+                    return;
+                }
+                QTimer::singleShot(0, safe_self, [safe_self]() {
+                    struct PresentationCounterGuard {
+                        ViewerPanel* panel;
+                        ~PresentationCounterGuard() {
+                            if (panel) {
+                                panel->scheduled_presentations_.fetch_sub(1, std::memory_order_acq_rel);
+                            }
+                        }
+                    } guard{safe_self.data()};
+                    if (!safe_self) {
+                        return;
+                    }
                     if (!safe_self || safe_self->destroying_.load(std::memory_order_acquire)) {
                         ve::log::debug("ViewerPanel lambda called on destroyed/destroying widget - aborting");
                         return;
                     }
-                    ve::log::debug("ViewerPanel::lambda calling display_frame with pts=" + std::to_string(copy.pts));
-                    safe_self->display_frame(copy);
-                    ve::log::debug("ViewerPanel::lambda display_frame completed successfully");
+                    if (safe_self->playback_controller_ &&
+                        safe_self->playback_controller_->isStopping()) {
+                        ve::log::debug("ViewerPanel lambda: playback stopping – aborting UI work");
+                        return;
+                    }
+
+                    ve::decode::VideoFrame* frame_ptr = nullptr;
+                    {
+                        std::lock_guard<std::mutex> lock(safe_self->staging_mutex_);
+                        auto& staging = safe_self->decoder_staging_frame_;
+                        auto& ui_frame = safe_self->ui_thread_frame_;
+                        ui_frame.width  = staging.width;
+                        ui_frame.height = staging.height;
+                        ui_frame.pts    = staging.pts;
+                        ui_frame.format = staging.format;
+                        ui_frame.color_space = staging.color_space;
+                        ui_frame.color_range = staging.color_range;
+                        const size_t bytes = staging.data.size();
+                        if (bytes > 0) {
+                            if (ui_frame.data.capacity() < bytes) {
+                                ui_frame.data.reserve(bytes);
+                            }
+                            ui_frame.data.resize(bytes);
+                            std::memcpy(ui_frame.data.data(), staging.data.data(), bytes);
+                        } else {
+                            ui_frame.data.clear();
+                        }
+                        frame_ptr = &ui_frame;
+                    }
+
+                    safe_self->display_frame(*frame_ptr);
                 });
             }
         });
@@ -117,6 +212,11 @@ void ViewerPanel::set_playback_controller(ve::playback::PlaybackController* cont
                 QTimer::singleShot(0, safe_self, [safe_self, st]() {
                     if (!safe_self || safe_self->destroying_.load(std::memory_order_acquire)) {
                         ve::log::debug("ViewerPanel state lambda called on destroyed/destroying widget - aborting");
+                        return;
+                    }
+                    if (safe_self->playback_controller_ &&
+                        safe_self->playback_controller_->isStopping()) {
+                        ve::log::debug("ViewerPanel state lambda: playback stopping – aborting UI work");
                         return;
                     }
                     if (safe_self->play_pause_button_) {
@@ -269,6 +369,11 @@ void ViewerPanel::display_frame(const ve::decode::VideoFrame& frame) {
             ve::log::warn("GPU frame upload failed, falling back to CPU rendering");
             ve::log::debug("ViewerPanel::display_frame calling update_frame_display (GPU fallback to CPU path)");
             update_frame_display();
+            if (auto timer = frame.timing) {
+                timer->afterConversion();
+                timer->afterUpload();
+                timer->endAndMaybeLog("TIMING_CPU");
+            }
             ve::log::debug("ViewerPanel::display_frame GPU fallback update_frame_display completed");
             render_in_progress_ = false;
             if (pending_frame_valid_) {
@@ -278,6 +383,10 @@ void ViewerPanel::display_frame(const ve::decode::VideoFrame& frame) {
                 QPointer<ViewerPanel> safe_self(this);
                 QTimer::singleShot(0, this, [safe_self, next]() {
                     if (safe_self && !safe_self->destroying_.load(std::memory_order_acquire)) {
+                        if (safe_self->playback_controller_ && safe_self->playback_controller_->isStopping()) {
+                            ve::log::debug("ViewerPanel lambda: playback stopping – aborting UI work");
+                            return;
+                        }
                         safe_self->display_frame(next);
                     }
                 });
@@ -289,12 +398,47 @@ void ViewerPanel::display_frame(const ve::decode::VideoFrame& frame) {
             if (auto* gpu_rg = dynamic_cast<ve::render::GpuRenderGraph*>(render_graph_.get())) {
                 gpu_rg->set_current_frame(current_frame_);
                 ve::render::FrameRequest req{current_frame_.pts};
-                (void)gpu_rg->render(req);
+                auto render_result = gpu_rg->render(req);
+                if (render_result.request_cpu_fallback) {
+                    ve::log::warn("ViewerPanel: GPU pipeline requested CPU fallback (hr=0x" + format_hresult(gpu_rg->last_gpu_error()) + ")");
+                    disable_gpu_pipeline();
+                    if (playback_controller_) {
+                        playback_controller_->force_cpu_render_fallback(gpu_rg->last_gpu_error());
+                    }
+                    ve::log::debug("ViewerPanel::display_frame switching to CPU fallback render");
+                    update_frame_display();
+                    if (auto timer = frame.timing) {
+                        timer->afterConversion();
+                        timer->afterUpload();
+                        timer->endAndMaybeLog("TIMING_CPU");
+                    }
+                    render_in_progress_ = false;
+                    if (pending_frame_valid_) {
+                        auto next = pending_frame_;
+                        pending_frame_valid_ = false;
+                        QPointer<ViewerPanel> safe_self(this);
+                        QTimer::singleShot(0, this, [safe_self, next]() {
+                            if (safe_self && !safe_self->destroying_.load(std::memory_order_acquire)) {
+                                if (safe_self->playback_controller_ && safe_self->playback_controller_->isStopping()) {
+                                    ve::log::debug("ViewerPanel lambda: playback stopping – aborting UI work");
+                                    return;
+                                }
+                                safe_self->display_frame(next);
+                            }
+                        });
+                    }
+                    return;
+                }
             }
         }
     } else {
         ve::log::info("ViewerPanel::display_frame calling update_frame_display (CPU path)");
         update_frame_display();
+        if (auto timer = frame.timing) {
+            timer->afterConversion();
+            timer->afterUpload();
+            timer->endAndMaybeLog("TIMING_CPU");
+        }
         ve::log::info("ViewerPanel::display_frame update_frame_display completed");
     }
 
@@ -306,6 +450,10 @@ void ViewerPanel::display_frame(const ve::decode::VideoFrame& frame) {
         QPointer<ViewerPanel> safe_self(this);
         QTimer::singleShot(0, this, [safe_self, next]() {
             if (safe_self && !safe_self->destroying_.load(std::memory_order_acquire)) {
+                if (safe_self->playback_controller_ && safe_self->playback_controller_->isStopping()) {
+                    ve::log::debug("ViewerPanel lambda: playback stopping – aborting UI work");
+                    return;
+                }
                 safe_self->display_frame(next);
             }
         });
@@ -337,6 +485,12 @@ void ViewerPanel::onUiFrame(UiImageFramePtr frame) {
         
         if (safe_self->destroying_.load(std::memory_order_acquire)) {
             ve::log::debug("ViewerPanel lambda called on destroying widget - aborting");
+            return;
+        }
+
+        if (safe_self->playback_controller_ &&
+            safe_self->playback_controller_->isStopping()) {
+            ve::log::debug("ViewerPanel lambda: playback stopping – aborting UI work");
             return;
         }
         
@@ -523,7 +677,11 @@ QPixmap ViewerPanel::convert_frame_to_pixmap(const ve::decode::VideoFrame& frame
 }
 
 void ViewerPanel::on_play_pause_clicked() { emit play_pause_requested(); }
-void ViewerPanel::on_stop_clicked() { emit stop_requested(); }
+void ViewerPanel::on_stop_clicked() {
+    if (playback_controller_) {
+        playback_controller_->stopAsync();
+    }
+}
 void ViewerPanel::on_position_slider_changed(int value) { if (!playback_controller_) return; int64_t dur = playback_controller_->duration_us(); emit seek_requested((dur * value)/1000); }
 void ViewerPanel::on_step_forward_clicked() { if (playback_controller_) playback_controller_->step_once(); }
 void ViewerPanel::on_step_backward_clicked() { if (!playback_controller_) return; int64_t fd = playback_controller_->frame_duration_guess_us(); if (fd<=0) fd = 1000000/30; int64_t cur = playback_controller_->current_time_us(); int64_t tgt = cur - fd; if (tgt<0) tgt=0; playback_controller_->seek(tgt); playback_controller_->step_once(); }
@@ -612,6 +770,11 @@ void ViewerPanel::onUiFrameReady(UiImageFramePtr frame) {
     // Defer execution to avoid potential timing issues
     QTimer::singleShot(0, this, [self, frame]() {
         if (!self || self->destroying_.load(std::memory_order_acquire)) {
+            return;
+        }
+
+        if (self->playback_controller_ && self->playback_controller_->isStopping()) {
+            ve::log::debug("ViewerPanel lambda: playback stopping – aborting UI work");
             return;
         }
         

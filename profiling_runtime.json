@@ -1,14 +1,14 @@
 {
   "samples": [
-    { "name": "to_rgba_scaled_view", "count": 6, "total_ms": 24.6863, "avg_ms": 4.11438, "min_ms": 3.5001, "max_ms": 5.1445, "p50_ms": 3.5934, "p95_ms": 4.9506 },
-    { "name": "gl_widget.paintGL", "count": 9, "total_ms": 8.171, "avg_ms": 0.907889, "min_ms": 0.0032, "max_ms": 3.323, "p50_ms": 0.0071, "p95_ms": 2.1021 },
-    { "name": "to_rgba_scaled_view.sws_scale", "count": 6, "total_ms": 21.8162, "avg_ms": 3.63603, "min_ms": 3.4605, "max_ms": 3.9127, "p50_ms": 3.5633, "p95_ms": 3.7684 },
-    { "name": "playback.cache_hit", "count": 1, "total_ms": 2.5015, "avg_ms": 2.5015, "min_ms": 2.5015, "max_ms": 2.5015, "p50_ms": 2.5015, "p95_ms": 2.5015 },
-    { "name": "to_rgba_scaled_view.ffmpeg", "count": 6, "total_ms": 22.2159, "avg_ms": 3.70265, "min_ms": 3.472, "max_ms": 3.9215, "p50_ms": 3.5909, "p95_ms": 3.8747 },
-    { "name": "viewer.display_frame", "count": 6, "total_ms": 155.605, "avg_ms": 25.9342, "min_ms": 23.6067, "max_ms": 29.8079, "p50_ms": 24.9893, "p95_ms": 27.6379 },
-    { "name": "gl_widget.upload.pbo.map", "count": 4, "total_ms": 3.3617, "avg_ms": 0.840425, "min_ms": 0.4993, "max_ms": 1.1459, "p50_ms": 0.5887, "p95_ms": 1.1278 },
-    { "name": "gl_widget.upload.pbo.tex", "count": 4, "total_ms": 0.0063, "avg_ms": 0.001575, "min_ms": 0.0007, "max_ms": 0.0041, "p50_ms": 0.0007, "p95_ms": 0.0008 },
-    { "name": "gl_widget.upload.pbo", "count": 4, "total_ms": 3.5096, "avg_ms": 0.8774, "min_ms": 0.512, "max_ms": 1.2333, "p50_ms": 0.6, "p95_ms": 1.1643 },
-    { "name": "gl_widget.draw", "count": 4, "total_ms": 3.2772, "avg_ms": 0.8193, "min_ms": 0.7683, "max_ms": 0.9229, "p50_ms": 0.7884, "p95_ms": 0.7976 }
+    { "name": "to_rgba_scaled_view", "count": 3, "total_ms": 13.8329, "avg_ms": 4.61097, "min_ms": 3.7345, "max_ms": 5.4653, "p50_ms": 4.6331, "p95_ms": 4.6331 },
+    { "name": "gl_widget.paintGL", "count": 7, "total_ms": 8.1449, "avg_ms": 1.16356, "min_ms": 0.0034, "max_ms": 7.1441, "p50_ms": 0.004, "p95_ms": 0.9807 },
+    { "name": "to_rgba_scaled_view.sws_scale", "count": 3, "total_ms": 10.8267, "avg_ms": 3.6089, "min_ms": 3.4594, "max_ms": 3.8015, "p50_ms": 3.5658, "p95_ms": 3.5658 },
+    { "name": "playback.cache_hit", "count": 1, "total_ms": 6.4835, "avg_ms": 6.4835, "min_ms": 6.4835, "max_ms": 6.4835, "p50_ms": 6.4835, "p95_ms": 6.4835 },
+    { "name": "to_rgba_scaled_view.ffmpeg", "count": 3, "total_ms": 11.5075, "avg_ms": 3.83583, "min_ms": 3.4779, "max_ms": 4.2982, "p50_ms": 3.7314, "p95_ms": 3.7314 },
+    { "name": "viewer.display_frame", "count": 3, "total_ms": 95.08, "avg_ms": 31.6933, "min_ms": 29.0747, "max_ms": 33.9904, "p50_ms": 32.0149, "p95_ms": 32.0149 },
+    { "name": "gl_widget.upload.pbo.map", "count": 2, "total_ms": 1.8317, "avg_ms": 0.91585, "min_ms": 0.8218, "max_ms": 1.0099, "p50_ms": 0.8218, "p95_ms": 0.8218 },
+    { "name": "gl_widget.upload.pbo.tex", "count": 2, "total_ms": 0.0047, "avg_ms": 0.00235, "min_ms": 0.0009, "max_ms": 0.0038, "p50_ms": 0.0009, "p95_ms": 0.0009 },
+    { "name": "gl_widget.upload.pbo", "count": 2, "total_ms": 2.0425, "avg_ms": 1.02125, "min_ms": 0.8361, "max_ms": 1.2064, "p50_ms": 0.8361, "p95_ms": 0.8361 },
+    { "name": "gl_widget.draw", "count": 2, "total_ms": 0.6154, "avg_ms": 0.3077, "min_ms": 0.1335, "max_ms": 0.4819, "p50_ms": 0.1335, "p95_ms": 0.1335 }
   ]
 }

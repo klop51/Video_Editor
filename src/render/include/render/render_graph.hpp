@@ -27,6 +27,7 @@ struct FrameRequest {
 struct FrameResult {
     bool success = false;
     // Future: GPU handle / CPU buffer etc.
+    bool request_cpu_fallback = false;
 };
 
 class RenderGraph {
@@ -36,6 +37,7 @@ public:
     virtual FrameResult render(const FrameRequest& req);
     virtual void set_viewport(int width, int height) { (void)width; (void)height; }
     virtual void set_brightness(float brightness) { (void)brightness; }
+    virtual void trim() {}
 };
 
 // GPU-enabled render graph
@@ -45,15 +47,22 @@ public:
     ~GpuRenderGraph();
     bool initialize(std::shared_ptr<ve::gfx::GraphicsDevice> device);
     FrameResult render(const FrameRequest& req) override;
+    void trim() override;
 
     // Set the current frame to render
     void set_current_frame(const ve::decode::VideoFrame& frame);
+
+    // ChatGPT Stop Token System: Frame acceptance control
+    void requestStop();
+    void setAcceptingFrames(bool on);
 
     // Set viewport dimensions
     void set_viewport(int width, int height) override;
 
     // Set effect parameters
     void set_brightness(float brightness) override;
+
+    unsigned int last_gpu_error() const;
 
 private:
     struct Impl;

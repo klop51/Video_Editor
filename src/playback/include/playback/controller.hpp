@@ -15,12 +15,54 @@
 #include <chrono>
 #include <algorithm>
 #include <unordered_map>
+#include <condition_variable>
+#include <deque>
 #include "cache/frame_cache.hpp"
 #include "../../timeline/include/timeline/timeline.hpp" // Need snapshot definition for timeline-based FPS
+#include "stop_token.hpp"
+
+template <typename T, size_t CAP = 8>
+struct BoundedQueue {
+    void push(T&& value) {
+        std::scoped_lock lk(m_);
+        if (queue_.size() >= CAP) {
+            queue_.pop_front();
+        }
+        queue_.emplace_back(std::move(value));
+    }
+
+    bool try_pop(T& out) {
+        std::scoped_lock lk(m_);
+        if (queue_.empty()) {
+            return false;
+        }
+        out = std::move(queue_.front());
+        queue_.pop_front();
+        return true;
+    }
+
+    void clear() {
+        std::scoped_lock lk(m_);
+        queue_.clear();
+    }
+
+private:
+    std::mutex m_;
+    std::deque<T> queue_;
+};
+
+// Forward declarations for stop coordination
+namespace ve::render {
+    class GpuRenderGraph;
+}
+
+namespace ve::audio {
+    class ProfessionalAudioMonitoringSystem;
+}
 
 namespace ve::playback {
 
-enum class PlaybackState { Stopped, Playing, Paused };
+enum class PlaybackState { Stopped, Playing, Paused, Stopping };
 
 class PlaybackController {
 public:
@@ -40,6 +82,10 @@ public:
     void play();
     void pause();
     void stop();
+    void requestStop();       // async, idempotent (trip stop flag + silence producers)
+    void stopAsync();         // async, never blocks caller (UI-safe)
+    void stopAndJoin();       // blocking join (call off UI thread)
+    bool isStopping() const { return stop_.load(std::memory_order_acquire); }
     bool seek(int64_t timestamp_us);
     // Decode exactly one frame at the current (post-seek) position then pause again
     void step_once();
@@ -79,6 +125,10 @@ public:
             timeline_audio_manager_->set_timeline(timeline_);
         }
     }
+    
+    // ChatGPT Stop Token System: Attach renderer for stop coordination
+    void set_renderer(ve::render::GpuRenderGraph* renderer) { renderer_ = renderer; }
+    void force_cpu_render_fallback(unsigned int error_code);
 
     // Audio control methods
     bool initialize_audio_pipeline();
@@ -122,6 +172,15 @@ private:
     void update_frame_stats(double frame_time_ms);
     void decode_one_frame_if_paused(int64_t seek_target_us);
     size_t calculate_optimal_cache_size() const;
+    void dispatch_video_frame(decode::VideoFrame&& frame);
+    void watchdogTick();
+    void start_watchdog();
+    void stop_watchdog();
+    void watchdog_loop();
+    
+    // Stop coordination helpers
+    void onSafetyTrip_();                    // edge-trigger safety → stop producers
+    bool waitForPlaybackExit_(int ms);       // bounded wait for thread exit
     
     // Timeline-driven playback methods
     bool decode_timeline_frame(int64_t timestamp_us);
@@ -135,6 +194,14 @@ private:
     ve::cache::FrameCache frame_cache_{calculate_optimal_cache_size()}; // Dynamic cache sizing
     std::thread playback_thread_;
     std::atomic<bool> thread_should_exit_{false};
+    
+    // Stop coordination system (one-shot, edge-triggered)
+    std::atomic<bool> running_{false};           // playback thread is alive
+    std::atomic<bool> stop_{false};              // global stop flag (one-shot)
+    std::condition_variable_any wake_cv_;        // wake decode loop if waiting
+    std::atomic<bool> safety_tripped_{false};    // additional tracking
+    std::atomic<bool> safety_log_emitted_{false};
+    
     std::atomic<PlaybackState> state_{PlaybackState::Stopped};
     std::atomic<int64_t> current_time_us_{0};
     std::atomic<bool> seek_requested_{false};
@@ -163,6 +230,9 @@ private:
     std::atomic<double> total_frame_time_ms_{0.0};
     std::atomic<int64_t> cache_hits_{0};
     std::atomic<int64_t> cache_lookups_{0};
+    
+    // Transient frame queue (drain on stop, don't touch callback registrations)
+    BoundedQueue<decode::VideoFrame, 8> frame_queue_;
     
     // 60 FPS performance tracking
     std::atomic<int64_t> frame_drops_60fps_{0};
@@ -194,6 +264,7 @@ private:
     std::unique_ptr<ve::audio::AudioPipeline> audio_pipeline_;
     std::unique_ptr<ve::audio::TimelineAudioManager> timeline_audio_manager_;
     CallbackId audio_callback_id_{0};
+    std::atomic<bool> audio_callback_registered_{false};
     
     // Probed audio characteristics for universal video file compatibility
     uint32_t probed_audio_sample_rate_{48000};  // Video file's native format
@@ -211,6 +282,18 @@ private:
 
     // Master switch to enable/disable video decoding in playback loop
     std::atomic<bool> decode_enabled_{true};
+    
+    // ChatGPT Stop Token System: Renderer for stop coordination (non-owning)
+    ve::render::GpuRenderGraph* renderer_ = nullptr;
+
+    std::atomic<bool> gpu_forced_cpu_{false};
+    std::atomic<unsigned int> last_gpu_error_{0};
+
+    std::shared_ptr<ve::core::StageTimer> stage_timer_;
+
+    std::thread watchdog_thread_;
+    std::atomic<bool> watchdog_exit_{false};
+    std::atomic<size_t> watchdog_last_rss_{0};
 };
 
 } // namespace ve::playback

@@ -30,17 +30,18 @@ static void on_sigfpe (int)  { fprintf(stderr, "[CRASH] SIGFPE\n");  if (IsDebug
 void ve::install_crash_traps() {
     // don't show CRT message boxes; let us break/log
     _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
-    
-    // SHUTDOWN CRASH FIX: Completely disable debug assertions to prevent 0x80000003 storm
-    // This is necessary because debug builds trigger hundreds of assertions per second during audio processing
+
+    // SHUTDOWN CRASH FIX: Silence CRT assertion dialogs; stack traces are handled by CrashHandler
     _CrtSetReportMode(_CRT_ASSERT, 0);
     _CrtSetReportMode(_CRT_ERROR, 0);
     _CrtSetReportMode(_CRT_WARN, 0);
-    
-    // Also disable debug heap checks which can trigger assertions
+
+#if !defined(_DEBUG)
+    // Release builds keep the lightweight heap checks disabled to avoid perf hits
     _CrtSetDbgFlag(0);
-    
-    fprintf(stderr, "[INFO] All debug assertions and heap checks disabled to prevent exception storm\n");
+#endif
+
+    fprintf(stderr, "[INFO] CRT assertions silenced; debug heap enabled in debug builds\n");
 
     // invalid parameter & purecall → break here (very common with WASAPI/ReleaseBuffer misuse)
     _set_invalid_parameter_handler([](const wchar_t* e, const wchar_t* /*f*/, const wchar_t* file, unsigned line, uintptr_t){

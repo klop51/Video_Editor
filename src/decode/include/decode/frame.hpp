@@ -4,6 +4,10 @@
 #include <memory>
 #include <string>
 
+namespace ve::core {
+    class StageTimer;
+}
+
 namespace ve::decode {
 
 enum class PixelFormat { 
@@ -99,6 +103,7 @@ struct VideoFrame {
     ColorSpace color_space = ColorSpace::Unknown;
     ColorRange color_range = ColorRange::Unknown;
     std::vector<uint8_t> data; // packed or planar (future: separate planes)
+    std::shared_ptr<ve::core::StageTimer> timing;
 };
 
 struct AudioFrame {

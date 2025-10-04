@@ -16,6 +16,7 @@ option(VE_ENABLE_DETAILED_PROFILING "Enable fine-grained (inner loop / GPU sub-s
 option(VE_HEAP_DEBUG "Enable extra heap guard checks in hot paths (Windows CRT + manual guards)" OFF)
 option(VE_GL_PBO_TRIPLE "Use triple PBO ring instead of double for GL upload (reduces chance of stall)" OFF)
 option(VE_GL_PBO_PERSISTENT_MAP "Experimental: persistently map PBOs (if driver supports)" OFF)
+option(VE_BUILD_AUDIO_VALIDATION "Build standalone audio validation tools" OFF)
 
 # Configure debug settings globally
 if(ENABLE_RUNTIME_DEBUG)
@@ -271,6 +272,7 @@ if(ENABLE_TOOLS)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
     )
 
+    if(VE_BUILD_AUDIO_VALIDATION)
     # AUDIO ENGINE ROADMAP Phase 1 Week 1 validation executable
     add_executable(audio_engine_phase1_week1_validation
         src/audio/validation/audio_engine_phase1_week1_validation_simple.cpp
@@ -878,6 +880,8 @@ if(ENABLE_TOOLS)
         src/media_io/include
         src/core/include
     )
+
+    endif() # VE_BUILD_AUDIO_VALIDATION
 
     # FORMAT_SUPPORT_ROADMAP.md Phase 1 Week 1 validation executable
     add_executable(format_support_phase1_week1_validation
