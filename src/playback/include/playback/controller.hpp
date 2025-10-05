@@ -17,6 +17,8 @@
 #include <unordered_map>
 #include <condition_variable>
 #include <deque>
+#include <cstdint>
+#include <limits>
 #include "cache/frame_cache.hpp"
 #include "../../timeline/include/timeline/timeline.hpp" // Need snapshot definition for timeline-based FPS
 #include "stop_token.hpp"
@@ -172,11 +174,18 @@ private:
     void update_frame_stats(double frame_time_ms);
     void decode_one_frame_if_paused(int64_t seek_target_us);
     size_t calculate_optimal_cache_size() const;
-    void dispatch_video_frame(decode::VideoFrame&& frame);
+    void dispatch_video_frame(decode::VideoFrame&& frame, bool force_present = false);
+    void deliver_video_frame_now(decode::VideoFrame&& frame);
     void watchdogTick();
     void start_watchdog();
     void stop_watchdog();
     void watchdog_loop();
+    void emit_safe_mode_telemetry_(double audio_clock_sec,
+                                   double predicted_video_sec,
+                                   double buffer_fill_percent,
+                                   double pipeline_drift_ms,
+                                   uint32_t audio_underruns,
+                                   bool audio_ready);
     
     // Stop coordination helpers
     void onSafetyTrip_();                    // edge-trigger safety → stop producers
@@ -233,6 +242,11 @@ private:
     
     // Transient frame queue (drain on stop, don't touch callback registrations)
     BoundedQueue<decode::VideoFrame, 8> frame_queue_;
+    struct PendingVideoFrame {
+        decode::VideoFrame frame;
+    };
+    std::deque<PendingVideoFrame> pending_video_frames_;
+    std::mutex pending_video_mutex_;
     
     // 60 FPS performance tracking
     std::atomic<int64_t> frame_drops_60fps_{0};
@@ -282,6 +296,33 @@ private:
 
     // Master switch to enable/disable video decoding in playback loop
     std::atomic<bool> decode_enabled_{true};
+    std::atomic<bool> prebuffering_{true};
+    std::chrono::steady_clock::time_point prebuffer_start_time_{};
+    std::chrono::steady_clock::time_point wall_clock_play_origin_{};
+    double wall_clock_pts_origin_sec_{0.0};
+
+    // A/V clock mapping learned at first presented video frame
+    std::atomic<bool> av_map_ready_{false};
+    double av_map_audio0_sec_ = 0.0;   // audio device clock at first video present
+    double av_map_video0_sec_ = 0.0;   // PTS (seconds) of that first presented video
+    double video_latency_sec_  = 0.050; // small present latency target (50 ms)
+
+    // drop/wait slack (tune to taste)
+    double max_drop_ahead_ms_  = 120.0; // drop if audio is >120ms ahead of target
+    double max_wait_behind_ms_ = 90.0;  // allow up to 90ms behind before we force-present
+
+    double audio_master_latency_seconds_{0.20};
+    double prebuffer_threshold_percent_{50.0};
+    double underrun_recover_percent_{70.0};
+    std::chrono::steady_clock::time_point last_audio_telemetry_log_{};
+    uint32_t last_logged_underruns_{0};
+    double last_logged_buffer_fill_{0.0};
+    double last_logged_drift_ms_{0.0};
+    int64_t last_logged_frame_count_{0};
+    double last_logged_audio_clock_{-1.0};
+    double last_logged_estimated_fps_{0.0};
+    size_t last_logged_pending_frames_{0};
+    bool last_logged_audio_ready_{false};
     
     // ChatGPT Stop Token System: Renderer for stop coordination (non-owning)
     ve::render::GpuRenderGraph* renderer_ = nullptr;
@@ -294,6 +335,9 @@ private:
     std::thread watchdog_thread_;
     std::atomic<bool> watchdog_exit_{false};
     std::atomic<size_t> watchdog_last_rss_{0};
+
+    double predict_present_time_on_audio_clock(double frame_pts_sec,
+                                               double audio_clock_now_sec) const;
 };
 
 } // namespace ve::playback

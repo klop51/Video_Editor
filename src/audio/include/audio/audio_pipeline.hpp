@@ -14,6 +14,7 @@
 #include <thread>
 #include <functional>
 #include <vector>
+#include <algorithm>
 
 // FFmpeg resampler
 struct SwrContext;
@@ -65,6 +66,10 @@ struct AudioPipelineConfig {
     uint32_t max_channels = 16;
     bool enable_clipping_protection = true;
     bool enable_output = true;
+    double target_latency_seconds = 0.20;      // desired steady-state latency (~200 ms)
+    double prebuffer_threshold = 0.45;         // fraction of target fill before unpausing (45%)
+    double underrun_recovery_threshold = 0.70; // fraction to regain after underrun before resuming
+    double drift_window_seconds = 0.50;        // resampler compensation horizon (seconds)
     
     // Professional monitoring configuration
     bool enable_professional_monitoring = false;
@@ -97,6 +102,25 @@ public:
     bool stop_output();
     bool pause_output();
     bool resume_output();
+
+    // Device timing and buffer telemetry (thread-safe)
+    double device_clock_seconds() const;
+    double buffer_fill_percent() const;
+    uint32_t buffer_underruns() const;
+    void reset_buffer_underruns();
+    bool prebuffer_ready() const;
+    void reset_prebuffer_state();
+
+    bool audio_ready() const { return audio_ready_.load(std::memory_order_acquire); }
+    size_t fifo_frames_available() const {
+        const auto channels = std::max<uint16_t>(config_.channel_count, 1);
+        const size_t samples = fifo_size_.load(std::memory_order_acquire);
+        return samples / static_cast<size_t>(channels);
+    }
+
+    // Drift and discontinuity controls
+    void apply_clock_drift(double drift_seconds, double measurement_window_seconds);
+    void flush(bool drop_fifo = true);
 
     // Mixer integration
     uint32_t add_audio_channel(const std::string& name = "Playback",
@@ -147,6 +171,7 @@ private:
 
     // Internal components
     AudioPipelineConfig config_;
+    const bool safe_mode_enabled_;
     std::unique_ptr<SimpleMixer> mixer_;
     std::unique_ptr<AudioOutput> output_;
 
@@ -161,6 +186,8 @@ private:
     void processing_thread_main();
 
     // Audio buffering
+    std::atomic<size_t> latency_target_samples_{0};
+    std::atomic<bool> prebuffer_complete_{false};
     std::vector<std::shared_ptr<AudioFrame>> audio_buffer_;
     mutable std::mutex buffer_mutex_;
     std::atomic<size_t> buffer_read_pos_{0};
@@ -174,6 +201,12 @@ private:
     std::atomic<size_t> fifo_tail_{0};   // read index (consumer)
     std::atomic<size_t> fifo_size_{0};   // valid float samples
     size_t fifo_capacity_ = 0;           // total float slots
+    std::atomic<bool> recovering_from_underrun_{false};
+    std::atomic<bool> audio_ready_{false};
+    std::atomic<bool> device_start_pending_{false};
+    std::atomic<bool> start_deferred_logged_{false};
+    size_t prebuffer_target_frames_ = 0;
+    std::mutex output_start_mutex_;
     // NOTE: SPSC ring -> no mutex needed for normal push/pop
 
     // --- Resampler state (persistent across frames) ---
@@ -193,11 +226,10 @@ private:
     std::atomic<size_t> target_fifo_samples_{0};  // interleaved samples (frames*channels * K)
     double fifo_level_ema_ = 0.0;                 // smooth FIFO level (samples)
     std::atomic<int> pending_comp_samples_{0};    // to be applied on next convert()
+    std::atomic<int> pending_drift_ppm_{0};
     void update_drift_control(uint32_t callback_frames, uint16_t channels);
 
     // Gap concealment state: remember last output sample per channel
-    std::vector<float> last_tail_; // size == config_.channel_count, updated each callback
-
     // Helpers
     void fifo_init_seconds(double seconds);
     size_t fifo_write(const float* samples, size_t count); // returns written
@@ -210,6 +242,7 @@ private:
     // Statistics
     mutable std::mutex stats_mutex_;
     AudioPipelineStats stats_;
+    mutable std::atomic<uint32_t> underruns_snapshot_{0};
 
     // Error handling
     mutable std::mutex error_mutex_;
@@ -235,6 +268,8 @@ private:
     
     // Audio callback for AudioOutput integration
     size_t audio_render_callback(void* buffer, uint32_t frame_count, SampleFormat format, uint16_t channels);
+
+    bool probe_start_output_locked();
 };
 
 } // namespace ve::audio

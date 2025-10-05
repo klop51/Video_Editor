@@ -9,6 +9,7 @@
 
 // Include decoder crash investigation logging with thread tracking
 #include <sstream>
+#include <iomanip>
 #include <thread>
 #include <unordered_map>
 
@@ -19,6 +20,8 @@
 #include <chrono>
 #include <thread>
 #include <algorithm>
+#include <string>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <cstdlib>
@@ -45,6 +48,23 @@
 #include <windows.h>
 #include <psapi.h>
 #endif
+
+// Safe-mode feature toggles (default ON, overridable via env)
+static bool env_flag_enabled(const char* name) {
+    if (const char* value = std::getenv(name)) {
+        // Treat "0", "off", "false" as disabled. Everything else enables.
+        std::string v{value};
+        std::transform(v.begin(), v.end(), v.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (v == "0" || v == "off" || v == "false") {
+            return false;
+        }
+        return true;
+    }
+    return true; // default ON
+}
+
+static bool kSafeAudio = env_flag_enabled("VE_AUDIO_SAFE");
+static bool kSafeVideo = env_flag_enabled("VE_VIDEO_SAFE");
 
 // ChatGPT optimization: High-precision frame pacing helper
 // Sleep most of the interval, spin the final ~200µs for accuracy.
@@ -158,9 +178,23 @@ inline bool pace_next_continuous(std::chrono::time_point<Clock>& last_time,
     
     return false; // Skip frame, not yet time
 }
+
+inline double to_seconds(int64_t pts_us) {
+    return static_cast<double>(pts_us) / 1'000'000.0;
+}
 } // namespace
 
 namespace ve::playback {
+
+double PlaybackController::predict_present_time_on_audio_clock(double frame_pts_sec,
+                                                               double audio_clock_now_sec) const {
+    if (!av_map_ready_.load(std::memory_order_acquire)) {
+        return audio_clock_now_sec;
+    }
+
+    const double dt_video = frame_pts_sec - av_map_video0_sec_;
+    return av_map_audio0_sec_ + dt_video + video_latency_sec_;
+}
 
 PlaybackController::PlaybackController() {
     playback_thread_ = std::thread(&PlaybackController::playback_thread_main, this);
@@ -566,6 +600,10 @@ void PlaybackController::stopAndJoin() {
     
     // 3) Drain transient queues (do NOT clear callback registrations)
     frame_queue_.clear();
+    {
+        std::scoped_lock lk(pending_video_mutex_);
+        pending_video_frames_.clear();
+    }
     ve::log::info("PlaybackController::stopAndJoin: Cleared frame queue");
     
     // 4) Free heavy resources AFTER threads are quiet (order matters!)
@@ -653,7 +691,32 @@ void PlaybackController::update_frame_stats(double frame_time_ms) {
     stats_.avg_frame_time_ms = total / static_cast<double>(count);
 }
 
-void PlaybackController::dispatch_video_frame(decode::VideoFrame&& frame) {
+void PlaybackController::dispatch_video_frame(decode::VideoFrame&& frame, bool force_present) {
+    if (force_present || !audio_pipeline_ || state_.load(std::memory_order_acquire) != PlaybackState::Playing) {
+        deliver_video_frame_now(std::move(frame));
+        return;
+    }
+
+    constexpr size_t kMaxPendingFrames = 12;
+    PendingVideoFrame dropped;
+    bool dropped_frame = false;
+    {
+        std::scoped_lock lk(pending_video_mutex_);
+    pending_video_frames_.push_back(PendingVideoFrame{std::move(frame)});
+        if (pending_video_frames_.size() > kMaxPendingFrames) {
+            dropped = std::move(pending_video_frames_.front());
+            pending_video_frames_.pop_front();
+            dropped_frame = true;
+        }
+    }
+
+    if (dropped_frame) {
+        ve::log::warn("PlaybackController: dropping stale video frame pts=" + std::to_string(dropped.frame.pts) +
+                      " due to pending queue saturation");
+    }
+}
+
+void PlaybackController::deliver_video_frame_now(decode::VideoFrame&& frame) {
     frame_queue_.push(std::move(frame));
 
     decode::VideoFrame queued;
@@ -738,6 +801,91 @@ void PlaybackController::playback_thread_main() {
     auto last_frame_time = std::chrono::steady_clock::now();
     bool first_frame = true;
     const int64_t target_frame_duration_us = fps_to_us(probed_fps_);
+    auto present_due_frames = [&](std::chrono::steady_clock::time_point frame_time, bool force_present) {
+        bool presented = false;
+        while (true) {
+            int64_t frame_pts_us = 0;
+            double frame_pts_sec = 0.0;
+            {
+                std::scoped_lock lk(pending_video_mutex_);
+                if (pending_video_frames_.empty()) {
+                    break;
+                }
+                frame_pts_us = pending_video_frames_.front().frame.pts;
+                frame_pts_sec = to_seconds(frame_pts_us);
+            }
+
+            bool audio_ready_local = audio_pipeline_ && audio_pipeline_->audio_ready();
+            double audio_now_sec = -1.0;
+            if (audio_pipeline_ && audio_ready_local) {
+                audio_now_sec = audio_pipeline_->device_clock_seconds();
+            }
+
+            if (!audio_ready_local || audio_now_sec < 0.0) {
+                if (wall_clock_play_origin_.time_since_epoch().count() == 0) {
+                    wall_clock_play_origin_ = frame_time;
+                    wall_clock_pts_origin_sec_ = static_cast<double>(current_time_us_.load(std::memory_order_relaxed)) / 1'000'000.0;
+                }
+                audio_now_sec = wall_clock_pts_origin_sec_ +
+                    std::chrono::duration<double>(std::chrono::steady_clock::now() - wall_clock_play_origin_).count();
+            }
+
+            const double target_sec = predict_present_time_on_audio_clock(frame_pts_sec, audio_now_sec);
+            const double lead_ms = (audio_now_sec - target_sec) * 1000.0; // positive => audio ahead
+            const double lag_ms = -lead_ms;                               // positive => we are early
+
+            if (!force_present && lag_ms > 0.0 && lag_ms <= max_wait_behind_ms_) {
+                break; // wait for audio to catch up
+            }
+
+            PendingVideoFrame pending;
+            {
+                std::scoped_lock lk(pending_video_mutex_);
+                if (pending_video_frames_.empty()) {
+                    break;
+                }
+                pending = std::move(pending_video_frames_.front());
+                pending_video_frames_.pop_front();
+            }
+
+            if (lead_ms > max_drop_ahead_ms_) {
+                ve::log::warn("PlaybackController: dropping video frame pts=" + std::to_string(pending.frame.pts) +
+                              " (audio lead=" + std::to_string(lead_ms) + " ms)");
+                continue;
+            }
+
+            if (!av_map_ready_.load(std::memory_order_acquire) && audio_pipeline_ && audio_pipeline_->audio_ready()) {
+                av_map_audio0_sec_ = audio_now_sec;
+                av_map_video0_sec_ = frame_pts_sec;
+                av_map_ready_.store(true, std::memory_order_release);
+                ve::log::info("AV map learned: audio0=" + std::to_string(av_map_audio0_sec_) +
+                              "s, video0=" + std::to_string(av_map_video0_sec_) + "s");
+            }
+
+            auto now = std::chrono::steady_clock::now();
+            auto delta_ms = std::chrono::duration<double, std::milli>(now - last_frame_time).count();
+            if (delta_ms < 0.0) {
+                delta_ms = 0.0;
+            }
+            if (first_frame) {
+                delta_ms = 0.0;
+            }
+            update_frame_stats(delta_ms);
+
+            current_time_us_.store(pending.frame.pts);
+            deliver_video_frame_now(std::move(pending.frame));
+            last_frame_time = now;
+            first_frame = false;
+            presented = true;
+
+            if (audio_pipeline_ && audio_pipeline_->audio_ready()) {
+                double drift_sec = (audio_now_sec - target_sec);
+                audio_pipeline_->apply_clock_drift(drift_sec, std::max(0.1, audio_master_latency_seconds_));
+                last_logged_drift_ms_ = drift_sec * 1000.0;
+            }
+        }
+        return presented;
+    };
     
     while (!stop_.load(std::memory_order_acquire)) {
         // SAFETY cap - check early before any processing
@@ -760,6 +908,120 @@ void PlaybackController::playback_thread_main() {
         
         auto frame_start = std::chrono::steady_clock::now();
 
+        double audio_clock_sec = audio_pipeline_ ? audio_pipeline_->device_clock_seconds() : -1.0;
+        double buffer_fill_percent = 0.0;
+        uint32_t audio_underruns = 0;
+        bool audio_ready = !audio_pipeline_;
+
+        if (audio_pipeline_) {
+            buffer_fill_percent = audio_pipeline_->buffer_fill_percent();
+            audio_underruns = audio_pipeline_->buffer_underruns();
+            audio_ready = audio_pipeline_->audio_ready();
+
+            if (!audio_ready) {
+                if (!prebuffering_.exchange(true)) {
+                    ve::log::info("Audio prebuffer engaged; waiting for FIFO fill");
+                }
+                if (prebuffer_start_time_.time_since_epoch().count() == 0) {
+                    prebuffer_start_time_ = frame_start;
+                }
+                if (wall_clock_play_origin_.time_since_epoch().count() == 0) {
+                    wall_clock_play_origin_ = frame_start;
+                    wall_clock_pts_origin_sec_ = static_cast<double>(current_time_us_.load(std::memory_order_relaxed)) / 1'000'000.0;
+                }
+                last_frame_time = frame_start;
+                first_frame = true;
+            } else if (prebuffering_.exchange(false)) {
+                ve::log::info("Audio prebuffer satisfied; syncing video to audio clock");
+                last_frame_time = frame_start;
+                first_frame = true;
+                prebuffer_start_time_ = {};
+                wall_clock_play_origin_ = {};
+                av_map_ready_.store(false, std::memory_order_release);
+            }
+
+            if (audio_underruns > last_logged_underruns_) {
+                ve::log::warn("Audio underrun detected (total=" + std::to_string(audio_underruns) + ")");
+                audio_pipeline_->reset_prebuffer_state();
+                audio_pipeline_->reset_buffer_underruns();
+                prebuffering_.store(true);
+                prebuffer_start_time_ = std::chrono::steady_clock::now();
+                wall_clock_play_origin_ = prebuffer_start_time_;
+                wall_clock_pts_origin_sec_ = static_cast<double>(current_time_us_.load(std::memory_order_relaxed)) / 1'000'000.0;
+                av_map_ready_.store(false, std::memory_order_release);
+                {
+                    std::scoped_lock lk(pending_video_mutex_);
+                    pending_video_frames_.clear();
+                }
+                last_logged_underruns_ = 0;
+            }
+        } else {
+            if (wall_clock_play_origin_.time_since_epoch().count() == 0) {
+                wall_clock_play_origin_ = frame_start;
+                wall_clock_pts_origin_sec_ = static_cast<double>(current_time_us_.load(std::memory_order_relaxed)) / 1'000'000.0;
+            }
+        }
+
+        if (!audio_ready && wall_clock_play_origin_.time_since_epoch().count() == 0) {
+            wall_clock_play_origin_ = frame_start;
+            wall_clock_pts_origin_sec_ = static_cast<double>(current_time_us_.load(std::memory_order_relaxed)) / 1'000'000.0;
+        }
+
+        bool presented = present_due_frames(frame_start, false);
+
+        double predicted_video_sec = -1.0;
+        if (audio_pipeline_) {
+            if (audio_ready) {
+                if (av_map_ready_.load(std::memory_order_acquire)) {
+                    predicted_video_sec = av_map_video0_sec_ +
+                        (audio_clock_sec - av_map_audio0_sec_) - video_latency_sec_;
+                } else {
+                    predicted_video_sec = audio_clock_sec;
+                }
+            } else if (wall_clock_play_origin_.time_since_epoch().count() != 0) {
+                predicted_video_sec = wall_clock_pts_origin_sec_ +
+                    std::chrono::duration<double>(frame_start - wall_clock_play_origin_).count();
+            }
+        } else {
+            if (wall_clock_play_origin_.time_since_epoch().count() != 0) {
+                predicted_video_sec = wall_clock_pts_origin_sec_ +
+                    std::chrono::duration<double>(frame_start - wall_clock_play_origin_).count();
+            } else {
+                predicted_video_sec = to_seconds(current_time_us_.load(std::memory_order_relaxed));
+            }
+        }
+
+        if (audio_pipeline_) {
+            emit_safe_mode_telemetry_(audio_clock_sec,
+                                      predicted_video_sec,
+                                      buffer_fill_percent,
+                                      last_logged_drift_ms_,
+                                      audio_underruns,
+                                      audio_ready);
+
+            if (!audio_ready) {
+                size_t pending_frames = 0;
+                {
+                    std::scoped_lock lk(pending_video_mutex_);
+                    pending_frames = pending_video_frames_.size();
+                }
+
+                if (pending_frames > 0) {
+                    if (prebuffer_start_time_.time_since_epoch().count() == 0) {
+                        prebuffer_start_time_ = frame_start;
+                    }
+
+                    constexpr auto kPrebufferTimeout = std::chrono::milliseconds(250);
+                    const auto now = std::chrono::steady_clock::now();
+                    if (!presented && (now - prebuffer_start_time_ > kPrebufferTimeout)) {
+                        ve::log::warn("Audio prebuffer timeout – presenting video frames against wall clock");
+                        present_due_frames(now, true);
+                        prebuffer_start_time_ = now;
+                    }
+                }
+            }
+        }
+
         // Refresh timeline snapshot if timeline attached and version changed
         if(timeline_) {
             uint64_t v = timeline_->version();
@@ -778,6 +1040,17 @@ void PlaybackController::playback_thread_main() {
                 ve::log::info("Seek completed to: " + std::to_string(seek_target) + " us");
                 first_frame = true;                                   // baseline will be re-established
                 last_frame_time = std::chrono::steady_clock::now();                // reset clock reference
+                {
+                    std::scoped_lock lk(pending_video_mutex_);
+                    pending_video_frames_.clear();
+                }
+                if (audio_pipeline_) {
+                    audio_pipeline_->flush(true);
+                    audio_pipeline_->reset_prebuffer_state();
+                    audio_pipeline_->reset_buffer_underruns();
+                    prebuffering_.store(true);
+                    prebuffer_start_time_ = std::chrono::steady_clock::now();
+                }
                 // If not playing, decode a preview frame immediately
                 if(state_.load() != PlaybackState::Playing) {
                     decode_one_frame_if_paused(seek_target);
@@ -825,16 +1098,28 @@ void PlaybackController::playback_thread_main() {
                 // VE_DEBUG_ONLY - DISABLED FOR PERFORMANCE:
                 // Processing frame logging causes video interruptions
                 
+                const bool audio_clock_locked = kSafeAudio && audio_pipeline_;
+
                 int64_t current_pts = current_time_us_.load();
-                
+            
                 if (is_timeline_mode) {
                     // Timeline-driven playback
                     if (decode_timeline_frame(current_pts)) {
                         // Timeline audio is handled by TimelineAudioManager
                         // Video frame dispatching is handled in decode_timeline_frame
                         // Update timing for next frame
-                        auto next_frame_delta = step_.next_delta_us();
-                        current_time_us_.store(current_pts + next_frame_delta);
+                        if (audio_clock_locked) {
+                            if (duration_us_ > 0 && current_pts >= duration_us_) {
+                                current_time_us_.store(duration_us_);
+                                set_state(ve::playback::PlaybackState::Stopped);
+                                ve::log::info("Reached end of timeline at: " + std::to_string(duration_us_) + " us (audio-locked) - stopping");
+                            } else {
+                                current_time_us_.store(current_pts);
+                            }
+                        } else {
+                            auto next_frame_delta = step_.next_delta_us();
+                            current_time_us_.store(current_pts + next_frame_delta);
+                        }
                     }
                 } else {
                     // Single-media playback (existing logic)
@@ -875,24 +1160,36 @@ void PlaybackController::playback_thread_main() {
                     vf.color_space = cached.color_space;
                     vf.color_range = cached.color_range;
                     dispatch_video_frame(std::move(vf));
+                    if (audio_pipeline_ && audio_ready) {
+                        present_due_frames(std::chrono::steady_clock::now(), false);
+                    }
                     // IMPORTANT: Advance time for next frame even when cache hits
                     // Prefer drift-proof step accumulator for fractional framerates
-                    int64_t delta = step_.next_delta_us();
-                    int64_t next_pts = single_media_pts + delta;
-                    if (duration_us_ > 0 && next_pts >= duration_us_) {
-                        current_time_us_.store(duration_us_);
-                        set_state(ve::playback::PlaybackState::Stopped);   // notify UI we're done
-                        ve::log::info("Reached end of stream at: " + std::to_string(duration_us_) + " us (cache hit path) - stopping");
-                        continue; // exit playback loop cleanly
-                    }
-                    current_time_us_.store(next_pts);
-                    // VE_DEBUG_ONLY - DISABLED: Time advancement logging causes performance issues
-                    // SDL-style continuous timing for improved A/V sync (prevent micro-timing drift)
-                    int64_t current_frame_count = frame_count_.load();
-                    if (!pace_next_continuous(last_continuous_time_, frame_timer_, target_frame_duration_us, first_continuous_frame_, static_cast<int>(current_frame_count))) {
-                        // Not yet time for next frame - continue playback loop
-                        std::this_thread::sleep_for(std::chrono::microseconds(100)); // Short sleep to prevent busy wait
-                        continue;
+                    if (audio_clock_locked) {
+                        current_time_us_.store(single_media_pts);
+                        if (duration_us_ > 0 && single_media_pts >= duration_us_) {
+                            current_time_us_.store(duration_us_);
+                            set_state(ve::playback::PlaybackState::Stopped);
+                            ve::log::info("Reached end of stream at: " + std::to_string(duration_us_) + " us (cache hit path, audio-locked) - stopping");
+                            continue;
+                        }
+                    } else {
+                        int64_t delta = step_.next_delta_us();
+                        int64_t next_pts = single_media_pts + delta;
+                        if (duration_us_ > 0 && next_pts >= duration_us_) {
+                            current_time_us_.store(duration_us_);
+                            set_state(ve::playback::PlaybackState::Stopped);   // notify UI we're done
+                            ve::log::info("Reached end of stream at: " + std::to_string(duration_us_) + " us (cache hit path) - stopping");
+                            continue; // exit playback loop cleanly
+                        }
+                        current_time_us_.store(next_pts);
+                        // SDL-style continuous timing for improved A/V sync (prevent micro-timing drift)
+                        int64_t current_frame_count = frame_count_.load();
+                        if (!pace_next_continuous(last_continuous_time_, frame_timer_, target_frame_duration_us, first_continuous_frame_, static_cast<int>(current_frame_count))) {
+                            // Not yet time for next frame - continue playback loop
+                            std::this_thread::sleep_for(std::chrono::microseconds(100)); // Short sleep to prevent busy wait
+                            continue;
+                        }
                     }
 
                     continue; // Skip decoding new frame this iteration
@@ -927,96 +1224,109 @@ void PlaybackController::playback_thread_main() {
                 
                 current_time_us_.store(video_frame->pts);
 
-                // Advance time for next frame (matching cache hit logic)
-                int64_t delta = step_.next_delta_us();
-                int64_t next_pts = video_frame->pts + delta;
-                if (duration_us_ > 0 && next_pts >= duration_us_) {
-                    // Don't advance beyond end of stream, let next iteration handle EOF
+                if (audio_clock_locked) {
+                    if (duration_us_ > 0 && video_frame->pts >= duration_us_) {
+                        set_state(ve::playback::PlaybackState::Stopped);
+                        ve::log::info("Reached end of stream at: " + std::to_string(duration_us_) + " us (audio-locked) - stopping");
+                        continue;
+                    }
                 } else {
-                    current_time_us_.store(next_pts);
+                    // Advance time for next frame (matching cache hit logic)
+                    int64_t delta = step_.next_delta_us();
+                    int64_t next_pts = video_frame->pts + delta;
+                    if (duration_us_ > 0 && next_pts >= duration_us_) {
+                        // Don't advance beyond end of stream, let next iteration handle EOF
+                    } else {
+                        current_time_us_.store(next_pts);
+                    }
                 }
 
                 const int frame_width = video_frame->width;
                 const int frame_height = video_frame->height;
                 dispatch_video_frame(std::move(*video_frame));
+                if (audio_pipeline_ && audio_ready) {
+                    present_due_frames(std::chrono::steady_clock::now(), false);
+                }
 
-                // Update frame stats immediately after frame dispatch for reliable FPS counting
-                auto frame_duration = std::chrono::duration<double, std::milli>(frame_start - last_frame_time);
-                update_frame_stats(frame_duration.count());
+                if (!audio_pipeline_) {
+                    // Update frame stats immediately after frame dispatch for reliable FPS counting
+                    auto frame_duration = std::chrono::duration<double, std::milli>(frame_start - last_frame_time);
+                    update_frame_stats(frame_duration.count());
 
-                // High-performance frame timing (same target for decode path)
-                if (!first_frame) {
-                    auto target_interval = std::chrono::microseconds(target_frame_duration_us);
-                    auto frame_end = std::chrono::steady_clock::now();
-                    auto actual_duration = frame_end - last_frame_time;
+                    // High-performance frame timing (same target for decode path)
+                    if (!first_frame) {
+                        auto target_interval = std::chrono::microseconds(target_frame_duration_us);
+                        auto frame_end = std::chrono::steady_clock::now();
+                        auto actual_duration = frame_end - last_frame_time;
 
-                    // Balanced optimization for 4K 60fps content - targeting 80-83% performance
-                    bool is_4k_60fps = (frame_width >= 3840 && frame_height >= 2160 && probed_fps_ >= 59.0);
-                    
-                    // Only sleep if we have time left in the frame interval
-                    if (actual_duration < target_interval) {
-                        auto sleep_time = target_interval - actual_duration;
+                        // Balanced optimization for 4K 60fps content - targeting 80-83% performance
+                        bool is_4k_60fps = (frame_width >= 3840 && frame_height >= 2160 && probed_fps_ >= 59.0);
                         
-                        if (is_4k_60fps) {
-                            // For 4K 60fps: Balanced sleep optimization for 80-83% performance
-                            // Reduce sleep for performance while maintaining stability
-                            if (sleep_time > std::chrono::microseconds(1500)) { // Sleep for 1.5ms+ gaps
-                                std::this_thread::sleep_for(sleep_time - std::chrono::microseconds(500));
-                            }
-                            // Brief spin-wait for final precision
-                            auto spin_start = std::chrono::high_resolution_clock::now();
-                            while (std::chrono::high_resolution_clock::now() - spin_start < std::chrono::microseconds(300)) {
-                                std::this_thread::yield();
-                            }
-                        } else if (probed_fps_ > 50.0) {
-                            // For other high frame rates: Standard precise timing
-                            std::this_thread::sleep_for(sleep_time);
-                        } else {
-                            // For lower frame rates, allow some tolerance
-                            if (sleep_time > std::chrono::microseconds(500)) {
+                        // Only sleep if we have time left in the frame interval
+                        if (actual_duration < target_interval) {
+                            auto sleep_time = target_interval - actual_duration;
+                            
+                            if (is_4k_60fps) {
+                                // For 4K 60fps: Balanced sleep optimization for 80-83% performance
+                                // Reduce sleep for performance while maintaining stability
+                                if (sleep_time > std::chrono::microseconds(1500)) { // Sleep for 1.5ms+ gaps
+                                    std::this_thread::sleep_for(sleep_time - std::chrono::microseconds(500));
+                                }
+                                // Brief spin-wait for final precision
+                                auto spin_start = std::chrono::high_resolution_clock::now();
+                                while (std::chrono::high_resolution_clock::now() - spin_start < std::chrono::microseconds(300)) {
+                                    std::this_thread::yield();
+                                }
+                            } else if (probed_fps_ > 50.0) {
+                                // For other high frame rates: Standard precise timing
                                 std::this_thread::sleep_for(sleep_time);
+                            } else {
+                                // For lower frame rates, allow some tolerance
+                                if (sleep_time > std::chrono::microseconds(500)) {
+                                    std::this_thread::sleep_for(sleep_time);
+                                }
+                            }
+                        } else if (is_4k_60fps) {
+                            // Frame is taking too long - log performance issue
+                            frame_overruns_60fps_.fetch_add(1);
+                            auto overrun_us = std::chrono::duration_cast<std::chrono::microseconds>(actual_duration - target_interval).count();
+                            if (overrun_us > 1000) { // Log if more than 1ms overrun
+                                ve::log::warn("4K 60fps frame overrun: " + std::to_string(overrun_us) + "us (total overruns: " + std::to_string(frame_overruns_60fps_.load()) + ")");
                             }
                         }
-                    } else if (is_4k_60fps) {
-                        // Frame is taking too long - log performance issue
-                        frame_overruns_60fps_.fetch_add(1);
-                        auto overrun_us = std::chrono::duration_cast<std::chrono::microseconds>(actual_duration - target_interval).count();
-                        if (overrun_us > 1000) { // Log if more than 1ms overrun
-                            ve::log::warn("4K 60fps frame overrun: " + std::to_string(overrun_us) + "us (total overruns: " + std::to_string(frame_overruns_60fps_.load()) + ")");
+                        
+                        // Periodic performance logging for 60fps content
+                        if (is_4k_60fps) {
+                            auto now = std::chrono::steady_clock::now();
+                            auto since_last_log = now - last_perf_log_;
+                            if (since_last_log > std::chrono::seconds(5)) { // Log every 5 seconds
+                                int64_t total_frames = frame_count_.load();
+                                int64_t overruns = frame_overruns_60fps_.load();
+                                double overrun_rate = total_frames > 0 ? static_cast<double>(overruns) / static_cast<double>(total_frames) * 100.0 : 0.0;
+                                ve::log::info("4K 60fps performance: " + std::to_string(total_frames) + " frames, " + 
+                                            std::to_string(overruns) + " overruns (" + std::to_string(overrun_rate) + "% )");
+                                last_perf_log_ = now;
+                            }
                         }
                     }
+
+                    // SDL-style continuous timing baseline update (no drift, improved A/V sync)
+                    int64_t current_frame_count = frame_count_.load();
+                    if (!pace_next_continuous(last_continuous_time_, frame_timer_, target_frame_duration_us, first_continuous_frame_, static_cast<int>(current_frame_count))) {
+                        // This should rarely happen since we already passed timing check above
+                        std::this_thread::sleep_for(std::chrono::microseconds(100));
+                    }
+
+                    // Update performance stats - DEBUG LOGGING DISABLED FOR PERFORMANCE
+                    auto frame_time = std::chrono::duration<double, std::milli>(last_frame_time - frame_start);
+                    update_frame_stats(frame_time.count());
                     
-                    // Periodic performance logging for 60fps content
-                    if (is_4k_60fps) {
-                        auto now = std::chrono::steady_clock::now();
-                        auto since_last_log = now - last_perf_log_;
-                        if (since_last_log > std::chrono::seconds(5)) { // Log every 5 seconds
-                            int64_t total_frames = frame_count_.load();
-                            int64_t overruns = frame_overruns_60fps_.load();
-                            double overrun_rate = total_frames > 0 ? static_cast<double>(overruns) / static_cast<double>(total_frames) * 100.0 : 0.0;
-                            ve::log::info("4K 60fps performance: " + std::to_string(total_frames) + " frames, " + 
-                                        std::to_string(overruns) + " overruns (" + std::to_string(overrun_rate) + "%)");
-                            last_perf_log_ = now;
-                        }
+                    // Let video_frame unique_ptr go out of scope here - this will call VideoFrame destructor
+
+                    // Periodic frame log (every 30 frames) for diagnostics
+                    if ((stats_.frames_displayed % 30) == 0) {
+                        ve::log::debug("Playback frames displayed=" + std::to_string(stats_.frames_displayed));
                     }
-                }
-
-                // SDL-style continuous timing baseline update (no drift, improved A/V sync)
-                int64_t current_frame_count = frame_count_.load();
-                if (!pace_next_continuous(last_continuous_time_, frame_timer_, target_frame_duration_us, first_continuous_frame_, static_cast<int>(current_frame_count))) {
-                    // This should rarely happen since we already passed timing check above
-                    std::this_thread::sleep_for(std::chrono::microseconds(100));
-                }
-
-                // Update performance stats - DEBUG LOGGING DISABLED FOR PERFORMANCE
-                auto frame_time = std::chrono::duration<double, std::milli>(last_frame_time - frame_start);
-                update_frame_stats(frame_time.count());
-                
-                // Let video_frame unique_ptr go out of scope here - this will call VideoFrame destructor
-
-                // Periodic frame log (every 30 frames) for diagnostics
-                if ((stats_.frames_displayed % 30) == 0) {
-                    ve::log::debug("Playback frames displayed=" + std::to_string(stats_.frames_displayed));
                 }
                 
             } else {
@@ -1025,21 +1335,31 @@ void PlaybackController::playback_thread_main() {
                 
                 // Handle end-of-stream and avoid busy loop when decoder has no more frames
                 int64_t cur = current_time_us_.load();
-                int64_t delta = step_.next_delta_us();
-                int64_t next_pts = cur + delta;
-                
-                if (duration_us_ > 0 && next_pts >= duration_us_) {
-                    current_time_us_.store(duration_us_);
-                    set_state(ve::playback::PlaybackState::Stopped);
-                    ve::log::info("Reached end of stream (null video frame) at: " + std::to_string(duration_us_) + " us - stopping");
-                    continue;
-                } else {
-                    // Not end of stream, advance time anyway to prevent hang
-                    current_time_us_.store(next_pts);
-                    ve::log::warn("Advanced time to: " + std::to_string(next_pts) + " (null video frame - possible decode error)");
-                    
-                    // Add a small delay to prevent busy loop
+                if (audio_clock_locked) {
+                    if (duration_us_ > 0 && cur >= duration_us_) {
+                        current_time_us_.store(duration_us_);
+                        set_state(ve::playback::PlaybackState::Stopped);
+                        ve::log::info("Reached end of stream (null video frame, audio-locked) at: " + std::to_string(duration_us_) + " us - stopping");
+                        continue;
+                    }
                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                } else {
+                    int64_t delta = step_.next_delta_us();
+                    int64_t next_pts = cur + delta;
+                    
+                    if (duration_us_ > 0 && next_pts >= duration_us_) {
+                        current_time_us_.store(duration_us_);
+                        set_state(ve::playback::PlaybackState::Stopped);
+                        ve::log::info("Reached end of stream (null video frame) at: " + std::to_string(duration_us_) + " us - stopping");
+                        continue;
+                    } else {
+                        // Not end of stream, advance time anyway to prevent hang
+                        current_time_us_.store(next_pts);
+                        ve::log::warn("Advanced time to: " + std::to_string(next_pts) + " (null video frame - possible decode error)");
+                        
+                        // Add a small delay to prevent busy loop
+                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    }
                 }
             }
             
@@ -1142,6 +1462,106 @@ void PlaybackController::playback_thread_main() {
     ve::log::info("Playback thread exited cleanly");
 }
 
+void PlaybackController::emit_safe_mode_telemetry_(double audio_clock_sec,
+                                                   double predicted_video_sec,
+                                                   double buffer_fill_percent,
+                                                   double pipeline_drift_ms,
+                                                   uint32_t audio_underruns,
+                                                   bool audio_ready) {
+    if (audio_clock_sec < 0.0) {
+        return;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    const bool first_emit = last_audio_telemetry_log_.time_since_epoch().count() == 0;
+    if (!first_emit && now - last_audio_telemetry_log_ < std::chrono::seconds(1)) {
+        return;
+    }
+
+    size_t pending_frames = 0;
+    int64_t pending_head_pts = -1;
+    {
+        std::scoped_lock lk(pending_video_mutex_);
+        pending_frames = pending_video_frames_.size();
+        if (!pending_video_frames_.empty()) {
+            pending_head_pts = pending_video_frames_.front().frame.pts;
+        }
+    }
+
+    const int64_t frame_count = frame_count_.load(std::memory_order_relaxed);
+    double fps_estimate = last_logged_estimated_fps_;
+    if (!first_emit) {
+        const double elapsed = std::chrono::duration<double>(now - last_audio_telemetry_log_).count();
+        if (elapsed > 0.0 && frame_count > last_logged_frame_count_) {
+            fps_estimate = static_cast<double>(frame_count - last_logged_frame_count_) / elapsed;
+        }
+    } else {
+        fps_estimate = (probed_fps_ > 0.0) ? probed_fps_ : 0.0;
+    }
+
+    const double video_clock_sec = static_cast<double>(current_time_us_.load(std::memory_order_relaxed)) / 1'000'000.0;
+    double drift_ms = pipeline_drift_ms;
+    if (predicted_video_sec >= 0.0) {
+        drift_ms = (video_clock_sec - predicted_video_sec) * 1000.0;
+    } else if (pending_head_pts >= 0) {
+        drift_ms = ((static_cast<double>(pending_head_pts) / 1'000'000.0) - audio_clock_sec) * 1000.0;
+    }
+
+    const int64_t lookups = cache_lookups_.load(std::memory_order_relaxed);
+    double cache_hit_pct = 0.0;
+    if (lookups > 0) {
+        const int64_t hits = cache_hits_.load(std::memory_order_relaxed);
+        cache_hit_pct = (static_cast<double>(hits) / static_cast<double>(lookups)) * 100.0;
+    }
+
+    const size_t cache_items = frame_cache_.size();
+
+    const double buffer_delta = std::abs(buffer_fill_percent - last_logged_buffer_fill_);
+    const double drift_delta = std::abs(drift_ms - last_logged_drift_ms_);
+    const double clock_delta = std::abs(audio_clock_sec - last_logged_audio_clock_);
+    const double fps_delta = std::abs(fps_estimate - last_logged_estimated_fps_);
+    const bool should_log = first_emit ||
+        buffer_delta > 1.0 ||
+        drift_delta > 0.5 ||
+        audio_underruns != last_logged_underruns_ ||
+        clock_delta > 0.25 ||
+        pending_frames != last_logged_pending_frames_ ||
+        fps_delta > 1.0 ||
+        audio_ready != last_logged_audio_ready_;
+
+    if (should_log) {
+        std::ostringstream oss;
+        oss.setf(std::ios::fixed, std::ios::floatfield);
+        oss << std::setprecision(3);
+        oss << "SAFE_TELEMETRY: audio_clock=" << audio_clock_sec
+            << "s, video_clock=" << video_clock_sec
+            << "s";
+        oss << ", drift=" << std::setprecision(2) << drift_ms << "ms";
+        oss << ", buffer=" << std::setprecision(1) << buffer_fill_percent << "%";
+        oss << ", pending=" << pending_frames;
+        oss << ", fps=" << fps_estimate;
+        oss << ", cache_hit=" << cache_hit_pct << "%";
+        oss << ", cache_items=" << cache_items;
+        oss << ", underruns=" << audio_underruns;
+        oss << ", audio_ready=" << (audio_ready ? "yes" : "no");
+        if (pending_head_pts >= 0) {
+            const double head_delta_ms = ((static_cast<double>(pending_head_pts) / 1'000'000.0) - audio_clock_sec) * 1000.0;
+            oss << ", head_delta=" << std::setprecision(2) << head_delta_ms << "ms";
+        }
+        ve::log::info(oss.str());
+    }
+
+    last_audio_telemetry_log_ = now;
+    last_logged_buffer_fill_ = buffer_fill_percent;
+    last_logged_drift_ms_ = drift_ms;
+    last_logged_underruns_ = audio_underruns;
+    last_logged_frame_count_ = frame_count;
+    last_logged_audio_clock_ = audio_clock_sec;
+    last_logged_estimated_fps_ = fps_estimate;
+    last_logged_pending_frames_ = pending_frames;
+    last_logged_audio_ready_ = audio_ready;
+}
+
 int64_t PlaybackController::frame_duration_guess_us() const {
     // Prefer probed fps
     // If timeline snapshot present, attempt to use active clip's fps
@@ -1214,7 +1634,7 @@ void PlaybackController::decode_one_frame_if_paused(int64_t seek_target_us) {
         int64_t current_frame_count = frame_count_.load();
         const int64_t frame_pts = frame->pts;
         ve::log::info(std::string("PlaybackController: Invoking ") + std::to_string(callback_count) + " video callbacks for frame pts=" + std::to_string(frame_pts) + " frame=" + std::to_string(current_frame_count));
-        dispatch_video_frame(std::move(*frame));
+    dispatch_video_frame(std::move(*frame), true);
         auto video_callback_end = std::chrono::steady_clock::now();
         auto callback_duration_us = std::chrono::duration_cast<std::chrono::microseconds>(video_callback_end - video_callback_start).count();
         if (current_frame_count % 60 == 0) { // Log timing every 60 frames like video player
@@ -1424,6 +1844,23 @@ bool PlaybackController::initialize_audio_pipeline() {
         // Reset audio control state
     master_muted_.store(false);
     master_volume_.store(1.0f);
+
+    audio_master_latency_seconds_ = final_config.target_latency_seconds;
+    prebuffer_threshold_percent_ = final_config.prebuffer_threshold * 100.0;
+    underrun_recover_percent_ = final_config.underrun_recovery_threshold * 100.0;
+    prebuffering_.store(true);
+    prebuffer_start_time_ = std::chrono::steady_clock::now();
+    {
+        std::scoped_lock lk(pending_video_mutex_);
+        pending_video_frames_.clear();
+    }
+    av_map_ready_.store(false, std::memory_order_release);
+    av_map_audio0_sec_ = 0.0;
+    av_map_video0_sec_ = 0.0;
+    last_audio_telemetry_log_ = {};
+    last_logged_underruns_ = 0;
+    last_logged_buffer_fill_ = 0.0;
+    last_logged_drift_ms_ = 0.0;
     
     ve::log::info("Audio pipeline initialization complete");
     return true;

@@ -7,7 +7,6 @@
  */
 
 #include "audio/audio_output.hpp"
-#include "audio/audio_pipeline.hpp"
 #include "core/log.hpp"
 #include <algorithm>
 #include <cmath>
@@ -156,90 +155,6 @@ AudioOutput::~AudioOutput() {
     shutdown();
 }
 
-// ---- Audio format helpers (local) -------------------------------------------------
-namespace {
-    // Convert various integer formats to float32 [-1,1], interleaved
-    inline void int16_to_float32(const int16_t* in, float* out, size_t samples) {
-        constexpr float k = 1.0f / 32768.0f;
-        for (size_t i = 0; i < samples; ++i) out[i] = std::clamp(in[i] * k, -1.0f, 1.0f);
-    }
-    inline void int32_to_float32(const int32_t* in, float* out, size_t samples) {
-        constexpr double k = 1.0 / 2147483648.0; // 2^31
-        for (size_t i = 0; i < samples; ++i) out[i] = static_cast<float>(std::clamp(in[i] * k, -1.0, 1.0));
-    }
-
-    // Downmix/Upmix simple rules (interleaved)
-    // mono->stereo: duplicate; stereo->mono: average; N>2 -> take first two channels
-    inline void convert_channels(const float* in, int in_ch, float* out, int out_ch, size_t frames) {
-        if (in_ch == out_ch) {
-            std::memcpy(out, in, sizeof(float) * frames * in_ch);
-            return;
-        }
-        if (in_ch == 1 && out_ch == 2) {
-            for (size_t i = 0; i < frames; ++i) {
-                float s = in[i];
-                out[2*i + 0] = s;
-                out[2*i + 1] = s;
-            }
-            return;
-        }
-        if (in_ch == 2 && out_ch == 1) {
-            for (size_t i = 0; i < frames; ++i) {
-                float l = in[2*i + 0];
-                float r = in[2*i + 1];
-                out[i] = 0.5f * (l + r);
-            }
-            return;
-        }
-        // Fallback: map first min(in_ch, out_ch) channels, zero the rest
-        int copy_ch = std::min(in_ch, out_ch);
-        for (size_t i = 0; i < frames; ++i) {
-            for (int c = 0; c < copy_ch; ++c) {
-                out[i*out_ch + c] = in[i*in_ch + c];
-            }
-            for (int c = copy_ch; c < out_ch; ++c) out[i*out_ch + c] = 0.0f;
-        }
-    }
-
-    // Very small, fast linear resampler. Good enough for preview; production can swap to libswresample.
-    inline void resample_linear(const float* in, size_t in_frames, int channels,
-                                float* out, size_t out_frames) {
-        if (in_frames == 0 || out_frames == 0) return;
-        const double ratio = static_cast<double>(in_frames - 1) / static_cast<double>(out_frames - 1);
-        for (size_t j = 0; j < out_frames; ++j) {
-            double pos = j * ratio;
-            size_t i0 = static_cast<size_t>(pos);
-            size_t i1 = std::min(i0 + 1, in_frames - 1);
-            float t = static_cast<float>(pos - i0);
-            const float* a = &in[i0 * channels];
-            const float* b = &in[i1 * channels];
-            float* o = &out[j * channels];
-            for (int c = 0; c < channels; ++c) {
-                o[c] = a[c] + (b[c] - a[c]) * t;
-            }
-        }
-    }
-
-    inline void float32_to_int16(const float* in, int16_t* out, size_t samples) {
-        for (size_t i = 0; i < samples; ++i) {
-            float v = std::clamp(in[i], -1.0f, 1.0f);
-            int s = static_cast<int>(std::lrintf(v * 32767.0f));
-            out[i] = static_cast<int16_t>(std::clamp(s, -32768, 32767));
-        }
-    }
-
-    inline void float32_to_int32(const float* in, int32_t* out, size_t samples) {
-        for (size_t i = 0; i < samples; ++i) {
-            double v = std::clamp(static_cast<double>(in[i]), -1.0, 1.0);
-            long long s = llround(v * 2147483647.0);
-            if (s < -2147483648LL) s = -2147483648LL;
-            if (s >  2147483647LL) s =  2147483647LL;
-            out[i] = static_cast<int32_t>(s);
-        }
-    }
-}
-// -----------------------------------------------------------------------------------
-
 AudioOutputError AudioOutput::initialize() {
     if (initialized_) {
         return AudioOutputError::Success;
@@ -262,6 +177,8 @@ void AudioOutput::shutdown() {
         return;
     }
 
+    clock_running_.store(false, std::memory_order_release);
+
     // Stop playback first
     stop();
 
@@ -270,6 +187,11 @@ void AudioOutput::shutdown() {
     if (render_client_) {
         render_client_->Release();
         render_client_ = nullptr;
+    }
+
+    if (audio_clock_) {
+        audio_clock_->Release();
+        audio_clock_ = nullptr;
     }
 
     if (audio_client_) {
@@ -313,6 +235,21 @@ AudioOutputError AudioOutput::start() {
         return AudioOutputError::Unknown;
     }
 
+    if (audio_clock_ && audio_clock_frequency_ > 0.0) {
+        std::lock_guard<std::mutex> lock(clock_mutex_);
+        UINT64 position = 0;
+        UINT64 qpc = 0;
+        if (SUCCEEDED(audio_clock_->GetPosition(&position, &qpc))) {
+            clock_start_position_.store(position, std::memory_order_release);
+            clock_last_position_.store(position, std::memory_order_release);
+            clock_running_.store(true, std::memory_order_release);
+        } else {
+            clock_running_.store(false, std::memory_order_release);
+        }
+    } else {
+        clock_running_.store(false, std::memory_order_release);
+    }
+
     // Preroll: Fill device buffer before starting event-driven loop
     UINT32 preroll_padding = 0;
     if (SUCCEEDED(audio_client_->GetCurrentPadding(&preroll_padding))) {
@@ -320,11 +257,15 @@ AudioOutputError AudioOutput::start() {
         if (preroll_available > 0) {
             BYTE* preroll_data = nullptr;
             if (SUCCEEDED(render_client_->GetBuffer(preroll_available, &preroll_data))) {
-                UINT32 preroll_got = static_cast<UINT32>(pipeline_->fifo_read(preroll_data, preroll_available));
-                if (FAILED(render_client_->ReleaseBuffer(preroll_got, preroll_got == 0 ? AUDCLNT_BUFFERFLAGS_SILENT : 0))) {
+                const size_t sample_width =
+                    (config_.format == SampleFormat::Float32) ? sizeof(float) :
+                    (config_.format == SampleFormat::Int32) ? sizeof(int32_t) : sizeof(int16_t);
+                const size_t bytes_per_frame = static_cast<size_t>(config_.channel_count) * sample_width;
+                std::memset(preroll_data, 0, static_cast<size_t>(preroll_available) * bytes_per_frame);
+                if (FAILED(render_client_->ReleaseBuffer(preroll_available, AUDCLNT_BUFFERFLAGS_SILENT))) {
                     ve::log::error("AudioOutput: preroll ReleaseBuffer failed");
                 }
-                ve::log::info("WASAPI_PREROLL: filled " + std::to_string(preroll_got) + " frames");
+                ve::log::info("WASAPI_PREROLL: filled " + std::to_string(preroll_available) + " frames of silence");
             }
         }
     }
@@ -343,6 +284,8 @@ AudioOutputError AudioOutput::stop() {
     if (!playing_) {
         return AudioOutputError::Success;
     }
+
+    clock_running_.store(false, std::memory_order_release);
 
 #ifdef _WIN32
     // Stop audio client
@@ -376,100 +319,7 @@ AudioOutputError AudioOutput::submit_frame(std::shared_ptr<AudioFrame> frame) {
         return AudioOutputError::InvalidState;
     }
 
-    // PTS-based deduplication to prevent echo from duplicate submissions
-    {
-        std::lock_guard<std::mutex> lock(pts_mutex_);
-        int64_t pts = frame->timestamp().to_rational().num;
-        if (submitted_pts_.count(pts) > 0) {
-            return AudioOutputError::Success; // Skip duplicate - already submitted
-        }
-        submitted_pts_.insert(pts);
-        
-        // Clean up old PTS entries to prevent memory growth (keep last 1000)
-        if (submitted_pts_.size() > 1000) {
-            submitted_pts_.clear();
-        }
-    }
-
-    // ---- NEW: Normalize incoming frame to WASAPI client format (rate/channels/sample fmt) ----
-    const uint32_t in_rate = frame->sample_rate();
-    const uint32_t in_ch   = frame->channel_count();
-    const uint32_t in_frames = frame->sample_count();
-    const SampleFormat in_fmt = frame->format();
-
-    const uint32_t out_rate = config_.sample_rate;
-    const uint32_t out_ch   = config_.channel_count;
-    const SampleFormat out_fmt = config_.format; // typically Float32 for shared-mode mix format
-
-    // Thread-local scratch buffers to avoid realloc every call
-    static thread_local std::vector<float> tl_in_float;   // interleaved float (input rate/channels)
-    static thread_local std::vector<float> tl_ch_float;   // channel-converted float (still input rate)
-    static thread_local std::vector<float> tl_rs_float;   // resampled float (output rate/ch)
-    static thread_local std::vector<uint8_t> tl_out_bytes; // final bytes in out_fmt
-
-    // 1) Convert incoming samples to float32 interleaved
-    const size_t in_total_samples = static_cast<size_t>(in_frames) * in_ch; // interleaved samples
-    tl_in_float.resize(in_total_samples);
-    {
-        const void* src = frame->data();
-        if (in_fmt == SampleFormat::Float32) {
-            std::memcpy(tl_in_float.data(), src, in_total_samples * sizeof(float));
-        } else if (in_fmt == SampleFormat::Int16) {
-            int16_to_float32(static_cast<const int16_t*>(src), tl_in_float.data(), in_total_samples);
-        } else { // Int32 or fallback
-            int32_to_float32(static_cast<const int32_t*>(src), tl_in_float.data(), in_total_samples);
-        }
-    }
-
-    // 2) Channel convert to desired out_ch (still at input rate)
-    tl_ch_float.resize(static_cast<size_t>(in_frames) * out_ch);
-    convert_channels(tl_in_float.data(), static_cast<int>(in_ch),
-                     tl_ch_float.data(), static_cast<int>(out_ch), in_frames);
-
-    // 3) Resample if needed
-    size_t out_frames = in_frames;
-    if (in_rate != 0 && out_rate != 0 && in_rate != out_rate) {
-        // Compute target frames (round to nearest)
-        out_frames = static_cast<size_t>( (static_cast<uint64_t>(in_frames) * out_rate + (in_rate/2)) / in_rate );
-        tl_rs_float.resize(out_frames * out_ch);
-        resample_linear(tl_ch_float.data(), in_frames, static_cast<int>(out_ch),
-                        tl_rs_float.data(), out_frames);
-    } else {
-        // No rate change: reuse channel-converted buffer
-        tl_rs_float.swap(tl_ch_float);
-    }
-
-    // 4) Pack to target WASAPI sample format
-    const size_t out_samples_interleaved = out_frames * out_ch;
-    if (out_fmt == SampleFormat::Float32) {
-        tl_out_bytes.resize(out_samples_interleaved * sizeof(float));
-        std::memcpy(tl_out_bytes.data(), tl_rs_float.data(), tl_out_bytes.size());
-    } else if (out_fmt == SampleFormat::Int16) {
-        tl_out_bytes.resize(out_samples_interleaved * sizeof(int16_t));
-        float32_to_int16(tl_rs_float.data(), reinterpret_cast<int16_t*>(tl_out_bytes.data()), out_samples_interleaved);
-    } else { // Int32
-        tl_out_bytes.resize(out_samples_interleaved * sizeof(int32_t));
-        float32_to_int32(tl_rs_float.data(), reinterpret_cast<int32_t*>(tl_out_bytes.data()), out_samples_interleaved);
-    }
-
-    // 5) Submit in manageable chunks (in FRAMES @ output format)
-    const uint32_t max_chunk_frames = 480; // ~10ms @ 48k
-    uint32_t submitted = 0;
-    while (submitted < out_frames) {
-        const uint32_t chunk = std::min<uint32_t>(max_chunk_frames, static_cast<uint32_t>(out_frames - submitted));
-        const size_t   bytes_per_frame = out_ch * ((out_fmt == SampleFormat::Float32 || out_fmt == SampleFormat::Int32) ? 4 : 2);
-        const uint8_t* ptr = tl_out_bytes.data() + submitted * bytes_per_frame;
-
-        // Write directly to pipeline FIFO
-        UINT32 written = static_cast<UINT32>(pipeline_->fifo_write(ptr, chunk));
-        if (written < chunk) {
-            // FIFO is full, wait a bit and retry
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            continue; // retry same chunk
-        }
-        submitted += chunk;
-    }
-
+    // Push-model submission is no longer required; AudioPipeline feeds the device FIFO directly.
     return AudioOutputError::Success;
 }
 
@@ -852,21 +702,36 @@ AudioOutputError AudioOutput::initialize_format() {
         ve::log::warn("PHASE1_DEVICE_INFO: Failed to get device period: " + std::to_string(hr));
     }
 
+    if (audio_clock_) {
+        audio_clock_->Release();
+        audio_clock_ = nullptr;
+    }
+
+    UINT64 freq = 0;
+    hr = audio_client_->GetService(__uuidof(IAudioClock), (void**)&audio_clock_);
+    if (SUCCEEDED(hr) && audio_clock_) {
+        if (SUCCEEDED(audio_clock_->GetFrequency(&freq)) && freq > 0) {
+            audio_clock_frequency_ = static_cast<double>(freq);
+            clock_running_.store(false, std::memory_order_release);
+            clock_start_position_.store(0, std::memory_order_relaxed);
+            clock_last_position_.store(0, std::memory_order_relaxed);
+        } else {
+            ve::log::warn("AudioOutput: IAudioClock returned invalid frequency, disabling device clock telemetry");
+            audio_clock_->Release();
+            audio_clock_ = nullptr;
+            audio_clock_frequency_ = 0.0;
+        }
+    } else {
+        ve::log::warn("AudioOutput: Failed to acquire IAudioClock (hr=" + std::to_string(hr) + ")");
+        audio_clock_ = nullptr;
+        audio_clock_frequency_ = 0.0;
+    }
+
     // Update stats
     {
         std::lock_guard<std::mutex> lock(stats_mutex_);
         stats_.buffer_size_frames = buffer_frame_count_;
     }
-
-    // Initialize audio pipeline with lock-free FIFO for real-time operation
-    AudioPipelineConfig pipeline_config;
-    pipeline_config.sample_rate = config_.sample_rate;
-    pipeline_config.channel_count = config_.channel_count;
-    pipeline_config.format = config_.format;
-    pipeline_config.buffer_size = buffer_frame_count_;
-    pipeline_ = AudioPipeline::create(pipeline_config);
-    ve::log::info("AudioOutput: initialized pipeline with " + std::to_string(config_.sample_rate) + 
-                  "Hz, " + std::to_string(config_.channel_count) + " channels");
 
     return AudioOutputError::Success;
 }
@@ -998,6 +863,69 @@ void AudioOutput::handle_underrun() {
 void AudioOutput::update_stats() {
     // Update statistics periodically
     // This would be called from the render thread
+}
+
+double AudioOutput::get_device_clock_seconds() {
+#ifdef _WIN32
+    if (!audio_clock_ || audio_clock_frequency_ <= 0.0) {
+        return -1.0;
+    }
+
+    std::lock_guard<std::mutex> lock(clock_mutex_);
+    if (!clock_running_.load(std::memory_order_acquire)) {
+        return -1.0;
+    }
+
+    UINT64 position = 0;
+    UINT64 qpc = 0;
+    if (FAILED(audio_clock_->GetPosition(&position, &qpc))) {
+        return -1.0;
+    }
+
+    UINT64 start = clock_start_position_.load(std::memory_order_acquire);
+    if (position < start) {
+        start = position;
+        clock_start_position_.store(position, std::memory_order_release);
+    }
+    clock_last_position_.store(position, std::memory_order_release);
+    const double seconds = static_cast<double>(position - start) / audio_clock_frequency_;
+    return seconds;
+#else
+    return -1.0;
+#endif
+}
+
+bool AudioOutput::get_buffer_metrics(uint32_t& padding_frames, uint32_t& buffer_frames) const {
+#ifdef _WIN32
+    if (!audio_client_) {
+        return false;
+    }
+    UINT32 padding = 0;
+    HRESULT hr = audio_client_->GetCurrentPadding(&padding);
+    if (FAILED(hr)) {
+        return false;
+    }
+    padding_frames = padding;
+    buffer_frames = buffer_frame_count_;
+    return true;
+#else
+    (void)padding_frames;
+    (void)buffer_frames;
+    return false;
+#endif
+}
+
+double AudioOutput::buffer_fill_percent() const {
+    uint32_t padding = 0;
+    uint32_t total = 0;
+    if (!get_buffer_metrics(padding, total) || total == 0) {
+        return 0.0;
+    }
+    double percent = static_cast<double>(padding) / static_cast<double>(total) * 100.0;
+    if (!std::isfinite(percent)) {
+        return 0.0;
+    }
+    return std::clamp(percent, 0.0, 100.0);
 }
 
 #endif // _WIN32

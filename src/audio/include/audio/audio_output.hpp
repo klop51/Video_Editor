@@ -14,7 +14,6 @@
 #include <atomic>
 #include <thread>
 #include <mutex>
-#include <unordered_set>
 #include <functional>
 #include <cstdint>
 
@@ -135,8 +134,14 @@ public:
     AudioOutputError set_volume(float volume);
     AudioOutputError set_muted(bool muted);
 
+    // Non-owning back-pointer set by AudioPipeline after creation
+    void set_pipeline_backpointer(AudioPipeline* pipeline) noexcept { pipeline_backptr_ = pipeline; }
+
     // Statistics and monitoring
     AudioOutputStats get_stats() const;
+    double get_device_clock_seconds();
+    bool get_buffer_metrics(uint32_t& padding_frames, uint32_t& buffer_frames) const;
+    double buffer_fill_percent() const;
 
     // Error handling
     AudioOutputError get_last_error_code() const { return last_error_; }
@@ -155,12 +160,10 @@ private:
     bool running_ = false;
     bool playing_ = false;
 
-    // Audio processing pipeline (FIFO-based for real-time operation)
-    std::unique_ptr<AudioPipeline> pipeline_;
-
     // Audio control
     float volume_ = 1.0f;
     bool muted_ = false;
+    AudioPipeline* pipeline_backptr_ = nullptr;
 
     // Audio rendering thread
     std::thread render_thread_;
@@ -172,20 +175,24 @@ private:
     IMMDevice* audio_device_ = nullptr;
     IAudioClient* audio_client_ = nullptr;
     IAudioRenderClient* render_client_ = nullptr;
+    IAudioClock* audio_clock_ = nullptr;
     HANDLE render_event_ = nullptr;
 
     // Buffer management
     uint32_t buffer_frame_count_ = 0;
     REFERENCE_TIME buffer_duration_ = 0;
     REFERENCE_TIME min_periodicity_ = 0;
+    double audio_clock_frequency_ = 0.0;
+    mutable std::mutex clock_mutex_;
+    mutable std::atomic<uint64_t> clock_start_position_{0};
+    mutable std::atomic<uint64_t> clock_last_position_{0};
+    mutable std::atomic<bool> clock_running_{false};
 
     // Statistics
     mutable std::mutex stats_mutex_;
     AudioOutputStats stats_;
 
     // PTS-based deduplication for echo prevention
-    std::unordered_set<int64_t> submitted_pts_;
-    std::mutex pts_mutex_;
 
     // Error handling
     mutable std::mutex error_mutex_;

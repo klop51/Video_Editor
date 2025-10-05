@@ -10,7 +10,6 @@
 #include <deque>
 #include <memory>
 #include <atomic>
-#include <mutex>
 // Forward declarations to reduce header coupling; implementation includes full definitions.
 namespace ve { namespace gfx { class GraphicsDevice; struct GraphicsDeviceInfo; } }
 namespace ve { namespace render { class RenderGraph; } }
@@ -127,10 +126,6 @@ private:
     // Qt object lifetime safety for thread-safe signal handling
     std::atomic<bool> destroying_{false};
 
-    // Reusable frame buffers to limit per-frame allocations
-    ve::decode::VideoFrame decoder_staging_frame_;
-    ve::decode::VideoFrame ui_thread_frame_;
-    std::mutex staging_mutex_;
 };
 
 } // namespace ve::ui

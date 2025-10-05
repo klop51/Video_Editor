@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <cstdlib>
 
 extern "C" {
 #include <libswresample/swresample.h>
@@ -19,6 +20,27 @@ extern "C" {
 #include <libavutil/samplefmt.h>
 #include <libavutil/opt.h>
 }
+
+namespace {
+inline bool env_flag_enabled(const char* name) {
+    if (const char* value = std::getenv(name)) {
+        std::string v{value};
+        std::transform(v.begin(), v.end(), v.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        if (v == "0" || v == "off" || v == "false") {
+            return false;
+        }
+        return true;
+    }
+    return true;
+}
+
+inline bool safe_audio_enabled() {
+    static const bool enabled = env_flag_enabled("VE_AUDIO_SAFE");
+    return enabled;
+}
+} // namespace
 
 static int idx_for(const AVChannelLayout& in, AVChannel ch) {
     // Returns index of a standard channel in the input layout, or -1 if not present.
@@ -99,8 +121,22 @@ std::unique_ptr<AudioPipeline> AudioPipeline::create(const AudioPipelineConfig& 
 }
 
 AudioPipeline::AudioPipeline(const AudioPipelineConfig& config)
-    : config_(config) {
+    : config_(config)
+    , safe_mode_enabled_(safe_audio_enabled()) {
+    if (safe_mode_enabled_) {
+        config_.target_latency_seconds = std::max(config_.target_latency_seconds, 0.15);
+        config_.prebuffer_threshold = std::clamp(std::max(config_.prebuffer_threshold, 0.75), 0.10, 0.95);
+        config_.underrun_recovery_threshold = std::clamp(std::max(config_.underrun_recovery_threshold, 0.90), 0.10, 0.99);
+        config_.drift_window_seconds = 0.0;
+    }
+
     audio_buffer_.resize(BUFFER_SIZE);
+    latency_target_samples_.store(0, std::memory_order_relaxed);
+    prebuffer_complete_.store(false, std::memory_order_relaxed);
+    recovering_from_underrun_.store(false, std::memory_order_relaxed);
+    pending_drift_ppm_.store(0, std::memory_order_relaxed);
+    underruns_snapshot_.store(0, std::memory_order_relaxed);
+    fifo_level_ema_ = 0.0;
 }
 
 AudioPipeline::~AudioPipeline() {
@@ -128,8 +164,16 @@ bool AudioPipeline::initialize() {
         return false;
     }
 
-    // Pre-size device FIFO to ~2.5 seconds of audio in device format
-    fifo_init_seconds(2.5);
+    // Configure FIFO capacity and latency targets based on negotiated format
+    const double fifo_seconds = std::max(config_.target_latency_seconds * 3.0, 0.5);
+    fifo_init_seconds(fifo_seconds);
+    const size_t latency_samples = static_cast<size_t>(config_.target_latency_seconds *
+        static_cast<double>(config_.sample_rate) * static_cast<double>(config_.channel_count));
+    latency_target_samples_.store(latency_samples, std::memory_order_release);
+    target_fifo_samples_.store(latency_samples, std::memory_order_release);
+    fifo_level_ema_ = static_cast<double>(latency_samples);
+    prebuffer_complete_.store(false, std::memory_order_release);
+    recovering_from_underrun_.store(false, std::memory_order_release);
 
     // Start processing thread
     processing_thread_should_exit_.store(false);
@@ -156,11 +200,16 @@ void AudioPipeline::shutdown() {
     // Stop output
     if (output_) {
         output_->stop();
+        output_->set_pipeline_backpointer(nullptr);
+        output_.reset();
     }
+
+    audio_ready_.store(false, std::memory_order_release);
+    device_start_pending_.store(false, std::memory_order_release);
+    start_deferred_logged_.store(false, std::memory_order_release);
 
     // Clear components
     mixer_.reset();
-    output_.reset();
     device_driven_rendering_enabled_.store(false);
 
     free_resampler();
@@ -178,13 +227,6 @@ void AudioPipeline::shutdown() {
 }
 
 bool AudioPipeline::process_audio_frame(std::shared_ptr<AudioFrame> frame) {
-    // De-dup: if the same AudioFrame* arrives twice, drop the duplicate to avoid echo
-    static const AudioFrame* s_last_enqueued = nullptr;
-    if (frame.get() == s_last_enqueued) {
-        return true; // already enqueued this exact frame
-    }
-    s_last_enqueued = frame.get();
-
     if (state_.load() == AudioPipelineState::Uninitialized) {
         set_error("Pipeline not initialized");
         return false;
@@ -229,8 +271,42 @@ bool AudioPipeline::process_audio_frame(std::shared_ptr<AudioFrame> frame) {
     // Lock-free SPSC push
     fifo_write(devSamples.data(), devSamples.size());
 
+    static auto last_fill_log = std::chrono::steady_clock::time_point{};
+    const auto now = std::chrono::steady_clock::now();
+    if (last_fill_log.time_since_epoch().count() == 0 ||
+        now - last_fill_log > std::chrono::milliseconds(100)) {
+        last_fill_log = now;
+        ve::log::info("AUDIO_FILL: fifo_frames=" + std::to_string(fifo_frames_available()) +
+                      " / target=" + std::to_string(prebuffer_target_frames_));
+    }
+
+    if (!prebuffer_complete_.load(std::memory_order_acquire)) {
+        size_t target = latency_target_samples_.load(std::memory_order_acquire);
+        if (target > 0) {
+            double threshold_fraction = recovering_from_underrun_.load(std::memory_order_acquire)
+                ? config_.underrun_recovery_threshold
+                : config_.prebuffer_threshold;
+            if (safe_mode_enabled_) {
+                threshold_fraction = recovering_from_underrun_.load(std::memory_order_acquire) ? 0.95 : 0.85;
+            }
+            threshold_fraction = std::clamp(threshold_fraction, 0.05, 0.95);
+            double fraction = threshold_fraction;
+            if (safe_mode_enabled_) {
+                fraction = recovering_from_underrun_.load(std::memory_order_acquire) ? 0.90 : 0.80;
+            }
+            size_t threshold_samples = static_cast<size_t>(fraction * static_cast<double>(target));
+            threshold_samples = std::max<size_t>(threshold_samples, std::max<size_t>(1, target / 10));
+            size_t fifo_now = fifo_size_.load(std::memory_order_acquire);
+            if (fifo_now >= threshold_samples) {
+                prebuffer_complete_.store(true, std::memory_order_release);
+                recovering_from_underrun_.store(false, std::memory_order_release);
+            }
+        }
+    }
+
     // Update statistics  
     update_stats(frame);
+    probe_start_output_locked();
     return true;
 }
 
@@ -240,26 +316,34 @@ bool AudioPipeline::start_output() {
         return false;
     }
 
-    auto result = output_->start();
-    if (result == AudioOutputError::Success) {
-        set_state(AudioPipelineState::Playing);
-        
-        // Preroll ~100 ms of silence so early callbacks never underrun.
-        const size_t preroll = (config_.sample_rate / 10) * config_.channel_count;
-        std::vector<float> zeros(preroll, 0.0f);
-        // Lock-free SPSC push
-        fifo_write(zeros.data(), zeros.size());
-        return true;
+    prebuffer_complete_.store(false, std::memory_order_release);
+    recovering_from_underrun_.store(false, std::memory_order_release);
+    audio_ready_.store(false, std::memory_order_release);
+    device_start_pending_.store(true, std::memory_order_release);
+
+    if (!probe_start_output_locked()) {
+        device_start_pending_.store(false, std::memory_order_release);
+        return false;
     }
 
-    set_error("Failed to start audio output");
-    return false;
+    if (!audio_ready_.load(std::memory_order_acquire) && prebuffer_target_frames_ > 0) {
+        const size_t available = fifo_frames_available();
+        if (!start_deferred_logged_.exchange(true)) {
+            ve::log::info("AudioPipeline: deferring WASAPI start until FIFO reaches " +
+                          std::to_string(prebuffer_target_frames_) + " frames (currently " +
+                          std::to_string(available) + ")");
+        }
+    }
+
+    return true;
 }
 
 bool AudioPipeline::stop_output() {
     if (output_) {
         output_->stop();
     }
+    audio_ready_.store(false, std::memory_order_release);
+    device_start_pending_.store(false, std::memory_order_release);
     set_state(AudioPipelineState::Stopped);
     return true;
 }
@@ -406,6 +490,112 @@ void AudioPipeline::clear_error() {
     last_error_.clear();
 }
 
+double AudioPipeline::device_clock_seconds() const {
+#ifdef _WIN32
+    if (output_) {
+        return output_->get_device_clock_seconds();
+    }
+#endif
+    return -1.0;
+}
+
+double AudioPipeline::buffer_fill_percent() const {
+    size_t target = latency_target_samples_.load(std::memory_order_acquire);
+    if (target == 0) {
+        target = std::max<size_t>(1, fifo_capacity_);
+    }
+    const size_t level = fifo_size_.load(std::memory_order_acquire);
+    double percent = (static_cast<double>(level) / static_cast<double>(target)) * 100.0;
+    if (!std::isfinite(percent)) {
+        percent = 0.0;
+    }
+    return std::clamp(percent, 0.0, 200.0);
+}
+
+uint32_t AudioPipeline::buffer_underruns() const {
+    std::lock_guard<std::mutex> lock(stats_mutex_);
+    return stats_.buffer_underruns;
+}
+
+void AudioPipeline::reset_buffer_underruns() {
+    std::lock_guard<std::mutex> lock(stats_mutex_);
+    stats_.buffer_underruns = 0;
+    underruns_snapshot_.store(0, std::memory_order_release);
+}
+
+bool AudioPipeline::prebuffer_ready() const {
+    if (!prebuffer_complete_.load(std::memory_order_acquire)) {
+        size_t target = latency_target_samples_.load(std::memory_order_acquire);
+        if (target == 0) {
+            return true; // nothing to wait for
+        }
+        const double threshold = std::clamp(config_.prebuffer_threshold, 0.05, 0.95);
+        size_t threshold_samples = static_cast<size_t>(threshold * static_cast<double>(target));
+        threshold_samples = std::max<size_t>(threshold_samples, std::max<size_t>(1, target / 10));
+        if (fifo_size_.load(std::memory_order_acquire) >= threshold_samples) {
+            return true;
+        }
+        return false;
+    }
+    return true;
+}
+
+void AudioPipeline::reset_prebuffer_state() {
+    prebuffer_complete_.store(false, std::memory_order_release);
+    recovering_from_underrun_.store(false, std::memory_order_release);
+}
+
+void AudioPipeline::apply_clock_drift(double drift_seconds, double measurement_window_seconds) {
+    if (safe_mode_enabled_) {
+        return;
+    }
+
+    if (!std::isfinite(drift_seconds) || !std::isfinite(measurement_window_seconds) ||
+        measurement_window_seconds <= 0.0) {
+        return;
+    }
+
+    const double abs_ms = std::abs(drift_seconds) * 1000.0;
+    if (abs_ms < 5.0) {
+        return; // leave tiny drift alone
+    }
+
+    double ppm = (drift_seconds * 1'000'000.0) / measurement_window_seconds;
+    ppm = std::clamp(ppm, -200.0, 200.0);
+    const double ratio = 1.0 - ppm / 1'000'000.0;
+    const double horizon = std::clamp(config_.drift_window_seconds, 0.25, 1.0);
+    int compensation = static_cast<int>(std::lrint((ratio - 1.0) * config_.sample_rate * horizon));
+    if (compensation == 0) {
+        return;
+    }
+
+    const int clamp_limit = static_cast<int>(config_.sample_rate);
+    int previous = pending_comp_samples_.fetch_add(compensation, std::memory_order_relaxed);
+    int combined = previous + compensation;
+    if (combined > clamp_limit) {
+        pending_comp_samples_.store(clamp_limit, std::memory_order_relaxed);
+    } else if (combined < -clamp_limit) {
+        pending_comp_samples_.store(-clamp_limit, std::memory_order_relaxed);
+    }
+    pending_drift_ppm_.store(static_cast<int>(ppm), std::memory_order_relaxed);
+}
+
+void AudioPipeline::flush(bool drop_fifo) {
+    if (drop_fifo) {
+        fifo_head_.store(0, std::memory_order_relaxed);
+        fifo_tail_.store(0, std::memory_order_relaxed);
+        fifo_size_.store(0, std::memory_order_relaxed);
+        std::fill(device_fifo_.begin(), device_fifo_.end(), 0.0f);
+    }
+    pending_comp_samples_.store(0, std::memory_order_relaxed);
+    pending_drift_ppm_.store(0, std::memory_order_relaxed);
+    if (swr_) {
+        swr_convert(swr_, nullptr, 0, nullptr, 0);
+    }
+    prebuffer_complete_.store(false, std::memory_order_release);
+    recovering_from_underrun_.store(false, std::memory_order_release);
+}
+
 std::shared_ptr<AudioFrame> AudioPipeline::get_mixed_audio(uint32_t frame_count) {
     if (state_.load() != AudioPipelineState::Playing) {
         return nullptr;
@@ -458,6 +648,8 @@ bool AudioPipeline::initialize_output() {
         return false;
     }
 
+    output_->set_pipeline_backpointer(this);
+
     device_driven_rendering_enabled_.store(false);
 
     // Set up audio render callback to provide real audio data
@@ -470,6 +662,7 @@ bool AudioPipeline::initialize_output() {
     if (result != AudioOutputError::Success) {
         // Reset and try shared mode with minimal buffers
         output_->shutdown();
+        output_->set_pipeline_backpointer(nullptr);
         output_config.exclusive_mode = false;
         // Use a safer buffer for shared mode to avoid periodic underruns.
         // 20–50 ms is typical; pick 50 ms for stability (latency still fine for playback).
@@ -478,6 +671,8 @@ bool AudioPipeline::initialize_output() {
         if (!output_) {
             return false;
         }
+
+        output_->set_pipeline_backpointer(this);
 
         // Set up callback for the recreated output
         output_->set_render_callback([this](void* buffer, uint32_t frame_count, SampleFormat format, uint16_t channels) -> size_t {
@@ -503,6 +698,20 @@ bool AudioPipeline::initialize_output() {
         config_.format = device_config.format;
     }
 
+    const size_t latency_samples = static_cast<size_t>(config_.target_latency_seconds *
+        static_cast<double>(config_.sample_rate) * static_cast<double>(config_.channel_count));
+    latency_target_samples_.store(latency_samples, std::memory_order_release);
+    target_fifo_samples_.store(latency_samples, std::memory_order_release);
+    prebuffer_complete_.store(false, std::memory_order_release);
+    recovering_from_underrun_.store(false, std::memory_order_release);
+    fifo_level_ema_ = static_cast<double>(latency_samples);
+
+    const double target_latency = std::max(config_.target_latency_seconds, 0.0);
+    prebuffer_target_frames_ = static_cast<size_t>(std::max(0.0, target_latency) * static_cast<double>(config_.sample_rate));
+    audio_ready_.store(false, std::memory_order_release);
+    device_start_pending_.store(false, std::memory_order_release);
+    start_deferred_logged_.store(false, std::memory_order_release);
+
     device_driven_rendering_enabled_.store(true);
     
     // resampler will be lazily created on first frame, but it's safe to pre-clear cache
@@ -510,8 +719,6 @@ bool AudioPipeline::initialize_output() {
     // Initialize drift target once device format is known
     last_period_frames_.store(0);
     target_fifo_samples_.store(0);
-    // Prepare gap concealment tail (start at silence)
-    last_tail_.assign(config_.channel_count, 0.0f);
     return true; // Already initialized above
 }
 
@@ -540,6 +747,60 @@ void AudioPipeline::process_audio_buffer() {
     }
 }
 
+bool AudioPipeline::probe_start_output_locked() {
+    if (!device_start_pending_.load(std::memory_order_acquire)) {
+        return true;
+    }
+
+    if (!output_) {
+        device_start_pending_.store(false, std::memory_order_release);
+        return false;
+    }
+
+    const size_t target_frames = prebuffer_target_frames_;
+    const size_t available_frames = fifo_frames_available();
+    if (target_frames > 0 && available_frames < target_frames) {
+        return true; // still waiting for FIFO to fill
+    }
+
+    std::lock_guard<std::mutex> lock(output_start_mutex_);
+    if (!device_start_pending_.load(std::memory_order_acquire)) {
+        return true;
+    }
+
+    const size_t ready_frames = fifo_frames_available();
+    if (target_frames > 0 && ready_frames < target_frames) {
+        return true;
+    }
+
+    auto result = output_->start();
+    if (result != AudioOutputError::Success) {
+        device_start_pending_.store(false, std::memory_order_release);
+        ve::log::error("AudioPipeline: failed to start WASAPI output (error=" + std::to_string(static_cast<int>(result)) + ")");
+        set_error("Failed to start audio output");
+        return false;
+    }
+
+    audio_ready_.store(true, std::memory_order_release);
+    device_start_pending_.store(false, std::memory_order_release);
+    start_deferred_logged_.store(false, std::memory_order_release);
+
+    const double preroll_seconds = safe_mode_enabled_ ? 0.12 : 0.10;
+    const size_t preroll_frames = static_cast<size_t>(std::max(preroll_seconds, 0.0) * static_cast<double>(config_.sample_rate));
+    if (preroll_frames > 0) {
+        const size_t zeros_samples = preroll_frames * static_cast<size_t>(config_.channel_count);
+        std::vector<float> zeros(zeros_samples, 0.0f);
+        fifo_write(zeros.data(), zeros.size());
+    }
+
+    set_state(AudioPipelineState::Playing);
+    ve::log::info("AudioPipeline: WASAPI started after prebuffer (" +
+                  std::to_string(ready_frames) + "/" +
+                  std::to_string(prebuffer_target_frames_) + " frames)");
+
+    return true;
+}
+
 std::shared_ptr<AudioFrame> AudioPipeline::mix_buffered_audio(uint32_t /*frame_count*/) {
     // Strict FIFO: pop the next enqueued frame, or nullptr if empty.
     std::shared_ptr<AudioFrame> next;
@@ -566,6 +827,8 @@ void AudioPipeline::processing_thread_main() {
         : std::chrono::milliseconds(1);
 
     while (!processing_thread_should_exit_.load()) {
+        probe_start_output_locked();
+
         if (state_.load() == AudioPipelineState::Playing) {
             process_audio_buffer();
         }
@@ -620,7 +883,9 @@ size_t AudioPipeline::audio_render_callback(void* buffer, uint32_t frame_count, 
     }
     
     // Track device period and update drift target
-    update_drift_control(frame_count, channels);
+    if (!safe_mode_enabled_) {
+        update_drift_control(frame_count, channels);
+    }
 
     // Pull exactly frame_count frames * channels from our SPSC FIFO
     const size_t samples_needed = static_cast<size_t>(frame_count) * channels;
@@ -629,49 +894,23 @@ size_t AudioPipeline::audio_render_callback(void* buffer, uint32_t frame_count, 
     // Lock-free SPSC pop — no mutex
     samples_got = fifo_read(static_cast<float*>(buffer), samples_needed);
     
-    const size_t frames_got = samples_got / channels;
-    
     if (samples_got < samples_needed) {
         auto* out = static_cast<float*>(buffer);
         const size_t shortfall_samples = samples_needed - samples_got;
-        const size_t shortfall_frames = shortfall_samples / channels;
-
-        // Get period size for gap concealment logic
-        const uint32_t period_frames = std::max<uint32_t>(1U, 
-            static_cast<uint32_t>(last_period_frames_.load(std::memory_order_acquire)));
-        const size_t half_period_samples = (period_frames * channels) / 2;
-
-        // If the shortfall is small (≤ half a period), conceal by repeating last-tail per channel
-        if (shortfall_samples > 0 && shortfall_samples <= half_period_samples && 
-            !last_tail_.empty() && last_tail_.size() == channels) {
-            
-            // Apply gap concealment: fade from last known samples
-            for (size_t i = 0; i < shortfall_samples; ++i) {
-                const size_t ch = i % channels;
-                const float fade = 1.0f - (float(i) / float(shortfall_samples));
-                out[samples_got + i] = last_tail_[ch] * fade;
-            }
-        } else {
-            // Larger gap: zero-fill
-            std::memset(out + samples_got, 0, shortfall_samples * sizeof(float));
+        if (shortfall_samples > 0) {
+            std::fill(out + samples_got, out + samples_needed, 0.0f);
         }
         
         // Track underruns for diagnostics
         {
             std::lock_guard<std::mutex> lock(stats_mutex_);
             stats_.buffer_underruns++;
+            underruns_snapshot_.store(stats_.buffer_underruns, std::memory_order_release);
         }
+        recovering_from_underrun_.store(true, std::memory_order_release);
+        prebuffer_complete_.store(false, std::memory_order_release);
     }
 
-    // Update last_tail_ from end of this block for future concealment
-    const size_t total_samples = std::min(samples_needed, samples_got + (samples_needed - samples_got));
-    if (total_samples >= channels && last_tail_.size() == channels) {
-        float* outF = static_cast<float*>(buffer);
-        for (uint16_t c = 0; c < channels; ++c) {
-            last_tail_[c] = outF[total_samples - channels + c];
-        }
-    }
-    
     // Return FRAMES written, not bytes (output layer converts to bytes for ReleaseBuffer)
     return frame_count; // Always return what was requested - we filled gaps with concealment/silence
 }
@@ -857,9 +1096,11 @@ bool AudioPipeline::convert_to_device_format(const AudioFrame& in, std::vector<f
 
     // Apply any pending drift compensation before converting.
     // swr_set_compensation will add/drop 'delta' samples across 'distance' output samples.
-    if (int delta = pending_comp_samples_.exchange(0); delta != 0) {
-        // Spread over ~1 second to keep it imperceptible.
-        swr_set_compensation(swr_, delta, (int)cfg.sample_rate);
+    if (!safe_mode_enabled_) {
+        if (int delta = pending_comp_samples_.exchange(0); delta != 0) {
+            // Spread over ~1 second to keep it imperceptible.
+            swr_set_compensation(swr_, delta, (int)cfg.sample_rate);
+        }
     }
     // Convert
     int got = swr_convert(swr_, &out_ptr, out_est, in_planes, (int)in_samples);
@@ -881,6 +1122,11 @@ void AudioPipeline::fifo_init_seconds(double seconds) {
     fifo_head_.store(0, std::memory_order_relaxed);
     fifo_tail_.store(0, std::memory_order_relaxed);
     fifo_size_.store(0, std::memory_order_relaxed);
+    size_t target = latency_target_samples_.load(std::memory_order_relaxed);
+    if (target > fifo_capacity_) {
+        latency_target_samples_.store(fifo_capacity_, std::memory_order_relaxed);
+        target_fifo_samples_.store(fifo_capacity_, std::memory_order_relaxed);
+    }
 }
 
 size_t AudioPipeline::fifo_write(const float* samples, size_t count) {
@@ -997,6 +1243,10 @@ void AudioPipeline::free_resampler() {
 
 // Keep FIFO near a stable target by commanding tiny resample adjustments
 void AudioPipeline::update_drift_control(uint32_t callback_frames, uint16_t channels) {
+    if (safe_mode_enabled_) {
+        return;
+    }
+
     // Establish or adjust period/target when the callback block size changes
     size_t prev = last_period_frames_.load(std::memory_order_acquire);
     if (callback_frames > 0 && callback_frames != prev) {
@@ -1027,8 +1277,16 @@ void AudioPipeline::update_drift_control(uint32_t callback_frames, uint16_t chan
     // If we're close enough, don't compensate
     if (std::abs(desired) < 2) desired = 0; // deadband smaller
 
-    // Post the new delta to be applied on the next resample call
-    pending_comp_samples_.store(desired);
+    if (desired != 0) {
+        const int clamp_limit = static_cast<int>(config_.sample_rate);
+        int previous = pending_comp_samples_.fetch_add(desired, std::memory_order_relaxed);
+        int combined = previous + desired;
+        if (combined > clamp_limit) {
+            pending_comp_samples_.store(clamp_limit, std::memory_order_relaxed);
+        } else if (combined < -clamp_limit) {
+            pending_comp_samples_.store(-clamp_limit, std::memory_order_relaxed);
+        }
+    }
 }
 
 size_t AudioPipeline::fifo_write(const uint8_t* bytes, size_t frame_count) {

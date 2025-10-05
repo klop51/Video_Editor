@@ -39,7 +39,7 @@
 #include <QMutexLocker>
 #include <algorithm>
 #include <memory>
-#include <mutex>
+#include <utility>
 #include <cstring>
 #include <string>
 #include <sstream>
@@ -121,36 +121,16 @@ void ViewerPanel::set_playback_controller(ve::playback::PlaybackController* cont
                 return;
             }
             
-            // Reuse staging buffer to avoid per-frame allocations on decoder thread
-            {
-                std::lock_guard<std::mutex> lock(staging_mutex_);
-                decoder_staging_frame_.width  = f.width;
-                decoder_staging_frame_.height = f.height;
-                decoder_staging_frame_.pts    = f.pts;
-                decoder_staging_frame_.format = f.format;
-                decoder_staging_frame_.color_space = f.color_space;
-                decoder_staging_frame_.color_range = f.color_range;
-                const size_t bytes = f.data.size();
-                if (bytes > 0) {
-                    if (decoder_staging_frame_.data.capacity() < bytes) {
-                        decoder_staging_frame_.data.reserve(bytes);
-                    }
-                    decoder_staging_frame_.data.resize(bytes);
-                    std::memcpy(decoder_staging_frame_.data.data(), f.data.data(), bytes);
-                } else {
-                    decoder_staging_frame_.data.clear();
-                }
-            }
-
             // Use QPointer for extra safety - use QTimer for better Qt compatibility
             if (QPointer<ViewerPanel> safe_self = this; safe_self) {
+                ve::decode::VideoFrame frame_copy{f};
                 const int prev = safe_self->scheduled_presentations_.fetch_add(1, std::memory_order_acq_rel);
                 if (prev >= ViewerPanel::kMaxScheduledPresentations_) {
                     safe_self->scheduled_presentations_.fetch_sub(1, std::memory_order_acq_rel);
                     ve::log::debug("ViewerPanel: dropping frame due to UI backlog (" + std::to_string(prev) + ")");
                     return;
                 }
-                QTimer::singleShot(0, safe_self, [safe_self]() {
+                QTimer::singleShot(0, safe_self, [safe_self, frame = std::move(frame_copy)]() mutable {
                     struct PresentationCounterGuard {
                         ViewerPanel* panel;
                         ~PresentationCounterGuard() {
@@ -171,32 +151,7 @@ void ViewerPanel::set_playback_controller(ve::playback::PlaybackController* cont
                         ve::log::debug("ViewerPanel lambda: playback stopping – aborting UI work");
                         return;
                     }
-
-                    ve::decode::VideoFrame* frame_ptr = nullptr;
-                    {
-                        std::lock_guard<std::mutex> lock(safe_self->staging_mutex_);
-                        auto& staging = safe_self->decoder_staging_frame_;
-                        auto& ui_frame = safe_self->ui_thread_frame_;
-                        ui_frame.width  = staging.width;
-                        ui_frame.height = staging.height;
-                        ui_frame.pts    = staging.pts;
-                        ui_frame.format = staging.format;
-                        ui_frame.color_space = staging.color_space;
-                        ui_frame.color_range = staging.color_range;
-                        const size_t bytes = staging.data.size();
-                        if (bytes > 0) {
-                            if (ui_frame.data.capacity() < bytes) {
-                                ui_frame.data.reserve(bytes);
-                            }
-                            ui_frame.data.resize(bytes);
-                            std::memcpy(ui_frame.data.data(), staging.data.data(), bytes);
-                        } else {
-                            ui_frame.data.clear();
-                        }
-                        frame_ptr = &ui_frame;
-                    }
-
-                    safe_self->display_frame(*frame_ptr);
+                    safe_self->display_frame(frame);
                 });
             }
         });
