@@ -235,42 +235,6 @@ private:
 };
 
 /**
- * @brief Audio decoder factory for easy creation
- */
-class AudioDecoderFactory {
-public:
-    /**
-     * @brief Create best decoder for media file
-     * 
-     * @param file_path Path to media file
-     * @param audio_stream_index Audio stream index (-1 for first audio stream)
-     * @param config Decoder configuration
-     * @return Decoder instance or nullptr on failure
-     */
-    static std::unique_ptr<FFmpegAudioDecoder> create_for_file(
-        const std::string& file_path,
-        int audio_stream_index = -1,
-        const AudioDecoderConfig& config = {}
-    );
-
-    /**
-     * @brief Create decoder for specific codec
-     * 
-     * @param codec_name Codec name (e.g., "aac", "mp3")
-     * @param sample_rate Input sample rate
-     * @param channels Input channel count
-     * @param config Decoder configuration  
-     * @return Decoder instance or nullptr on failure
-     */
-    static std::unique_ptr<FFmpegAudioDecoder> create_for_codec(
-        const std::string& codec_name,
-        uint32_t sample_rate,
-        uint16_t channels,
-        const AudioDecoderConfig& config = {}
-    );
-};
-
-/**
  * @brief Utility functions for audio decoding
  */
 namespace decoder_utils {

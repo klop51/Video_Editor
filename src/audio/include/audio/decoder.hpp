@@ -288,6 +288,16 @@ public:
     );
 
     /**
+     * @brief Create decoder for audio file
+     * 
+     * @param file_path Path to audio file
+     * @return Decoder instance or nullptr if file cannot be loaded
+     */
+    static std::unique_ptr<AudioDecoder> create_decoder_from_file(
+        const std::string& file_path
+    );
+
+    /**
      * @brief Detect codec type from stream data
      * 
      * @param stream_data Raw stream data

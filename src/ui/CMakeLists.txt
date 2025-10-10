@@ -24,6 +24,7 @@ add_library(ve_ui
     src/timeline_dock.cpp
     src/viewer_panel.cpp
     src/gl_video_widget.cpp
+    src/widget_inspector.cpp
     
     # UI update guard header
     UiUpdateGuard.h
@@ -36,17 +37,24 @@ add_library(ve_ui
     # Phase 2 Professional Audio Monitoring UI
     src/professional_audio_monitoring_ui.cpp
     
+    # Phase 4 Week 10 Real-Time Audio Monitoring Widgets
+    # src/audio_monitor_widget.cpp  # Temporarily disabled - implementation needs fixes
+    
     # Headers with Q_OBJECT (for MOC processing)
     include/ui/main_window.hpp
     include/ui/timeline_panel.hpp
     include/ui/timeline_dock.hpp
     include/ui/viewer_panel.hpp
     include/ui/gl_video_widget.hpp
+    include/ui/widget_inspector.hpp
     
     # Week 8 Audio UI Headers - Minimal Working Integration
     include/ui/minimal_waveform_widget.hpp
     include/ui/minimal_audio_track_widget.hpp
     include/ui/minimal_audio_meters_widget.hpp
+    
+    # Phase 4 Week 10 Real-Time Audio Monitoring Widgets
+    # include/ui/audio_monitor_widget.hpp  # Temporarily disabled - implementation needs fixes
 )
 
 target_include_directories(ve_ui

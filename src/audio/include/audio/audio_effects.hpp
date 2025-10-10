@@ -29,6 +29,7 @@ public:
 // Audio includes
 #include "audio/audio_frame.hpp"
 #include "audio/mixing_graph.hpp"
+#include "audio/sample_rate_converter.hpp"
 
 namespace ve::audio {
 
@@ -119,6 +120,15 @@ struct EffectStats {
 };
 
 /**
+ * @brief Oversampling configuration for high-quality effects processing
+ */
+struct OversamplingConfig {
+    uint32_t factor = 1;        // 1x, 2x, 4x oversampling
+    bool linear_phase = true;   // Use linear phase filter for better phase response
+    float anti_aliasing_db = 120.0f;  // Anti-aliasing filter stop-band attenuation
+};
+
+/**
  * @brief Base class for audio effects that integrate with mixing graph
  * 
  * EffectNode extends AudioNode to provide audio effects processing
@@ -155,6 +165,13 @@ public:
     void set_bypass(bool bypass) { bypass_.store(bypass); }
     bool is_bypassed() const { return bypass_.load(); }
     
+    // Oversampling control for high-quality processing
+    void set_oversampling(const OversamplingConfig& config);
+    const OversamplingConfig& get_oversampling_config() const { return oversampling_config_; }
+    void enable_oversampling(uint32_t factor = 2);
+    void disable_oversampling() { oversampling_config_.factor = 1; }
+    bool is_oversampling_enabled() const { return oversampling_config_.factor > 1; }
+    
     // Effect information
     EffectType get_effect_type() const { return effect_type_; }
     const EffectStats& get_effect_stats() const { return stats_; }
@@ -171,6 +188,12 @@ protected:
     
     EffectParameter* get_parameter_ptr(const std::string& name);
     const EffectParameter* get_parameter_ptr(const std::string& name) const;
+    
+    // Oversampling processing
+    bool process_with_oversampling(
+        const std::shared_ptr<AudioFrame>& input,
+        std::shared_ptr<AudioFrame>& output
+    );
 
 private:
     EffectType effect_type_;
@@ -178,6 +201,12 @@ private:
     std::unordered_map<std::string, std::unique_ptr<EffectParameter>> parameters_;
     mutable std::mutex parameters_mutex_;
     EffectStats stats_;
+    
+    // Oversampling support
+    OversamplingConfig oversampling_config_;
+    std::unique_ptr<SampleRateConverter> upsampler_;
+    std::unique_ptr<SampleRateConverter> downsampler_;
+    std::shared_ptr<AudioFrame> oversampled_buffer_;
 };
 
 /**

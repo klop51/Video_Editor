@@ -15,6 +15,7 @@
 #include <functional>
 #include <vector>
 #include <algorithm>
+#include <limits>
 
 // FFmpeg resampler
 struct SwrContext;
@@ -105,6 +106,7 @@ public:
 
     // Device timing and buffer telemetry (thread-safe)
     double device_clock_seconds() const;
+    double device_playhead_seconds() const;
     double buffer_fill_percent() const;
     uint32_t buffer_underruns() const;
     void reset_buffer_underruns();
@@ -112,6 +114,9 @@ public:
     void reset_prebuffer_state();
 
     bool audio_ready() const { return audio_ready_.load(std::memory_order_acquire); }
+    bool is_recovering_from_underrun() const {
+        return recovering_from_underrun_.load(std::memory_order_acquire);
+    }
     size_t fifo_frames_available() const {
         const auto channels = std::max<uint16_t>(config_.channel_count, 1);
         const size_t samples = fifo_size_.load(std::memory_order_acquire);
@@ -225,9 +230,19 @@ private:
     std::atomic<size_t> last_period_frames_{0};   // frames per callback (per channel)
     std::atomic<size_t> target_fifo_samples_{0};  // interleaved samples (frames*channels * K)
     double fifo_level_ema_ = 0.0;                 // smooth FIFO level (samples)
-    std::atomic<int> pending_comp_samples_{0};    // to be applied on next convert()
-    std::atomic<int> pending_drift_ppm_{0};
     void update_drift_control(uint32_t callback_frames, uint16_t channels);
+
+    // --- Resampler PLL (device clock follower) ---
+    std::atomic<double> drift_sec_accum_{0.0};
+    double drift_window_elapsed_sec_ = 0.0;
+    double last_drift_sample_time_sec_ = 0.0;
+    double resample_ratio_ = 1.0;   // 1.0 = neutral
+    double pll_window_sec_   = 0.50;   // accumulate drift over 0.5s windows
+    double pll_max_ppm_      = 150.0;  // hard clamp (inaudible)
+    double pll_deadzone_ms_  = 4.0;    // ignore tiny jitter (±4 ms)
+    int    device_rate_      = 48000;  // set once from config_
+    mutable std::atomic<double> device_clock_origin_sec_{0.0};
+    mutable std::atomic<bool> device_clock_has_origin_{false};
 
     // Gap concealment state: remember last output sample per channel
     // Helpers
@@ -265,6 +280,7 @@ private:
     
     // Helper: robust conversion to device format
     bool convert_to_device_format(const AudioFrame& in, std::vector<float>& out, const AudioPipelineConfig& cfg);
+    void update_resampler_pll(const AudioFrame& frame);
     
     // Audio callback for AudioOutput integration
     size_t audio_render_callback(void* buffer, uint32_t frame_count, SampleFormat format, uint16_t channels);

@@ -7,6 +7,7 @@
  */
 
 #include "audio/audio_engine.hpp"
+#include "audio/decoder.hpp"
 #include "audio/test_decoder.hpp"
 #include "audio/audio_buffer_pool.hpp"
 #include <algorithm>
@@ -174,11 +175,15 @@ AudioSourceID AudioEngine::load_audio_source(const std::string& file_path) {
     }
     
     try {
-        // For now, create a test decoder to demonstrate the pipeline
-        std::unique_ptr<AudioDecoder> decoder = std::make_unique<TestAudioDecoder>();
+        // Create decoder for the audio file using FFmpegDecoderBridge
+        std::unique_ptr<AudioDecoder> decoder = AudioDecoderFactory::create_decoder_from_file(file_path);
+        if (!decoder) {
+            set_error("Failed to create decoder for audio file: " + file_path);
+            return INVALID_AUDIO_SOURCE_ID;
+        }
         
         // Initialize decoder (would normally read file)
-        std::vector<uint8_t> dummy_data;  // Would contain actual file data
+        std::vector<uint8_t> dummy_data;  // Decoder handles file loading internally
         AudioError error = decoder->initialize(dummy_data);
         if (error != AudioError::None) {
             set_error("Failed to initialize decoder for: " + file_path);

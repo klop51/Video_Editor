@@ -626,67 +626,6 @@ void FFmpegAudioDecoder::cleanup() {}
 
 #endif // ENABLE_FFMPEG
 
-// Factory implementations
-std::unique_ptr<FFmpegAudioDecoder> AudioDecoderFactory::create_for_file(
-    const std::string& file_path,
-    int audio_stream_index,
-    const AudioDecoderConfig& config) {
-    
-    auto demuxer = media_io::Demuxer::create(file_path);
-    if (!demuxer) {
-        ve::log::error("Failed to create demuxer for: " + file_path);
-        return nullptr;
-    }
-    
-    auto streams = demuxer->get_streams();
-    
-    // Find audio stream
-    media_io::StreamInfo audio_stream;
-    bool found = false;
-    
-    if (audio_stream_index >= 0) {
-        // Use specified stream
-        for (const auto& stream : streams) {
-            if (stream.index == audio_stream_index && stream.type == media_io::StreamInfo::Audio) {
-                audio_stream = stream;
-                found = true;
-                break;
-            }
-        }
-    } else {
-        // Find first audio stream
-        for (const auto& stream : streams) {
-            if (stream.type == media_io::StreamInfo::Audio) {
-                audio_stream = stream;
-                found = true;
-                break;
-            }
-        }
-    }
-    
-    if (!found) {
-        ve::log::error("No audio stream found in: " + file_path);
-        return nullptr;
-    }
-    
-    return FFmpegAudioDecoder::create(audio_stream, config);
-}
-
-std::unique_ptr<FFmpegAudioDecoder> AudioDecoderFactory::create_for_codec(
-    const std::string& codec_name,
-    uint32_t sample_rate,
-    uint16_t channels,
-    const AudioDecoderConfig& config) {
-    
-    media_io::StreamInfo stream_info;
-    stream_info.type = media_io::StreamInfo::Audio;
-    stream_info.codec_name = codec_name;
-    stream_info.sample_rate = static_cast<int>(sample_rate);
-    stream_info.channels = channels;
-    
-    return FFmpegAudioDecoder::create(stream_info, config);
-}
-
 // Utility functions
 namespace decoder_utils {
 

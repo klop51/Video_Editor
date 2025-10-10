@@ -1,4 +1,5 @@
 #include "audio/decoder.hpp"
+#include "audio/ffmpeg_decoder_bridge.hpp"
 #include <core/log.hpp>
 #include <sstream>
 
@@ -146,14 +147,11 @@ std::unique_ptr<AudioDecoder> AudioDecoderFactory::create_decoder(AudioCodec cod
     return nullptr;
 }
 
-std::unique_ptr<AudioDecoder> AudioDecoderFactory::create_decoder_from_data(
-    const std::vector<uint8_t>& stream_data
+std::unique_ptr<AudioDecoder> AudioDecoderFactory::create_decoder_from_file(
+    const std::string& file_path
 ) {
-    AudioCodec codec = detect_codec(stream_data);
-    if (codec == AudioCodec::Unknown) {
-        return nullptr;
-    }
-    return create_decoder(codec);
+    // Use FFmpegDecoderBridge for file-based decoding
+    return FFmpegDecoderBridge::create(file_path);
 }
 
 AudioCodec AudioDecoderFactory::detect_codec(const std::vector<uint8_t>& stream_data) {

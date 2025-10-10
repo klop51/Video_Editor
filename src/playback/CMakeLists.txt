@@ -26,5 +26,6 @@ target_link_libraries(ve_playback
 
 target_compile_features(ve_playback PUBLIC cxx_std_20)
 
-# Create alias for consistency
+# Create aliases for consistency
 add_library(playback ALIAS ve_playback)
+add_library(VideoEditor::playback ALIAS ve_playback)

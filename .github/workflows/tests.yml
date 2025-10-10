@@ -30,7 +30,7 @@ jobs:
           echo "Running basic clang-tidy checks on headers..."
           find src -name "*.hpp" -type f | head -10 | while read file; do
             echo "Checking $file..."
-            clang-tidy "$file" --checks='-*,readability-*,modernize-*' -- -std=c++17 2>&1 | tee -a ci_logs/clang-tidy.txt || true
+            clang-tidy "$file" --checks='-*,readability-*,modernize-*' --config='' -- -std=c++17 -I. -Isrc 2>&1 | tee -a ci_logs/clang-tidy.txt || true
           done
           if [ -f scripts/clang_tidy_check.py ]; then
             echo "⚠️ Note: Full clang-tidy analysis requires compilation - moved to build.yml"

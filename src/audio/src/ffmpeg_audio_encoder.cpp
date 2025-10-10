@@ -810,17 +810,22 @@ AudioEncoderConfig AudioEncoderFactory::get_quality_config(AudioExportFormat for
         config.sample_rate = 48000;
         config.bit_depth = 24;
         config.bitrate = (format == AudioExportFormat::FLAC) ? 0 : 320000;
-        config.quality = 9;
+        config.quality = 10;  // Maximum quality (increased from 9)
+        config.vbr_mode = true;
+        config.compression_level = 8;  // Maximum FLAC compression
     } else if (preset == "web") {
         config.sample_rate = 44100;
         config.bit_depth = 16;
-        config.bitrate = (format == AudioExportFormat::FLAC) ? 0 : 192000;
-        config.quality = 5;
+        config.bitrate = (format == AudioExportFormat::FLAC) ? 0 : 256000;  // Increased from 192k
+        config.quality = 8;  // High quality (increased from 5)
+        config.vbr_mode = true;
     } else if (preset == "archive") {
         config.sample_rate = 96000;
         config.bit_depth = 32;
-        config.bitrate = (format == AudioExportFormat::FLAC) ? 0 : 480000;
-        config.quality = 10;
+        config.bitrate = (format == AudioExportFormat::FLAC) ? 0 : 640000;  // Increased from 480k
+        config.quality = 10;  // Maximum quality
+        config.vbr_mode = true;
+        config.compression_level = 8;  // Maximum FLAC compression
     }
     
     return config;

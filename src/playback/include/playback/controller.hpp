@@ -64,6 +64,10 @@ namespace ve::audio {
 
 namespace ve::playback {
 
+namespace testing {
+class PlaybackControllerTestAccessor;
+}
+
 enum class PlaybackState { Stopped, Playing, Paused, Stopping };
 
 class PlaybackController {
@@ -99,24 +103,78 @@ public:
     int64_t frame_duration_guess_us() const;
 
     // Legacy single-listener setters (clears previous list)
-    void set_video_callback(VideoFrameCallback callback) { std::scoped_lock lk(callbacks_mutex_); video_video_entries_.clear(); if(callback) video_video_entries_.emplace_back(CallbackEntry<VideoFrameCallback>{{next_callback_id_++}, std::move(callback)}); }
-    void set_audio_callback(AudioFrameCallback callback) { std::scoped_lock lk(callbacks_mutex_); audio_entries_.clear(); if(callback) audio_entries_.emplace_back(CallbackEntry<AudioFrameCallback>{{next_callback_id_++}, std::move(callback)}); }
-    void set_state_callback(StateChangeCallback callback) { std::scoped_lock lk(callbacks_mutex_); state_entries_.clear(); if(callback) state_entries_.emplace_back(CallbackEntry<StateChangeCallback>{{next_callback_id_++}, std::move(callback)}); }
-    // New multi-listener add/remove APIs (return handle id)
-    CallbackId add_video_callback(VideoFrameCallback callback) { 
-        if(!callback) return 0; 
-        std::scoped_lock lk(callbacks_mutex_); 
-        CallbackId id = next_callback_id_++; 
-        video_video_entries_.emplace_back(CallbackEntry<VideoFrameCallback>{{id}, std::move(callback)}); 
-        ve::log::info(std::string("PlaybackController: Video callback registered with ID: ") + std::to_string(id) + ", total callbacks: " + std::to_string(video_video_entries_.size()));
-        return id; 
+    void set_video_callback(VideoFrameCallback callback) {
+        std::lock_guard<std::mutex> lk{this->callbacks_mutex_};
+        video_video_entries_.clear();
+        if (callback) {
+            const CallbackId id = this->next_callback_id_.fetch_add(1, std::memory_order_relaxed);
+            CallbackEntry<VideoFrameCallback> entry{};
+            entry.id = id;
+            entry.fn = std::move(callback);
+            video_video_entries_.emplace_back(std::move(entry));
+        }
     }
-    CallbackId add_audio_callback(AudioFrameCallback callback) { if(!callback) return 0; std::scoped_lock lk(callbacks_mutex_); CallbackId id = next_callback_id_++; audio_entries_.emplace_back(CallbackEntry<AudioFrameCallback>{{id}, std::move(callback)}); return id; }
-    CallbackId add_state_callback(StateChangeCallback callback) { if(!callback) return 0; std::scoped_lock lk(callbacks_mutex_); CallbackId id = next_callback_id_++; state_entries_.emplace_back(CallbackEntry<StateChangeCallback>{{id}, std::move(callback)}); return id; }
+    void set_audio_callback(AudioFrameCallback callback) {
+        std::lock_guard<std::mutex> lk{this->callbacks_mutex_};
+        audio_entries_.clear();
+        if (callback) {
+            const CallbackId id = this->next_callback_id_.fetch_add(1, std::memory_order_relaxed);
+            CallbackEntry<AudioFrameCallback> entry{};
+            entry.id = id;
+            entry.fn = std::move(callback);
+            audio_entries_.emplace_back(std::move(entry));
+        }
+    }
+    void set_state_callback(StateChangeCallback callback) {
+        std::lock_guard<std::mutex> lk{this->callbacks_mutex_};
+        state_entries_.clear();
+        if (callback) {
+            const CallbackId id = this->next_callback_id_.fetch_add(1, std::memory_order_relaxed);
+            CallbackEntry<StateChangeCallback> entry{};
+            entry.id = id;
+            entry.fn = std::move(callback);
+            state_entries_.emplace_back(std::move(entry));
+        }
+    }
+    // New multi-listener add/remove APIs (return handle id)
+    CallbackId add_video_callback(VideoFrameCallback callback) {
+        if (!callback) return 0;
+        std::lock_guard<std::mutex> lk{this->callbacks_mutex_};
+        const CallbackId id = this->next_callback_id_.fetch_add(1, std::memory_order_relaxed);
+        CallbackEntry<VideoFrameCallback> entry{};
+        entry.id = id;
+        entry.fn = std::move(callback);
+        video_video_entries_.emplace_back(std::move(entry));
+        ve::log::info(std::string("PlaybackController: Video callback registered with ID: ") + std::to_string(id) + ", total callbacks: " + std::to_string(video_video_entries_.size()));
+        return id;
+    }
+    CallbackId add_audio_callback(AudioFrameCallback callback) {
+        if (!callback) return 0;
+        std::lock_guard<std::mutex> lk{this->callbacks_mutex_};
+        const CallbackId id = this->next_callback_id_.fetch_add(1, std::memory_order_relaxed);
+        CallbackEntry<AudioFrameCallback> entry{};
+        entry.id = id;
+        entry.fn = std::move(callback);
+        audio_entries_.emplace_back(std::move(entry));
+        return id;
+    }
+    CallbackId add_state_callback(StateChangeCallback callback) {
+        if (!callback) return 0;
+        std::lock_guard<std::mutex> lk{this->callbacks_mutex_};
+        const CallbackId id = this->next_callback_id_.fetch_add(1, std::memory_order_relaxed);
+        CallbackEntry<StateChangeCallback> entry{};
+        entry.id = id;
+        entry.fn = std::move(callback);
+        state_entries_.emplace_back(std::move(entry));
+        return id;
+    }
     bool remove_video_callback(CallbackId id);
     bool remove_audio_callback(CallbackId id);
     bool remove_state_callback(CallbackId id);
-    void clear_state_callbacks() { std::scoped_lock lk(callbacks_mutex_); state_entries_.clear(); }
+    void clear_state_callbacks() {
+        std::lock_guard<std::mutex> lk{this->callbacks_mutex_};
+        state_entries_.clear();
+    }
     // Attach a timeline for snapshot-based playback (read-only consumption)
     void set_timeline(ve::timeline::Timeline* tl) { 
         timeline_ = tl; 
@@ -162,6 +220,7 @@ public:
 
     struct Stats { int64_t frames_displayed = 0; int64_t frames_dropped = 0; double avg_frame_time_ms = 0.0; };
     Stats get_stats() const { return stats_; }
+    double get_telemetry_fps() const { return last_logged_estimated_fps_; }
     double cache_hit_ratio() const { int64_t hits=cache_hits_.load(); int64_t lookups=cache_lookups_.load(); return lookups? (double)hits / (double)lookups : 0.0; }
 
     // Decode enable/disable (for stability/isolation)
@@ -169,6 +228,7 @@ public:
     bool decode_enabled() const { return decode_enabled_.load(); }
 
 private:
+    friend class testing::PlaybackControllerTestAccessor;
     void playback_thread_main();
     void set_state(PlaybackState new_state);
     void update_frame_stats(double frame_time_ms);
@@ -186,6 +246,14 @@ private:
                                    double pipeline_drift_ms,
                                    uint32_t audio_underruns,
                                    bool audio_ready);
+    /** Compute adaptive drop/wait thresholds based on fps and audio latency */
+    void compute_av_thresholds(double fps, double audio_latency_sec);
+    
+    /** Learn A/V mapping once when audio is ready */
+    void learn_av_map_once(double frame_pts_sec);
+    
+    /** Reset A/V sync learning state */
+    void reset_av_sync_learning();
     
     // Stop coordination helpers
     void onSafetyTrip_();                    // edge-trigger safety → stop producers
@@ -302,14 +370,21 @@ private:
     double wall_clock_pts_origin_sec_{0.0};
 
     // A/V clock mapping learned at first presented video frame
-    std::atomic<bool> av_map_ready_{false};
-    double av_map_audio0_sec_ = 0.0;   // audio device clock at first video present
-    double av_map_video0_sec_ = 0.0;   // PTS (seconds) of that first presented video
+    std::atomic<bool> av_map_learned_{false};
+    std::atomic<double> av_map_offset_sec_{0.0};
+    std::atomic<int64_t> first_video_pts_us_{std::numeric_limits<int64_t>::lowest()};
+    std::atomic<int64_t> first_audio_pts_us_{std::numeric_limits<int64_t>::lowest()};
     double video_latency_sec_  = 0.050; // small present latency target (50 ms)
 
     // drop/wait slack (tune to taste)
-    double max_drop_ahead_ms_  = 120.0; // drop if audio is >120ms ahead of target
-    double max_wait_behind_ms_ = 90.0;  // allow up to 90ms behind before we force-present
+    double max_drop_ahead_ms_  = 100.0; // drop if audio is >500ms ahead of target (good for video editing)
+    double max_wait_behind_ms_ = 90.0;  // allow up to 200ms behind before we force-present
+
+    // Adaptive A/V sync thresholds (computed at load_media)
+    std::atomic<double> adaptive_max_drop_ahead_ms_{120.0};
+    std::atomic<double> adaptive_max_wait_behind_ms_{50.0};
+    std::atomic<uint64_t> startup_grace_start_time_ns_{0};
+    std::atomic<bool> in_startup_grace_{false};
 
     double audio_master_latency_seconds_{0.20};
     double prebuffer_threshold_percent_{50.0};
@@ -337,7 +412,7 @@ private:
     std::atomic<size_t> watchdog_last_rss_{0};
 
     double predict_present_time_on_audio_clock(double frame_pts_sec,
-                                               double audio_clock_now_sec) const;
+                                               double device_head_now_sec) const;
 };
 
 } // namespace ve::playback

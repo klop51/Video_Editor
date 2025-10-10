@@ -11,6 +11,7 @@ set(UNIT_TEST_SOURCES
     test_color_convert.cpp
     test_color_convert_guards.cpp
     test_playback_scheduler.cpp
+    test_playback_av_map.cpp
     test_persistence.cpp
     test_timeline_basic.cpp
     test_timeline_invariants.cpp
@@ -29,7 +30,7 @@ endif()
 
 add_executable(unit_tests ${UNIT_TEST_SOURCES})
 
-target_link_libraries(unit_tests PRIVATE VideoEditor::core VideoEditor::decode VideoEditor::timeline VideoEditor::persistence VideoEditor::commands VideoEditor::media_io Catch2::Catch2WithMain)
+target_link_libraries(unit_tests PRIVATE VideoEditor::core VideoEditor::decode VideoEditor::timeline VideoEditor::persistence VideoEditor::commands VideoEditor::media_io VideoEditor::playback ve_render Catch2::Catch2WithMain)
 
 # Explicit include for commands until propagated include dirs confirmed across all generators
 target_include_directories(unit_tests PRIVATE

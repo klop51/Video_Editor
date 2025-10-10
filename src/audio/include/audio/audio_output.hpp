@@ -139,7 +139,8 @@ public:
 
     // Statistics and monitoring
     AudioOutputStats get_stats() const;
-    double get_device_clock_seconds();
+    double device_clock_seconds() const;
+    double device_playhead_seconds() const;
     bool get_buffer_metrics(uint32_t& padding_frames, uint32_t& buffer_frames) const;
     double buffer_fill_percent() const;
 

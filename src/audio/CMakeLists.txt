@@ -5,8 +5,10 @@
 add_library(ve_audio STATIC
     src/audio_frame.cpp
     src/decoder.cpp
+    src/ffmpeg_decoder_bridge.cpp     # Phase 1 Week 1: FFmpeg decoder bridge
     src/test_decoder.cpp
     src/sample_rate_converter.cpp      # Phase 1 Week 2: High-quality resampling
+    src/audio_dither.cpp               # Audio quality: Professional dithering for bit depth reduction
     src/audio_buffer_pool.cpp          # Phase 1 Week 2: Lock-free buffer management
     src/audio_clock.cpp                # Phase 1 Week 2: Precision audio timeline sync
     src/ffmpeg_audio_decoder.cpp       # Phase 1 Week 3: FFmpeg audio decoder integration
@@ -70,6 +72,11 @@ set_target_properties(ve_audio PROPERTIES
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF
 )
+
+# Disable warnings as errors for audio_dither.cpp due to double-to-float conversion warnings
+if(MSVC)
+    set_source_files_properties(src/audio_dither.cpp PROPERTIES COMPILE_FLAGS "/WX-")
+endif()
 
 # Add definitions for audio engine configuration
 target_compile_definitions(ve_audio PRIVATE

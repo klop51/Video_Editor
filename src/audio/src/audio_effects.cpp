@@ -2,13 +2,42 @@
  * @file audio_effects.cpp
  * @brief Professional Audio Effects Suite Implementation
  * 
- * Phase 2 Week 5: Core Audio Effects Implementation
+ * Phase 2 Week 5: Co    return true;
+}
+
+void EffectNode::set_oversampling(const OversamplingConfig& config) {
+    if (config.factor != 1 && config.factor != 2 && config.factor != 4) {
+        ve::log::error("Invalid oversampling factor: " + std::to_string(config.factor) + ". Must be 1, 2, or 4.");
+        return;
+    }
+    
+    oversampling_config_ = config;
+    
+    // Reset converters to force recreation with new config
+    upsampler_.reset();
+    downsampler_.reset();
+    
+    ve::log::info("Set oversampling factor to " + std::to_string(config.factor) + "x for effect '" + get_name() + "'");
+}
+
+void EffectNode::enable_oversampling(uint32_t factor) {
+    OversamplingConfig config;
+    config.factor = factor;
+    config.linear_phase = true;
+    config.anti_aliasing_db = 120.0f;
+    set_oversampling(config);
+}
+
+void EffectNode::register_parameter(const std::string& name, 
+                                  float min_val, float max_val, float default_val,
+                                  const std::string& unit) {io Effects Implementation
  */
 
 #define _USE_MATH_DEFINES
 #include <cmath>
 
 #include "audio/audio_effects.hpp"
+#include "audio/sample_rate_converter.hpp"
 #include "core/log.hpp"
 
 #include <immintrin.h>  // For AVX/AVX2 intrinsics
@@ -59,7 +88,12 @@ bool EffectNode::process(
     }
     
     // Process effect
-    bool success = process_effect(input, output);
+    bool success;
+    if (is_oversampling_enabled()) {
+        success = process_with_oversampling(input, output);
+    } else {
+        success = process_effect(input, output);
+    }
     
     if (success) {
         outputs.push_back(output);
@@ -132,8 +166,107 @@ const EffectParameter* EffectNode::get_parameter_ptr(const std::string& name) co
     return (it != parameters_.end()) ? it->second.get() : nullptr;
 }
 
+bool EffectNode::process_with_oversampling(
+    const std::shared_ptr<AudioFrame>& input,
+    std::shared_ptr<AudioFrame>& output) {
+    
+    uint32_t oversampling_factor = oversampling_config_.factor;
+    if (oversampling_factor <= 1) {
+        // No oversampling, process normally
+        return process_effect(input, output);
+    }
+    
+    uint16_t channel_count = input->channel_count();
+    uint32_t input_sample_count = input->sample_count();
+    uint32_t oversampled_sample_count = input_sample_count * oversampling_factor;
+    
+    // Create temporary oversampled frames
+    auto oversampled_input = AudioFrame::create(
+        input->sample_rate() * oversampling_factor,
+        channel_count,
+        oversampled_sample_count,
+        input->format(),
+        input->timestamp()
+    );
+    auto oversampled_output = AudioFrame::create(
+        input->sample_rate() * oversampling_factor,
+        channel_count,
+        oversampled_sample_count,
+        input->format(),
+        input->timestamp()
+    );
+
+    // Create or update upsampler
+    if (!upsampler_ || upsampler_->input_sample_rate() != input->sample_rate() ||
+        upsampler_->output_sample_rate() != oversampled_input->sample_rate()) {
+        
+        ResampleConfig up_config;
+        up_config.input_sample_rate = input->sample_rate();
+        up_config.output_sample_rate = oversampled_input->sample_rate();
+        up_config.input_channels = channel_count;
+        up_config.output_channels = channel_count;
+        up_config.quality = ResampleQuality::Highest;
+        up_config.buffer_size = input_sample_count;
+        
+        upsampler_ = SampleRateConverter::create(up_config);
+        if (!upsampler_ || upsampler_->initialize() != AudioError::None) {
+            ve::log::error("Failed to create/initialize upsampler for oversampling");
+            return false;
+        }
+    }
+
+    // Upsample input using the sample rate converter
+    auto upsampled_frame = upsampler_->convert_frame(input);
+    if (!upsampled_frame) {
+        ve::log::error("Failed to upsample audio for oversampling");
+        return false;
+    }
+    
+    // Copy upsampled data to oversampled_input frame
+    std::memcpy(oversampled_input->data(), upsampled_frame->data(), 
+                upsampled_frame->sample_count() * channel_count * sizeof(float));
+
+    // Process effect at oversampled rate
+    if (!process_effect(oversampled_input, oversampled_output)) {
+        ve::log::error("Failed to process effect with oversampling");
+        return false;
+    }
+
+    // Create or update downsampler
+    if (!downsampler_ || downsampler_->input_sample_rate() != oversampled_output->sample_rate() ||
+        downsampler_->output_sample_rate() != output->sample_rate()) {
+        
+        ResampleConfig down_config;
+        down_config.input_sample_rate = oversampled_output->sample_rate();
+        down_config.output_sample_rate = output->sample_rate();
+        down_config.input_channels = channel_count;
+        down_config.output_channels = channel_count;
+        down_config.quality = ResampleQuality::Highest;
+        down_config.buffer_size = oversampled_sample_count;
+        
+        downsampler_ = SampleRateConverter::create(down_config);
+        if (!downsampler_ || downsampler_->initialize() != AudioError::None) {
+            ve::log::error("Failed to create/initialize downsampler for oversampling");
+            return false;
+        }
+    }
+
+    // Downsample back to original rate
+    auto downsampled_frame = downsampler_->convert_frame(oversampled_output);
+    if (!downsampled_frame) {
+        ve::log::error("Failed to downsample audio after oversampling");
+        return false;
+    }
+    
+    // Copy downsampled data to output frame
+    std::memcpy(output->data(), downsampled_frame->data(), 
+                output->sample_count() * channel_count * sizeof(float));
+
+    return true;
+}
+
 //-----------------------------------------------------------------------------
-// EQNode Implementation  
+// EQNode Implementation
 //-----------------------------------------------------------------------------
 
 EQNode::EQNode(NodeID id, const std::string& name) : EffectNode(id, EffectType::EQ_4BAND, name) {

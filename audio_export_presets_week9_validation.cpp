@@ -249,8 +249,9 @@ private:
                 config.bitrate = 192000;
                 config.vbr_mode = true;
                 
-                bool configured = mp3_encoder->configure(config);
-                test_assert(configured, "MP3 encoder configuration");
+                // Create encoder with config
+                auto configured_encoder = FFmpegAudioEncoder::create(AudioExportFormat::MP3, config);
+                test_assert(configured_encoder != nullptr, "MP3 encoder configuration");
                 std::cout << "   MP3 encoder configured: 192kbps VBR" << std::endl;
             }
             
@@ -269,7 +270,9 @@ private:
         
         try {
             // Create mock components for AudioRenderEngine
-            auto audio_clock = std::make_shared<AudioClock>(48000);
+            AudioClockConfig clock_config;
+            clock_config.sample_rate = 48000;
+            auto audio_clock = std::make_shared<AudioClock>(clock_config);
             auto mixing_graph = std::make_shared<MixingGraph>();
             
             // Create render engine
@@ -400,7 +403,7 @@ private:
         metadata.album = "Professional Exports";
         metadata.genre = "Audio Engineering";
         metadata.year = 2024;
-        metadata.track = 1;
+        metadata.track_number = 1;
         metadata.comment = "Week 9 validation test";
         
         test_assert(!metadata.title.empty(), "Metadata title set");

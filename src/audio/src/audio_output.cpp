@@ -680,6 +680,9 @@ AudioOutputError AudioOutput::initialize_format() {
         return AudioOutputError::Unknown;
     }
 
+    // Log negotiated buffer frame count once for sensitivity correlation
+    ve::log::info("WASAPI_BUFFER_NEGOTIATED: buffer_frame_count=" + std::to_string(buffer_frame_count_));
+
     // PHASE 1 DIAGNOSTIC: Get device period and quantum information
     REFERENCE_TIME default_device_period = 0;
     REFERENCE_TIME minimum_device_period = 0;
@@ -865,7 +868,7 @@ void AudioOutput::update_stats() {
     // This would be called from the render thread
 }
 
-double AudioOutput::get_device_clock_seconds() {
+double AudioOutput::device_clock_seconds() const {
 #ifdef _WIN32
     if (!audio_clock_ || audio_clock_frequency_ <= 0.0) {
         return -1.0;
@@ -890,6 +893,18 @@ double AudioOutput::get_device_clock_seconds() {
     clock_last_position_.store(position, std::memory_order_release);
     const double seconds = static_cast<double>(position - start) / audio_clock_frequency_;
     return seconds;
+#else
+    return -1.0;
+#endif
+}
+
+double AudioOutput::device_playhead_seconds() const {
+#ifdef _WIN32
+    const double clock_sec = device_clock_seconds();
+    if (!std::isfinite(clock_sec) || clock_sec < 0.0) {
+        return -1.0;
+    }
+    return clock_sec;
 #else
     return -1.0;
 #endif

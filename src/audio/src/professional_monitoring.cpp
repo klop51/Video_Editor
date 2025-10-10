@@ -59,23 +59,19 @@ void EnhancedEBUR128Monitor::reset() {
 }
 
 void EnhancedEBUR128Monitor::process_samples(const AudioFrame& frame) {
-    // PHASE B: Test compliance checking operations while RealTimeLoudnessMonitor is disabled
-    
-    // This should be safe since RealTimeLoudnessMonitor::process_samples just returns early
+    // Process samples through core monitor
     core_monitor_->process_samples(frame);
-    
-    // PHASE A SUCCESS: These operations work fine
+
+    // Update sample counter
     samples_processed_.fetch_add(frame.sample_count() * frame.channel_count());
-    
-    // PHASE B: Re-enable compliance checking and history operations
-    static auto last_update = std::chrono::steady_clock::now();
-    auto now = std::chrono::steady_clock::now();
-    if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_update).count() >= 100) {
-        // PHASE B: Re-enable these operations to test if they cause the crash
-        update_compliance_status();
-        update_history();
-        last_update = now;
-    }
+
+    // Defer compliance and history updates to avoid deadlock
+    // These will be called by the monitoring system at appropriate intervals
+}
+
+void EnhancedEBUR128Monitor::update_monitoring_state() {
+    update_compliance_status();
+    update_history();
 }
 
 double EnhancedEBUR128Monitor::get_momentary_lufs() const {
@@ -711,9 +707,7 @@ void ProfessionalAudioMonitoringSystem::process_audio_frame(const AudioFrame& fr
     
     auto start_time = std::chrono::high_resolution_clock::now();
     
-    // TEMPORARILY DISABLED: Process through all enabled monitoring components with safe error handling
-    // TODO: Fix recursive mutex deadlock in loudness monitoring
-    /*
+    // Process through all enabled monitoring components with safe error handling
     if (loudness_monitor_) {
         try {
             loudness_monitor_->process_samples(frame);
@@ -722,7 +716,6 @@ void ProfessionalAudioMonitoringSystem::process_audio_frame(const AudioFrame& fr
             // Continue processing even if loudness monitoring fails
         }
     }
-    */
     
     if (meter_system_) {
         try {
@@ -735,6 +728,20 @@ void ProfessionalAudioMonitoringSystem::process_audio_frame(const AudioFrame& fr
     
     if (scopes_) {
         scopes_->process_samples(frame);
+    }
+    
+    // Update monitoring state at safe intervals (every ~100ms)
+    static auto last_monitoring_update = std::chrono::steady_clock::now();
+    auto now = std::chrono::steady_clock::now();
+    if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_monitoring_update).count() >= 100) {
+        if (loudness_monitor_) {
+            try {
+                loudness_monitor_->update_monitoring_state();
+            } catch (const std::exception& e) {
+                ve::log::error("Loudness monitor state update error: " + std::string(e.what()));
+            }
+        }
+        last_monitoring_update = now;
     }
     
     auto end_time = std::chrono::high_resolution_clock::now();

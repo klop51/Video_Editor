@@ -74,15 +74,7 @@ ViewerPanel::ViewerPanel(QWidget* parent)
         display_enabled_ = false;
     }
     
-    bool gpu_mode_off = false;
-    if (const char* gpu_mode_env = std::getenv("VE_GPU_MODE")) {
-        std::string mode = gpu_mode_env;
-        std::transform(mode.begin(), mode.end(), mode.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        if (mode == "off" || mode == "cpu" || mode == "disable" || mode == "disabled" || mode == "software") {
-            gpu_mode_off = true;
-            ve::log::info("ViewerPanel: VE_GPU_MODE requested CPU rendering (" + mode + ")");
-        }
-    }
+    bool gpu_mode_off = false; // Re-enable GPU rendering
 
     if (!gpu_mode_off) {
         // Enable GPU pipeline by default for better video rendering
@@ -113,7 +105,7 @@ void ViewerPanel::set_playback_controller(ve::playback::PlaybackController* cont
         ve::log::debug("ViewerPanel: PlaybackController is not polymorphic - Qt signal connection skipped");
         controller->add_video_callback([this](const ve::decode::VideoFrame& f) {
             // CRITICAL ANALYSIS: This callback executes on DECODER THREAD!
-            ve::log::debug("ViewerPanel::video_callback called on thread: " + std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id())));
+            ve::log::info("ViewerPanel::video_callback called on thread: " + std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id())));
             
             // Critical: Check destruction flag before any operations
             if (destroying_.load(std::memory_order_acquire)) {
@@ -239,11 +231,13 @@ void ViewerPanel::disable_gpu_pipeline() {
 }
 
 void ViewerPanel::display_frame(const ve::decode::VideoFrame& frame) {
+    static int display_frame_counter = 0;
+    display_frame_counter++;
     // CRITICAL ANALYSIS: This should execute on UI thread
-    // Removed per-frame display_frame debug logging to prevent spam
-    ve::log::debug("ViewerPanel::display_frame called on thread: " + std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id())) + 
-                   ", pts=" + std::to_string(frame.pts) + ", size=" + std::to_string(frame.data.size()) + 
-                   ", dimensions=" + std::to_string(frame.width) + "x" + std::to_string(frame.height));
+    // DISABLED FOR PERFORMANCE: Frequent frame logging causes video interruptions
+    // ve::log::info("ViewerPanel::display_frame #" + std::to_string(display_frame_counter) + " called on thread: " + std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id())) + 
+    //                ", pts=" + std::to_string(frame.pts) + ", size=" + std::to_string(frame.data.size()) + 
+    //                ", dimensions=" + std::to_string(frame.width) + "x" + std::to_string(frame.height));
     
     // Critical: Check if widget is being destroyed
     if (destroying_.load(std::memory_order_acquire)) {
@@ -268,7 +262,7 @@ void ViewerPanel::display_frame(const ve::decode::VideoFrame& frame) {
     qint64 elapsed = now_ms - fps_last_ms_;
     if (elapsed >= 500 && fps_overlay_) {
         double inst_fps = elapsed>0 ? (fps_frames_accum_ * 1000.0 / elapsed) : 0.0;
-        double avg_ms=0.0, avg_fps=0.0, target_fps=0.0;
+        double avg_ms=0.0, avg_fps=0.0, target_fps=0.0, telemetry_fps=0.0;
         if (playback_controller_) {
             auto stats = playback_controller_->get_stats();
             avg_ms = stats.avg_frame_time_ms;
@@ -279,8 +273,9 @@ void ViewerPanel::display_frame(const ve::decode::VideoFrame& frame) {
             if (us > 0) {
                 target_fps = 1'000'000.0 / static_cast<double>(us);
             }
+            telemetry_fps = playback_controller_->get_telemetry_fps();
         }
-        double show_fps = avg_fps > 0 ? avg_fps : inst_fps;
+        double show_fps = telemetry_fps > 0 ? telemetry_fps : (avg_fps > 0 ? avg_fps : inst_fps);
         if (show_fps > 0) {
             double warn_th = target_fps > 0 ? target_fps * 0.9 : 24.0;
             double bad_th = target_fps > 0 ? target_fps * 0.6 : 18.0;
@@ -311,25 +306,37 @@ void ViewerPanel::display_frame(const ve::decode::VideoFrame& frame) {
 #endif
         bool uploaded = false;
         if (auto view = ve::decode::to_rgba_scaled_view(current_frame_, current_frame_.width, current_frame_.height)) {
+            // DISABLED FOR PERFORMANCE: Frequent GPU upload logging causes video interruptions
+            // ve::log::info("ViewerPanel::display_frame calling gl_widget_->set_frame() for GPU upload");
             gl_widget_->set_frame(view->data, view->width, view->height, view->stride, current_frame_.pts);
             uploaded = true;
+            // DISABLED FOR PERFORMANCE: Frequent GPU upload logging causes video interruptions
+            // ve::log::info("ViewerPanel::display_frame GPU upload successful for frame pts=" + std::to_string(current_frame_.pts));
         } else if (auto rgba = ve::decode::to_rgba(current_frame_)) {
             auto& rf = *rgba; size_t needed = static_cast<size_t>(rf.width) * static_cast<size_t>(rf.height) * 4;
-            if (rf.data.size() >= needed) gl_widget_->set_frame(rf.data.data(), rf.width, rf.height, rf.width*4, rf.pts);
-            uploaded = true;
+            if (rf.data.size() >= needed) {
+                // DISABLED FOR PERFORMANCE: Frequent GPU upload logging causes video interruptions
+                // ve::log::info("ViewerPanel::display_frame calling gl_widget_->set_frame() for GPU fallback upload");
+                gl_widget_->set_frame(rf.data.data(), rf.width, rf.height, rf.width*4, rf.pts);
+                uploaded = true;
+                // DISABLED FOR PERFORMANCE: Frequent GPU upload logging causes video interruptions
+                // ve::log::info("ViewerPanel::display_frame GPU upload fallback successful for frame pts=" + std::to_string(current_frame_.pts));
+            }
         }
         
         // If GPU upload failed, fall back to CPU rendering
         if (!uploaded) {
-            ve::log::warn("GPU frame upload failed, falling back to CPU rendering");
-            ve::log::debug("ViewerPanel::display_frame calling update_frame_display (GPU fallback to CPU path)");
+            // DISABLED FOR PERFORMANCE: Frequent GPU fallback logging causes video interruptions
+            // ve::log::info("ViewerPanel::display_frame GPU upload failed, falling back to CPU rendering for frame pts=" + std::to_string(current_frame_.pts));
+            // ve::log::info("ViewerPanel::display_frame calling update_frame_display (GPU fallback to CPU path)");
             update_frame_display();
             if (auto timer = frame.timing) {
                 timer->afterConversion();
                 timer->afterUpload();
                 timer->endAndMaybeLog("TIMING_CPU");
             }
-            ve::log::debug("ViewerPanel::display_frame GPU fallback update_frame_display completed");
+            // DISABLED FOR PERFORMANCE: Frequent GPU fallback logging causes video interruptions
+            // ve::log::info("ViewerPanel::display_frame GPU fallback update_frame_display completed");
             render_in_progress_ = false;
             if (pending_frame_valid_) {
                 auto next = pending_frame_;
@@ -351,50 +358,22 @@ void ViewerPanel::display_frame(const ve::decode::VideoFrame& frame) {
         
         if (render_graph_) {
             if (auto* gpu_rg = dynamic_cast<ve::render::GpuRenderGraph*>(render_graph_.get())) {
-                gpu_rg->set_current_frame(current_frame_);
-                ve::render::FrameRequest req{current_frame_.pts};
-                auto render_result = gpu_rg->render(req);
-                if (render_result.request_cpu_fallback) {
-                    ve::log::warn("ViewerPanel: GPU pipeline requested CPU fallback (hr=0x" + format_hresult(gpu_rg->last_gpu_error()) + ")");
-                    disable_gpu_pipeline();
-                    if (playback_controller_) {
-                        playback_controller_->force_cpu_render_fallback(gpu_rg->last_gpu_error());
-                    }
-                    ve::log::debug("ViewerPanel::display_frame switching to CPU fallback render");
-                    update_frame_display();
-                    if (auto timer = frame.timing) {
-                        timer->afterConversion();
-                        timer->afterUpload();
-                        timer->endAndMaybeLog("TIMING_CPU");
-                    }
-                    render_in_progress_ = false;
-                    if (pending_frame_valid_) {
-                        auto next = pending_frame_;
-                        pending_frame_valid_ = false;
-                        QPointer<ViewerPanel> safe_self(this);
-                        QTimer::singleShot(0, this, [safe_self, next]() {
-                            if (safe_self && !safe_self->destroying_.load(std::memory_order_acquire)) {
-                                if (safe_self->playback_controller_ && safe_self->playback_controller_->isStopping()) {
-                                    ve::log::debug("ViewerPanel lambda: playback stopping – aborting UI work");
-                                    return;
-                                }
-                                safe_self->display_frame(next);
-                            }
-                        });
-                    }
-                    return;
-                }
+                // Removed gpu_rg->set_current_frame() call - GPU rendering now handled entirely asynchronously by GLVideoWidget::paintGL()
+                // gpu_rg->set_current_frame(current_frame_);
+                // GPU rendering now handled asynchronously by GLVideoWidget::paintGL()
             }
         }
     } else {
-        ve::log::info("ViewerPanel::display_frame calling update_frame_display (CPU path)");
+        // DISABLED FOR PERFORMANCE: Frequent CPU rendering logging causes video interruptions
+        // ve::log::info("ViewerPanel::display_frame using CPU rendering path for frame pts=" + std::to_string(current_frame_.pts));
         update_frame_display();
         if (auto timer = frame.timing) {
             timer->afterConversion();
             timer->afterUpload();
             timer->endAndMaybeLog("TIMING_CPU");
         }
-        ve::log::info("ViewerPanel::display_frame update_frame_display completed");
+        // DISABLED FOR PERFORMANCE: Frequent CPU rendering logging causes video interruptions
+        // ve::log::info("ViewerPanel::display_frame CPU update_frame_display completed for frame pts=" + std::to_string(current_frame_.pts));
     }
 
     render_in_progress_ = false;
@@ -525,14 +504,17 @@ void ViewerPanel::setup_ui() {
 }
 
 void ViewerPanel::update_frame_display() {
-    ve::log::info("ViewerPanel::update_frame_display starting, has_frame_=" + std::to_string(has_frame_));
+    // DISABLED FOR PERFORMANCE: Frequent frame display logging causes video interruptions
+    // ve::log::info("ViewerPanel::update_frame_display starting, has_frame_=" + std::to_string(has_frame_));
     if (!has_frame_) { 
-        ve::log::info("ViewerPanel::update_frame_display no frame available");
+        // DISABLED FOR PERFORMANCE: Frequent frame display logging causes video interruptions
+        // ve::log::info("ViewerPanel::update_frame_display no frame available");
         if (video_display_label_) video_display_label_->setText("No Video"); 
         return; 
     }
     
-    ve::log::info("ViewerPanel::update_frame_display calling convert_frame_to_pixmap");
+    // DISABLED FOR PERFORMANCE: Frequent frame display logging causes video interruptions
+    // ve::log::info("ViewerPanel::update_frame_display calling convert_frame_to_pixmap");
     QPixmap pix = convert_frame_to_pixmap(current_frame_); 
     if (pix.isNull()) { 
         ve::log::error("ViewerPanel::update_frame_display convert_frame_to_pixmap returned null pixmap!");
@@ -540,17 +522,20 @@ void ViewerPanel::update_frame_display() {
         return; 
     }
     
-    ve::log::info("ViewerPanel::update_frame_display pixmap created successfully, scaling and setting");
+    // DISABLED FOR PERFORMANCE: Frequent frame display logging causes video interruptions
+    // ve::log::info("ViewerPanel::update_frame_display pixmap created successfully, scaling and setting");
     QSize ds = video_display_label_ ? video_display_label_->size() : size(); 
     QPixmap scaled = pix.scaled(ds, aspect_ratio_mode_, Qt::FastTransformation); 
     if (video_display_label_) video_display_label_->setPixmap(scaled);
-    ve::log::info("ViewerPanel::update_frame_display completed successfully");
+    // DISABLED FOR PERFORMANCE: Frequent frame display logging causes video interruptions
+    // ve::log::info("ViewerPanel::update_frame_display completed successfully");
 }
 
 QPixmap ViewerPanel::convert_frame_to_pixmap(const ve::decode::VideoFrame& frame) {
-    ve::log::info("ViewerPanel::convert_frame_to_pixmap starting - format=" + std::to_string(static_cast<int>(frame.format)) + 
-                   ", dimensions=" + std::to_string(frame.width) + "x" + std::to_string(frame.height) + 
-                   ", data_size=" + std::to_string(frame.data.size()));
+    // DISABLED FOR PERFORMANCE: Frequent frame conversion logging causes video interruptions
+    // ve::log::info("ViewerPanel::convert_frame_to_pixmap starting - format=" + std::to_string(static_cast<int>(frame.format)) + 
+    //                ", dimensions=" + std::to_string(frame.width) + "x" + std::to_string(frame.height) + 
+    //                ", data_size=" + std::to_string(frame.data.size()));
     
     if (frame.data.empty()) {
         ve::log::error("ViewerPanel::convert_frame_to_pixmap frame data is empty!");
@@ -571,26 +556,31 @@ QPixmap ViewerPanel::convert_frame_to_pixmap(const ve::decode::VideoFrame& frame
                 return it->pix;
             }
         }
-        ve::log::info("ViewerPanel::convert_frame_to_pixmap calling to_rgba_scaled_view with target size " + std::to_string(tw) + "x" + std::to_string(th));
+        // DISABLED FOR PERFORMANCE: Frequent frame conversion logging causes video interruptions
+        // ve::log::info("ViewerPanel::convert_frame_to_pixmap calling to_rgba_scaled_view with target size " + std::to_string(tw) + "x" + std::to_string(th));
         if (auto view = ve::decode::to_rgba_scaled_view(frame, tw, th)) {
-            ve::log::info("ViewerPanel::convert_frame_to_pixmap to_rgba_scaled_view SUCCESS - creating QImage from view data");
-            ve::log::info("RgbaView: data=" + std::to_string(reinterpret_cast<uintptr_t>(view->data)) + 
-                           ", width=" + std::to_string(view->width) + 
-                           ", height=" + std::to_string(view->height) + 
-                           ", stride=" + std::to_string(view->stride));
+            // DISABLED FOR PERFORMANCE: Frequent frame conversion logging causes video interruptions
+            // ve::log::info("ViewerPanel::convert_frame_to_pixmap to_rgba_scaled_view SUCCESS - creating QImage from view data");
+            // ve::log::info("RgbaView: data=" + std::to_string(reinterpret_cast<uintptr_t>(view->data)) + 
+            //                ", width=" + std::to_string(view->width) + 
+            //                ", height=" + std::to_string(view->height) + 
+            //                ", stride=" + std::to_string(view->stride));
             
             // Debug: Check first few pixels to verify RGBA content
-            if (view->data && view->width > 0 && view->height > 0) {
-                const uint8_t* pixels = static_cast<const uint8_t*>(view->data);
-                ve::log::info("ViewerPanel RGBA pixels: P0(" + std::to_string(pixels[0]) + "," + std::to_string(pixels[1]) + "," + std::to_string(pixels[2]) + "," + std::to_string(pixels[3]) + ") " +
-                             "P1(" + std::to_string(pixels[4]) + "," + std::to_string(pixels[5]) + "," + std::to_string(pixels[6]) + "," + std::to_string(pixels[7]) + ")");
-            }
+            // DISABLED FOR PERFORMANCE: Frequent pixel debugging causes video interruptions
+            // if (view->data && view->width > 0 && view->height > 0) {
+            //     const uint8_t* pixels = static_cast<const uint8_t*>(view->data);
+            //     ve::log::info("ViewerPanel RGBA pixels: P0(" + std::to_string(pixels[0]) + "," + std::to_string(pixels[1]) + "," + std::to_string(pixels[2]) + "," + std::to_string(pixels[3]) + ") " +
+            //                  "P1(" + std::to_string(pixels[4]) + "," + std::to_string(pixels[5]) + "," + std::to_string(pixels[6]) + "," + std::to_string(pixels[7]) + ")");
+            // }
             
             // CRITICAL: This might be where the crash occurs - QImage constructor with external data
             QImage tmp(view->data, view->width, view->height, view->stride, QImage::Format_RGBA8888);
-            ve::log::info("ViewerPanel::convert_frame_to_pixmap QImage created, converting to QPixmap");
+            // DISABLED FOR PERFORMANCE: Frequent frame conversion logging causes video interruptions
+            // ve::log::info("ViewerPanel::convert_frame_to_pixmap QImage created, converting to QPixmap");
             QPixmap p = QPixmap::fromImage(tmp); // copies pixel data internally
-            ve::log::info("ViewerPanel::convert_frame_to_pixmap QPixmap created successfully");
+            // DISABLED FOR PERFORMANCE: Frequent frame conversion logging causes video interruptions
+            // ve::log::info("ViewerPanel::convert_frame_to_pixmap QPixmap created successfully");
             if (preview_scale_to_widget_ && pix_cache_capacity_ > 0) {
                 if (int(pix_cache_.size()) >= pix_cache_capacity_) {
                     pix_cache_.pop_front();
@@ -599,13 +589,15 @@ QPixmap ViewerPanel::convert_frame_to_pixmap(const ve::decode::VideoFrame& frame
             }
             return p;
         }
-        ve::log::info("ViewerPanel::convert_frame_to_pixmap to_rgba_scaled_view FAILED, trying to_rgba_scaled fallback");
+        // DISABLED FOR PERFORMANCE: Frequent frame conversion logging causes video interruptions
+        // ve::log::info("ViewerPanel::convert_frame_to_pixmap to_rgba_scaled_view FAILED, trying to_rgba_scaled fallback");
         auto rgba = ve::decode::to_rgba_scaled(frame, tw, th);
         if (!rgba) {
             ve::log::error("ViewerPanel::convert_frame_to_pixmap to_rgba_scaled also FAILED - no conversion possible!");
             return QPixmap();
         }
-        ve::log::info("ViewerPanel::convert_frame_to_pixmap to_rgba_scaled SUCCESS - creating QImage");
+        // DISABLED FOR PERFORMANCE: Frequent frame conversion logging causes video interruptions
+        // ve::log::info("ViewerPanel::convert_frame_to_pixmap to_rgba_scaled SUCCESS - creating QImage");
         size_t expect = size_t(rgba->width) * rgba->height * 4;
         if (rgba->data.size() != expect) {
             ve::log::error("ViewerPanel::convert_frame_to_pixmap size mismatch - expected=" + std::to_string(expect) + " actual=" + std::to_string(rgba->data.size()));

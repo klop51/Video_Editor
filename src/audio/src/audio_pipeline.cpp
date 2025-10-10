@@ -33,12 +33,33 @@ inline bool env_flag_enabled(const char* name) {
         }
         return true;
     }
+    // VE_AUDIO_SAFE defaults to true for stability during audio robustness tuning
+    if (std::strcmp(name, "VE_AUDIO_SAFE") == 0) {
+        return true;
+    }
     return true;
 }
 
 inline bool safe_audio_enabled() {
     static const bool enabled = env_flag_enabled("VE_AUDIO_SAFE");
     return enabled;
+}
+
+static inline double clamp(double v, double lo, double hi) {
+    return v < lo ? lo : (v > hi ? hi : v);
+}
+
+static inline double wall_clock_seconds() {
+    static const auto start = std::chrono::steady_clock::now();
+    return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+}
+
+static inline double time_point_to_seconds(const ve::TimePoint& tp) {
+    const auto& r = tp.to_rational();
+    if (r.den == 0) {
+        return 0.0;
+    }
+    return static_cast<double>(r.num) / static_cast<double>(r.den);
 }
 } // namespace
 
@@ -128,15 +149,22 @@ AudioPipeline::AudioPipeline(const AudioPipelineConfig& config)
         config_.prebuffer_threshold = std::clamp(std::max(config_.prebuffer_threshold, 0.75), 0.10, 0.95);
         config_.underrun_recovery_threshold = std::clamp(std::max(config_.underrun_recovery_threshold, 0.90), 0.10, 0.99);
         config_.drift_window_seconds = 0.0;
+        pll_window_sec_ = 0.0;
     }
 
     audio_buffer_.resize(BUFFER_SIZE);
     latency_target_samples_.store(0, std::memory_order_relaxed);
     prebuffer_complete_.store(false, std::memory_order_relaxed);
     recovering_from_underrun_.store(false, std::memory_order_relaxed);
-    pending_drift_ppm_.store(0, std::memory_order_relaxed);
     underruns_snapshot_.store(0, std::memory_order_relaxed);
     fifo_level_ema_ = 0.0;
+    drift_sec_accum_.store(0.0, std::memory_order_relaxed);
+    drift_window_elapsed_sec_ = 0.0;
+    last_drift_sample_time_sec_ = 0.0;
+    resample_ratio_ = 1.0;
+    device_rate_ = static_cast<int>(config_.sample_rate);
+    device_clock_origin_sec_.store(0.0, std::memory_order_relaxed);
+    device_clock_has_origin_.store(false, std::memory_order_relaxed);
 }
 
 AudioPipeline::~AudioPipeline() {
@@ -204,6 +232,9 @@ void AudioPipeline::shutdown() {
         output_.reset();
     }
 
+    device_clock_has_origin_.store(false, std::memory_order_release);
+    device_clock_origin_sec_.store(0.0, std::memory_order_relaxed);
+
     audio_ready_.store(false, std::memory_order_release);
     device_start_pending_.store(false, std::memory_order_release);
     start_deferred_logged_.store(false, std::memory_order_release);
@@ -259,6 +290,10 @@ bool AudioPipeline::process_audio_frame(std::shared_ptr<AudioFrame> frame) {
     // Process through professional monitoring system if enabled
     if (monitoring_enabled_.load() && monitoring_system_) {
         monitoring_system_->process_audio_frame(*frame);
+    }
+
+    if (!safe_mode_enabled_) {
+        update_resampler_pll(*frame);
     }
 
     // Convert to device format here (rate/channels/format) and push to device FIFO
@@ -477,6 +512,7 @@ bool AudioPipeline::set_config(const AudioPipelineConfig& config) {
     }
 
     config_ = config;
+    device_rate_ = static_cast<int>(config_.sample_rate);
     return true;
 }
 
@@ -493,7 +529,45 @@ void AudioPipeline::clear_error() {
 double AudioPipeline::device_clock_seconds() const {
 #ifdef _WIN32
     if (output_) {
-        return output_->get_device_clock_seconds();
+        return output_->device_clock_seconds();
+    }
+#endif
+    return -1.0;
+}
+
+double AudioPipeline::device_playhead_seconds() const {
+#ifdef _WIN32
+    if (output_) {
+        const double now = output_->device_clock_seconds();
+        if (!std::isfinite(now) || now < 0.0) {
+            return -1.0;
+        }
+
+        bool has_origin = device_clock_has_origin_.load(std::memory_order_acquire);
+        if (!has_origin) {
+            device_clock_origin_sec_.store(now, std::memory_order_release);
+            device_clock_has_origin_.store(true, std::memory_order_release);
+            return 0.0;
+        }
+
+        double origin = device_clock_origin_sec_.load(std::memory_order_acquire);
+        double relative = now - origin;
+        if (!std::isfinite(relative)) {
+            return 0.0;
+        }
+
+        if (relative < 0.0) {
+            // Allow tiny jitter without rebasing; clamp upward.
+            if (relative > -0.050) { // tolerate up to 50 ms backwards jump
+                return 0.0;
+            }
+
+            // Large discontinuity: rebase origin to preserve monotonic clock.
+            device_clock_origin_sec_.store(now, std::memory_order_release);
+            return 0.0;
+        }
+
+        return relative;
     }
 #endif
     return -1.0;
@@ -555,29 +629,46 @@ void AudioPipeline::apply_clock_drift(double drift_seconds, double measurement_w
         return;
     }
 
-    const double abs_ms = std::abs(drift_seconds) * 1000.0;
-    if (abs_ms < 5.0) {
-        return; // leave tiny drift alone
-    }
-
-    double ppm = (drift_seconds * 1'000'000.0) / measurement_window_seconds;
-    ppm = std::clamp(ppm, -200.0, 200.0);
-    const double ratio = 1.0 - ppm / 1'000'000.0;
-    const double horizon = std::clamp(config_.drift_window_seconds, 0.25, 1.0);
-    int compensation = static_cast<int>(std::lrint((ratio - 1.0) * config_.sample_rate * horizon));
-    if (compensation == 0) {
+    if (!swr_ || !output_) {
         return;
     }
 
-    const int clamp_limit = static_cast<int>(config_.sample_rate);
-    int previous = pending_comp_samples_.fetch_add(compensation, std::memory_order_relaxed);
-    int combined = previous + compensation;
-    if (combined > clamp_limit) {
-        pending_comp_samples_.store(clamp_limit, std::memory_order_relaxed);
-    } else if (combined < -clamp_limit) {
-        pending_comp_samples_.store(-clamp_limit, std::memory_order_relaxed);
+    const double abs_ms = std::abs(drift_seconds) * 1000.0;
+    if (abs_ms < pll_deadzone_ms_) {
+        return; // ignore tiny jitter
     }
-    pending_drift_ppm_.store(static_cast<int>(ppm), std::memory_order_relaxed);
+
+    const double effective_window = measurement_window_seconds > 0.0
+        ? measurement_window_seconds
+        : (pll_window_sec_ > 0.0 ? pll_window_sec_ : 0.5);
+    if (effective_window <= 0.0) {
+        return;
+    }
+
+    double ppm = clamp((drift_seconds / effective_window) * 1e6, -pll_max_ppm_, pll_max_ppm_);
+    const int rate = device_rate_ > 0 ? device_rate_ : static_cast<int>(config_.sample_rate);
+    if (rate <= 0) {
+        return;
+    }
+
+    int distance = static_cast<int>(rate * (effective_window * 0.5));
+    if (distance < 1) {
+        distance = std::max(rate / 100, 1);
+    }
+
+    const int delta = static_cast<int>(std::lrint(-ppm * 1e-6 * static_cast<double>(distance)));
+    resample_ratio_ = 1.0 + (-ppm * 1e-6);
+    if (delta == 0) {
+        return;
+    }
+
+    swr_set_compensation(swr_, delta, distance);
+
+    ve::log::debug("AUDIO_PLL: ppm=" + std::to_string(ppm) +
+                   " delta=" + std::to_string(delta) +
+                   " dist=" + std::to_string(distance) +
+                   " ratio≈" + std::to_string(resample_ratio_) +
+                   " [external drift]");
 }
 
 void AudioPipeline::flush(bool drop_fifo) {
@@ -587,11 +678,15 @@ void AudioPipeline::flush(bool drop_fifo) {
         fifo_size_.store(0, std::memory_order_relaxed);
         std::fill(device_fifo_.begin(), device_fifo_.end(), 0.0f);
     }
-    pending_comp_samples_.store(0, std::memory_order_relaxed);
-    pending_drift_ppm_.store(0, std::memory_order_relaxed);
+    drift_sec_accum_.store(0.0, std::memory_order_relaxed);
+    drift_window_elapsed_sec_ = 0.0;
+    last_drift_sample_time_sec_ = 0.0;
+    resample_ratio_ = 1.0;
     if (swr_) {
         swr_convert(swr_, nullptr, 0, nullptr, 0);
     }
+    device_clock_has_origin_.store(false, std::memory_order_release);
+    device_clock_origin_sec_.store(0.0, std::memory_order_relaxed);
     prebuffer_complete_.store(false, std::memory_order_release);
     recovering_from_underrun_.store(false, std::memory_order_release);
 }
@@ -698,6 +793,8 @@ bool AudioPipeline::initialize_output() {
         config_.format = device_config.format;
     }
 
+    device_rate_ = static_cast<int>(config_.sample_rate);
+
     const size_t latency_samples = static_cast<size_t>(config_.target_latency_seconds *
         static_cast<double>(config_.sample_rate) * static_cast<double>(config_.channel_count));
     latency_target_samples_.store(latency_samples, std::memory_order_release);
@@ -713,6 +810,8 @@ bool AudioPipeline::initialize_output() {
     start_deferred_logged_.store(false, std::memory_order_release);
 
     device_driven_rendering_enabled_.store(true);
+    device_clock_has_origin_.store(false, std::memory_order_release);
+    device_clock_origin_sec_.store(0.0, std::memory_order_relaxed);
     
     // resampler will be lazily created on first frame, but it's safe to pre-clear cache
     swr_in_rate_ = 0; swr_in_ch_ = 0; swr_in_layout_ = 0; swr_in_fmt_ = 0;
@@ -1096,12 +1195,6 @@ bool AudioPipeline::convert_to_device_format(const AudioFrame& in, std::vector<f
 
     // Apply any pending drift compensation before converting.
     // swr_set_compensation will add/drop 'delta' samples across 'distance' output samples.
-    if (!safe_mode_enabled_) {
-        if (int delta = pending_comp_samples_.exchange(0); delta != 0) {
-            // Spread over ~1 second to keep it imperceptible.
-            swr_set_compensation(swr_, delta, (int)cfg.sample_rate);
-        }
-    }
     // Convert
     int got = swr_convert(swr_, &out_ptr, out_est, in_planes, (int)in_samples);
     if (got < 0) {
@@ -1112,6 +1205,90 @@ bool AudioPipeline::convert_to_device_format(const AudioFrame& in, std::vector<f
     // Shrink to actual size (interleaved float32)
     out.resize(start + (size_t)got * cfg.channel_count);
     return true;
+}
+
+void AudioPipeline::update_resampler_pll(const AudioFrame& frame) {
+    if (pll_window_sec_ <= 0.0) {
+        return; // Disabled (safe mode or override)
+    }
+
+    if (!output_) {
+        return;
+    }
+
+    const double device_clock = device_playhead_seconds();
+    if (!std::isfinite(device_clock) || device_clock < 0.0) {
+        return;
+    }
+
+    const double media_pts_sec = time_point_to_seconds(frame.timestamp());
+    if (!std::isfinite(media_pts_sec)) {
+        return;
+    }
+
+    double drift_sec = media_pts_sec - device_clock;
+    const double deadzone_sec = pll_deadzone_ms_ / 1000.0;
+    if (std::fabs(drift_sec) < deadzone_sec) {
+        drift_sec = 0.0;
+    }
+
+    const double now = wall_clock_seconds();
+    if (last_drift_sample_time_sec_ == 0.0) {
+        last_drift_sample_time_sec_ = now;
+        drift_sec_accum_.store(0.0, std::memory_order_relaxed);
+        drift_window_elapsed_sec_ = 0.0;
+        return;
+    }
+
+    double elapsed = now - last_drift_sample_time_sec_;
+    last_drift_sample_time_sec_ = now;
+    if (elapsed <= 0.0 || !std::isfinite(elapsed)) {
+        return;
+    }
+
+    drift_window_elapsed_sec_ += elapsed;
+    drift_sec_accum_.fetch_add(drift_sec * elapsed, std::memory_order_relaxed);
+
+    if (drift_window_elapsed_sec_ < pll_window_sec_) {
+        return;
+    }
+
+    const double integrated = drift_sec_accum_.exchange(0.0, std::memory_order_relaxed);
+    double window = drift_window_elapsed_sec_;
+    drift_window_elapsed_sec_ = 0.0;
+    if (window <= 0.0) {
+        return;
+    }
+
+    if (!swr_) {
+        return;
+    }
+
+    double avg_drift_rate = integrated / window; // seconds drift per second
+    double ppm = clamp(avg_drift_rate * 1e6, -pll_max_ppm_, pll_max_ppm_);
+
+    const int rate = device_rate_ > 0 ? device_rate_ : static_cast<int>(config_.sample_rate);
+    if (rate <= 0) {
+        return;
+    }
+
+    int distance = static_cast<int>(rate * (pll_window_sec_ * 0.5));
+    if (distance < 1) {
+        distance = std::max(rate / 100, 1);
+    }
+
+    const int delta = static_cast<int>(std::lrint(-ppm * 1e-6 * static_cast<double>(distance)));
+    resample_ratio_ = 1.0 + (-ppm * 1e-6);
+    if (delta == 0) {
+        return;
+    }
+
+    swr_set_compensation(swr_, delta, distance);
+
+    ve::log::debug("AUDIO_PLL: ppm=" + std::to_string(ppm) +
+                   " delta=" + std::to_string(delta) +
+                   " dist=" + std::to_string(distance) +
+                   " ratio≈" + std::to_string(resample_ratio_));
 }
 
 // ===== FIFO helpers (non-RT allocations happen at init only) =====
@@ -1264,29 +1441,6 @@ void AudioPipeline::update_drift_control(uint32_t callback_frames, uint16_t chan
     size_t tgt_samples = target_fifo_samples_.load(std::memory_order_acquire);
     if (tgt_samples == 0) return;
 
-    // Error (samples, interleaved)
-    double err = fifo_level_ema_ - (double)tgt_samples;
-    // Convert to frames (per channel) for nicer scaling
-    double err_frames = err / (double)channels;
-
-    // Map error to a tiny compensation: clamp to ±0.33% over 1s
-    // 0.33% of 48kHz ≈ 160 samples per second (per channel)
-    const int max_per_sec = (int)(config_.sample_rate / 300); // ~0.33%
-    int desired = (int)std::clamp(err_frames * 0.03, -(double)max_per_sec, (double)max_per_sec);
-
-    // If we're close enough, don't compensate
-    if (std::abs(desired) < 2) desired = 0; // deadband smaller
-
-    if (desired != 0) {
-        const int clamp_limit = static_cast<int>(config_.sample_rate);
-        int previous = pending_comp_samples_.fetch_add(desired, std::memory_order_relaxed);
-        int combined = previous + desired;
-        if (combined > clamp_limit) {
-            pending_comp_samples_.store(clamp_limit, std::memory_order_relaxed);
-        } else if (combined < -clamp_limit) {
-            pending_comp_samples_.store(-clamp_limit, std::memory_order_relaxed);
-        }
-    }
 }
 
 size_t AudioPipeline::fifo_write(const uint8_t* bytes, size_t frame_count) {

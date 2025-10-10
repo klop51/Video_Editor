@@ -60,6 +60,10 @@ static bool env_flag_enabled(const char* name) {
         }
         return true;
     }
+    // VE_AUDIO_SAFE defaults to true for stability during audio robustness tuning
+    if (std::strcmp(name, "VE_AUDIO_SAFE") == 0) {
+        return true;
+    }
     return true; // default ON
 }
 
@@ -135,8 +139,7 @@ template <typename Clock>
 inline bool pace_next_continuous(std::chrono::time_point<Clock>& last_time,
                                 double& frame_timer,
                                 int64_t target_frame_us,
-                                bool& first_frame,
-                                int frame_count = 0)
+                                bool& first_frame)
 {
     const auto now = Clock::now();
     
@@ -158,13 +161,14 @@ inline bool pace_next_continuous(std::chrono::time_point<Clock>& last_time,
     frame_timer += elapsed_sec;
     
     // Log detailed timing every 30 frames for more frequent feedback like working video player
-    if (frame_count > 0 && frame_count % 30 == 0) {
-        ve::log::info("SDL_TIMING: frame=" + std::to_string(frame_count) + 
-                     ", elapsed_us=" + std::to_string(elapsed_us) + 
-                     ", frame_timer=" + std::to_string(frame_timer) + 
-                     ", frame_delay=" + std::to_string(frame_delay) + 
-                     ", drift=" + std::to_string((frame_timer - frame_delay) * 1000.0) + "ms");
-    }
+    // DISABLED FOR PERFORMANCE: SDL_TIMING logs every 30 frames cause video interruptions
+    // if (frame_count > 0 && frame_count % 30 == 0) {
+    //     ve::log::info("SDL_TIMING: frame=" + std::to_string(frame_count) + 
+    //                  ", elapsed_us=" + std::to_string(elapsed_us) + 
+    //                  ", frame_timer=" + std::to_string(frame_timer) + 
+    //                  ", frame_delay=" + std::to_string(frame_delay) + 
+    //                  ", drift=" + std::to_string((frame_timer - frame_delay) * 1000.0) + "ms");
+    // }
     
     // Check if we should process frame(s) - similar to video player's while loop logic
     if (frame_timer >= frame_delay) {
@@ -187,13 +191,105 @@ inline double to_seconds(int64_t pts_us) {
 namespace ve::playback {
 
 double PlaybackController::predict_present_time_on_audio_clock(double frame_pts_sec,
-                                                               double audio_clock_now_sec) const {
-    if (!av_map_ready_.load(std::memory_order_acquire)) {
-        return audio_clock_now_sec;
+                                                               double device_head_now_sec) const {
+    if (!av_map_learned_.load(std::memory_order_acquire)) {
+        return device_head_now_sec;
     }
 
-    const double dt_video = frame_pts_sec - av_map_video0_sec_;
-    return av_map_audio0_sec_ + dt_video + video_latency_sec_;
+    const double B = av_map_offset_sec_.load(std::memory_order_acquire);
+    const auto unset = std::numeric_limits<int64_t>::min();
+    const int64_t v0_us = first_video_pts_us_.load(std::memory_order_acquire);
+    const double v0 = (v0_us == unset) ? 0.0 : static_cast<double>(v0_us) / 1'000'000.0;
+
+    const double video_norm = frame_pts_sec - v0;
+    return video_norm + B + video_latency_sec_;
+}
+
+void PlaybackController::reset_av_sync_learning() {
+    av_map_learned_.store(false, std::memory_order_release);
+    av_map_offset_sec_.store(0.0, std::memory_order_release);
+    first_video_pts_us_.store(std::numeric_limits<int64_t>::min(), std::memory_order_release);
+    first_audio_pts_us_.store(std::numeric_limits<int64_t>::min(), std::memory_order_release);
+}
+
+/** Compute adaptive drop/wait thresholds based on fps and audio latency */
+void PlaybackController::compute_av_thresholds(double fps, double audio_latency_sec) {
+    if (fps <= 0.0 || audio_latency_sec < 0.0) {
+        ve::log::warn("compute_av_thresholds: Invalid parameters fps=" + std::to_string(fps) + 
+                     ", audio_latency_sec=" + std::to_string(audio_latency_sec));
+        return;
+    }
+
+    const double frame_ms = 1000.0 / fps;
+    const double audio_lat = audio_latency_sec * 1000.0;
+
+    // Adaptive drop-ahead threshold: ~4 frames worth of tolerance, softened by audio latency
+    adaptive_max_drop_ahead_ms_.store(std::clamp(4.0 * frame_ms + 0.5 * audio_lat, 80.0, 200.0), std::memory_order_release);
+
+    // Adaptive wait-behind threshold: ~2 frames worth of tolerance, softened by audio latency
+    adaptive_max_wait_behind_ms_.store(std::clamp(2.0 * frame_ms + 0.25 * audio_lat, 40.0, 150.0), std::memory_order_release);
+
+    ve::log::info("Adaptive A/V sync thresholds: drop_ahead=" + std::to_string(adaptive_max_drop_ahead_ms_.load()) + 
+                 "ms, wait_behind=" + std::to_string(adaptive_max_wait_behind_ms_.load()) + 
+                 "ms (frame_ms=" + std::to_string(frame_ms) + 
+                 ", audio_lat=" + std::to_string(audio_lat) + "ms)");
+}
+
+/** Learn A/V mapping once when audio is ready */
+void PlaybackController::learn_av_map_once(double frame_pts_sec) {
+    if (!audio_pipeline_ || !audio_pipeline_->audio_ready()) {
+        return; // Audio not ready yet
+    }
+
+    if (av_map_learned_.load(std::memory_order_acquire)) {
+        return; // Already learned
+    }
+
+    // Don't re-lock A/V while FIFO is thin - require sufficient buffer fill
+    if (audio_pipeline_->buffer_fill_percent() < 65.0) {
+        return; // FIFO not sufficiently full
+    }
+
+    // Don't learn while recovering from underrun
+    if (audio_pipeline_->is_recovering_from_underrun()) {
+        return; // Audio recovering from underrun
+    }
+
+    const double audio_now_sec = audio_pipeline_->device_playhead_seconds();
+    if (audio_now_sec < 0.0 || !std::isfinite(audio_now_sec)) {
+        return; // Invalid audio clock
+    }
+
+    const auto unset = std::numeric_limits<int64_t>::min();
+    auto expected_video = unset;
+    const int64_t video_pts_us = static_cast<int64_t>(frame_pts_sec * 1'000'000.0);
+    first_video_pts_us_.compare_exchange_strong(expected_video, video_pts_us, std::memory_order_acq_rel);
+
+    const double audio_origin_sec = audio_now_sec;
+    const double audio_origin_us_d = audio_origin_sec * 1'000'000.0;
+    if (audio_origin_us_d >= 0.0 && audio_origin_us_d <= static_cast<double>(std::numeric_limits<int64_t>::max())) {
+        int64_t expected_audio = unset;
+        const int64_t audio_origin_us = static_cast<int64_t>(std::llround(audio_origin_us_d));
+        first_audio_pts_us_.compare_exchange_strong(expected_audio, audio_origin_us, std::memory_order_acq_rel);
+    }
+
+    const auto video_origin_us = first_video_pts_us_.load(std::memory_order_acquire);
+    if (video_origin_us != unset) {
+        const double video0 = static_cast<double>(video_origin_us) / 1'000'000.0;
+        const double video_norm_now = frame_pts_sec - video0;
+        double B = audio_origin_sec - video_norm_now;
+        if (!std::isfinite(B)) {
+            B = audio_origin_sec;
+        }
+
+        av_map_offset_sec_.store(B, std::memory_order_release);
+        av_map_learned_.store(true, std::memory_order_release);
+
+        // Compute adaptive thresholds based on current fps and audio latency
+        if (probed_fps_ > 0.0) {
+            compute_av_thresholds(probed_fps_, audio_master_latency_seconds_);
+        }
+    }
 }
 
 PlaybackController::PlaybackController() {
@@ -402,6 +498,22 @@ bool PlaybackController::load_media(const std::string& path) {
         for(const auto& s : probe_result.streams) {
             if(s.type == "video" && s.fps > 0) {
                 probed_fps_ = s.fps; 
+                
+                // Calculate adaptive A/V sync thresholds based on frame rate and audio latency
+                double frame_ms = 1000.0 / probed_fps_;
+                double audio_lat = audio_master_latency_seconds_ * 1000.0;
+                
+                // Adaptive drop-ahead threshold: ~4 frames worth of tolerance, softened by audio latency
+                adaptive_max_drop_ahead_ms_.store(std::clamp(4.0 * frame_ms + 0.5 * audio_lat, 80.0, 200.0), std::memory_order_release);
+                
+                // Adaptive wait-behind threshold: ~2 frames worth of tolerance, softened by audio latency  
+                adaptive_max_wait_behind_ms_.store(std::clamp(2.0 * frame_ms + 0.25 * audio_lat, 40.0, 150.0), std::memory_order_release);
+                
+                ve::log::info("Adaptive A/V sync thresholds: drop_ahead=" + std::to_string(adaptive_max_drop_ahead_ms_.load()) + 
+                             "ms, wait_behind=" + std::to_string(adaptive_max_wait_behind_ms_.load()) + 
+                             "ms (frame_ms=" + std::to_string(frame_ms) + 
+                             ", audio_lat=" + std::to_string(audio_lat) + "ms)");
+                
                 // Initialize drift-proof stepping with detected fps
                 if (s.fps == 29.97) {
                     step_.num = 30000; step_.den = 1001;
@@ -801,41 +913,24 @@ void PlaybackController::playback_thread_main() {
     auto last_frame_time = std::chrono::steady_clock::now();
     bool first_frame = true;
     const int64_t target_frame_duration_us = fps_to_us(probed_fps_);
-    auto present_due_frames = [&](std::chrono::steady_clock::time_point frame_time, bool force_present) {
+    auto present_due_frames = [&](std::chrono::steady_clock::time_point /*frame_time*/) {
         bool presented = false;
         while (true) {
             int64_t frame_pts_us = 0;
-            double frame_pts_sec = 0.0;
             {
                 std::scoped_lock lk(pending_video_mutex_);
                 if (pending_video_frames_.empty()) {
                     break;
                 }
                 frame_pts_us = pending_video_frames_.front().frame.pts;
-                frame_pts_sec = to_seconds(frame_pts_us);
             }
 
-            bool audio_ready_local = audio_pipeline_ && audio_pipeline_->audio_ready();
-            double audio_now_sec = -1.0;
-            if (audio_pipeline_ && audio_ready_local) {
-                audio_now_sec = audio_pipeline_->device_clock_seconds();
-            }
+            // Timeline-driven sync: present frames when their PTS <= current timeline position
+            const int64_t current_timeline_pos = current_time_us_.load(std::memory_order_acquire);
 
-            if (!audio_ready_local || audio_now_sec < 0.0) {
-                if (wall_clock_play_origin_.time_since_epoch().count() == 0) {
-                    wall_clock_play_origin_ = frame_time;
-                    wall_clock_pts_origin_sec_ = static_cast<double>(current_time_us_.load(std::memory_order_relaxed)) / 1'000'000.0;
-                }
-                audio_now_sec = wall_clock_pts_origin_sec_ +
-                    std::chrono::duration<double>(std::chrono::steady_clock::now() - wall_clock_play_origin_).count();
-            }
-
-            const double target_sec = predict_present_time_on_audio_clock(frame_pts_sec, audio_now_sec);
-            const double lead_ms = (audio_now_sec - target_sec) * 1000.0; // positive => audio ahead
-            const double lag_ms = -lead_ms;                               // positive => we are early
-
-            if (!force_present && lag_ms > 0.0 && lag_ms <= max_wait_behind_ms_) {
-                break; // wait for audio to catch up
+            // If frame is ahead of timeline position, don't present it yet
+            if (frame_pts_us > current_timeline_pos) {
+                break;
             }
 
             PendingVideoFrame pending;
@@ -848,18 +943,15 @@ void PlaybackController::playback_thread_main() {
                 pending_video_frames_.pop_front();
             }
 
-            if (lead_ms > max_drop_ahead_ms_) {
-                ve::log::warn("PlaybackController: dropping video frame pts=" + std::to_string(pending.frame.pts) +
-                              " (audio lead=" + std::to_string(lead_ms) + " ms)");
-                continue;
-            }
+            // Present the frame immediately since it's at or behind timeline position
+            const auto unset_pts = std::numeric_limits<int64_t>::min();
+            auto expected_video = unset_pts;
+            first_video_pts_us_.compare_exchange_strong(expected_video, frame_pts_us,
+                                                        std::memory_order_acq_rel);
 
-            if (!av_map_ready_.load(std::memory_order_acquire) && audio_pipeline_ && audio_pipeline_->audio_ready()) {
-                av_map_audio0_sec_ = audio_now_sec;
-                av_map_video0_sec_ = frame_pts_sec;
-                av_map_ready_.store(true, std::memory_order_release);
-                ve::log::info("AV map learned: audio0=" + std::to_string(av_map_audio0_sec_) +
-                              "s, video0=" + std::to_string(av_map_video0_sec_) + "s");
+            // Learn A/V mapping freely without audio restrictions
+            if (!av_map_learned_.load(std::memory_order_acquire)) {
+                learn_av_map_once(to_seconds(frame_pts_us));
             }
 
             auto now = std::chrono::steady_clock::now();
@@ -872,17 +964,10 @@ void PlaybackController::playback_thread_main() {
             }
             update_frame_stats(delta_ms);
 
-            current_time_us_.store(pending.frame.pts);
             deliver_video_frame_now(std::move(pending.frame));
             last_frame_time = now;
             first_frame = false;
             presented = true;
-
-            if (audio_pipeline_ && audio_pipeline_->audio_ready()) {
-                double drift_sec = (audio_now_sec - target_sec);
-                audio_pipeline_->apply_clock_drift(drift_sec, std::max(0.1, audio_master_latency_seconds_));
-                last_logged_drift_ms_ = drift_sec * 1000.0;
-            }
         }
         return presented;
     };
@@ -908,7 +993,7 @@ void PlaybackController::playback_thread_main() {
         
         auto frame_start = std::chrono::steady_clock::now();
 
-        double audio_clock_sec = audio_pipeline_ ? audio_pipeline_->device_clock_seconds() : -1.0;
+        double device_head_sec = audio_pipeline_ ? audio_pipeline_->device_playhead_seconds() : -1.0;
         double buffer_fill_percent = 0.0;
         uint32_t audio_underruns = 0;
         bool audio_ready = !audio_pipeline_;
@@ -919,9 +1004,10 @@ void PlaybackController::playback_thread_main() {
             audio_ready = audio_pipeline_->audio_ready();
 
             if (!audio_ready) {
-                if (!prebuffering_.exchange(true)) {
-                    ve::log::info("Audio prebuffer engaged; waiting for FIFO fill");
-                }
+                // Prebuffer logging disabled for performance - causes video interruptions
+                // if (!prebuffering_.exchange(true)) {
+                //     ve::log::info("Audio prebuffer engaged; waiting for FIFO fill");
+                // }
                 if (prebuffer_start_time_.time_since_epoch().count() == 0) {
                     prebuffer_start_time_ = frame_start;
                 }
@@ -932,27 +1018,29 @@ void PlaybackController::playback_thread_main() {
                 last_frame_time = frame_start;
                 first_frame = true;
             } else if (prebuffering_.exchange(false)) {
-                ve::log::info("Audio prebuffer satisfied; syncing video to audio clock");
+                // Prebuffer satisfied logging disabled for performance - causes video interruptions
+                // ve::log::info("Audio prebuffer satisfied; syncing video to audio clock");
                 last_frame_time = frame_start;
                 first_frame = true;
                 prebuffer_start_time_ = {};
                 wall_clock_play_origin_ = {};
-                av_map_ready_.store(false, std::memory_order_release);
+
+                // Start startup grace period for relaxed A/V sync thresholds
+                const auto now = std::chrono::steady_clock::now();
+                startup_grace_start_time_ns_.store(static_cast<uint64_t>(now.time_since_epoch().count()), std::memory_order_release);
+                in_startup_grace_.store(true, std::memory_order_release);
+                ve::log::info("Audio ready - starting 250ms startup grace period for A/V sync learning");
             }
 
             if (audio_underruns > last_logged_underruns_) {
-                ve::log::warn("Audio underrun detected (total=" + std::to_string(audio_underruns) + ")");
+                // Audio underrun logging disabled for performance - causes video interruptions
+                // ve::log::warn("Audio underrun detected (total=" + std::to_string(audio_underruns) + ")");
                 audio_pipeline_->reset_prebuffer_state();
                 audio_pipeline_->reset_buffer_underruns();
+                // Don't clear pending video frames during underrun recovery - let prebuffering handle timing
+                // Don't reset wall clock origin - preserve A/V sync learning state
                 prebuffering_.store(true);
                 prebuffer_start_time_ = std::chrono::steady_clock::now();
-                wall_clock_play_origin_ = prebuffer_start_time_;
-                wall_clock_pts_origin_sec_ = static_cast<double>(current_time_us_.load(std::memory_order_relaxed)) / 1'000'000.0;
-                av_map_ready_.store(false, std::memory_order_release);
-                {
-                    std::scoped_lock lk(pending_video_mutex_);
-                    pending_video_frames_.clear();
-                }
                 last_logged_underruns_ = 0;
             }
         } else {
@@ -967,17 +1055,14 @@ void PlaybackController::playback_thread_main() {
             wall_clock_pts_origin_sec_ = static_cast<double>(current_time_us_.load(std::memory_order_relaxed)) / 1'000'000.0;
         }
 
-        bool presented = present_due_frames(frame_start, false);
+        bool presented = present_due_frames(frame_start);
 
         double predicted_video_sec = -1.0;
         if (audio_pipeline_) {
             if (audio_ready) {
-                if (av_map_ready_.load(std::memory_order_acquire)) {
-                    predicted_video_sec = av_map_video0_sec_ +
-                        (audio_clock_sec - av_map_audio0_sec_) - video_latency_sec_;
-                } else {
-                    predicted_video_sec = audio_clock_sec;
-                }
+                predicted_video_sec = predict_present_time_on_audio_clock(
+                    to_seconds(current_time_us_.load(std::memory_order_relaxed)),
+                    device_head_sec);
             } else if (wall_clock_play_origin_.time_since_epoch().count() != 0) {
                 predicted_video_sec = wall_clock_pts_origin_sec_ +
                     std::chrono::duration<double>(frame_start - wall_clock_play_origin_).count();
@@ -992,7 +1077,7 @@ void PlaybackController::playback_thread_main() {
         }
 
         if (audio_pipeline_) {
-            emit_safe_mode_telemetry_(audio_clock_sec,
+            emit_safe_mode_telemetry_(device_head_sec,
                                       predicted_video_sec,
                                       buffer_fill_percent,
                                       last_logged_drift_ms_,
@@ -1015,7 +1100,7 @@ void PlaybackController::playback_thread_main() {
                     const auto now = std::chrono::steady_clock::now();
                     if (!presented && (now - prebuffer_start_time_ > kPrebufferTimeout)) {
                         ve::log::warn("Audio prebuffer timeout – presenting video frames against wall clock");
-                        present_due_frames(now, true);
+                        present_due_frames(now);
                         prebuffer_start_time_ = now;
                     }
                 }
@@ -1098,7 +1183,7 @@ void PlaybackController::playback_thread_main() {
                 // VE_DEBUG_ONLY - DISABLED FOR PERFORMANCE:
                 // Processing frame logging causes video interruptions
                 
-                const bool audio_clock_locked = kSafeAudio && audio_pipeline_;
+                const bool audio_clock_locked = false;
 
                 int64_t current_pts = current_time_us_.load();
             
@@ -1161,7 +1246,7 @@ void PlaybackController::playback_thread_main() {
                     vf.color_range = cached.color_range;
                     dispatch_video_frame(std::move(vf));
                     if (audio_pipeline_ && audio_ready) {
-                        present_due_frames(std::chrono::steady_clock::now(), false);
+                        present_due_frames(std::chrono::steady_clock::now());
                     }
                     // IMPORTANT: Advance time for next frame even when cache hits
                     // Prefer drift-proof step accumulator for fractional framerates
@@ -1184,8 +1269,7 @@ void PlaybackController::playback_thread_main() {
                         }
                         current_time_us_.store(next_pts);
                         // SDL-style continuous timing for improved A/V sync (prevent micro-timing drift)
-                        int64_t current_frame_count = frame_count_.load();
-                        if (!pace_next_continuous(last_continuous_time_, frame_timer_, target_frame_duration_us, first_continuous_frame_, static_cast<int>(current_frame_count))) {
+                        if (!pace_next_continuous(last_continuous_time_, frame_timer_, target_frame_duration_us, first_continuous_frame_)) {
                             // Not yet time for next frame - continue playback loop
                             std::this_thread::sleep_for(std::chrono::microseconds(100)); // Short sleep to prevent busy wait
                             continue;
@@ -1245,7 +1329,7 @@ void PlaybackController::playback_thread_main() {
                 const int frame_height = video_frame->height;
                 dispatch_video_frame(std::move(*video_frame));
                 if (audio_pipeline_ && audio_ready) {
-                    present_due_frames(std::chrono::steady_clock::now(), false);
+                    present_due_frames(std::chrono::steady_clock::now());
                 }
 
                 if (!audio_pipeline_) {
@@ -1311,8 +1395,7 @@ void PlaybackController::playback_thread_main() {
                     }
 
                     // SDL-style continuous timing baseline update (no drift, improved A/V sync)
-                    int64_t current_frame_count = frame_count_.load();
-                    if (!pace_next_continuous(last_continuous_time_, frame_timer_, target_frame_duration_us, first_continuous_frame_, static_cast<int>(current_frame_count))) {
+                    if (!pace_next_continuous(last_continuous_time_, frame_timer_, target_frame_duration_us, first_continuous_frame_)) {
                         // This should rarely happen since we already passed timing check above
                         std::this_thread::sleep_for(std::chrono::microseconds(100));
                     }
@@ -1323,10 +1406,10 @@ void PlaybackController::playback_thread_main() {
                     
                     // Let video_frame unique_ptr go out of scope here - this will call VideoFrame destructor
 
-                    // Periodic frame log (every 30 frames) for diagnostics
-                    if ((stats_.frames_displayed % 30) == 0) {
-                        ve::log::debug("Playback frames displayed=" + std::to_string(stats_.frames_displayed));
-                    }
+                    // Periodic frame log disabled for performance - causes video interruptions
+                    // if ((stats_.frames_displayed % 30) == 0) {
+                    //     ve::log::debug("Playback frames displayed=" + std::to_string(stats_.frames_displayed));
+                    // }
                 }
                 
             } else {
@@ -1464,10 +1547,10 @@ void PlaybackController::playback_thread_main() {
 
 void PlaybackController::emit_safe_mode_telemetry_(double audio_clock_sec,
                                                    double predicted_video_sec,
-                                                   double buffer_fill_percent,
+                                                   double /*buffer_fill_percent*/,
                                                    double pipeline_drift_ms,
-                                                   uint32_t audio_underruns,
-                                                   bool audio_ready) {
+                                                   uint32_t /*audio_underruns*/,
+                                                   bool /*audio_ready*/) {
     if (audio_clock_sec < 0.0) {
         return;
     }
@@ -1507,59 +1590,63 @@ void PlaybackController::emit_safe_mode_telemetry_(double audio_clock_sec,
         drift_ms = ((static_cast<double>(pending_head_pts) / 1'000'000.0) - audio_clock_sec) * 1000.0;
     }
 
-    const int64_t lookups = cache_lookups_.load(std::memory_order_relaxed);
-    double cache_hit_pct = 0.0;
-    if (lookups > 0) {
-        const int64_t hits = cache_hits_.load(std::memory_order_relaxed);
-        cache_hit_pct = (static_cast<double>(hits) / static_cast<double>(lookups)) * 100.0;
-    }
+    // const int64_t lookups = cache_lookups_.load(std::memory_order_relaxed);
+    // Cache hit percentage calculation disabled for performance
+    // double cache_hit_pct = 0.0;
+    // if (lookups > 0) {
+    //     const int64_t hits = cache_hits_.load(std::memory_order_relaxed);
+    //     cache_hit_pct = (static_cast<double>(hits) / static_cast<double>(lookups)) * 100.0;
+    // }
 
-    const size_t cache_items = frame_cache_.size();
+    // const size_t cache_items = frame_cache_.size();
 
-    const double buffer_delta = std::abs(buffer_fill_percent - last_logged_buffer_fill_);
-    const double drift_delta = std::abs(drift_ms - last_logged_drift_ms_);
-    const double clock_delta = std::abs(audio_clock_sec - last_logged_audio_clock_);
-    const double fps_delta = std::abs(fps_estimate - last_logged_estimated_fps_);
-    const bool should_log = first_emit ||
-        buffer_delta > 1.0 ||
-        drift_delta > 0.5 ||
-        audio_underruns != last_logged_underruns_ ||
-        clock_delta > 0.25 ||
-        pending_frames != last_logged_pending_frames_ ||
-        fps_delta > 1.0 ||
-        audio_ready != last_logged_audio_ready_;
+    // Telemetry calculations disabled for performance
+    // const double buffer_delta = std::abs(buffer_fill_percent - last_logged_buffer_fill_);
+    // const double drift_delta = std::abs(drift_ms - last_logged_drift_ms_);
+    // const double clock_delta = std::abs(audio_clock_sec - last_logged_audio_clock_);
+    // const double fps_delta = std::abs(fps_estimate - last_logged_estimated_fps_);
+    // const bool should_log = first_emit ||
+    //     buffer_delta > 1.0 ||
+    //     drift_delta > 0.5 ||
+    //     audio_underruns != last_logged_underruns_ ||
+    //     clock_delta > 0.25 ||
+    //     pending_frames != last_logged_pending_frames_ ||
+    //     fps_delta > 1.0 ||
+    //     audio_ready != last_logged_audio_ready_;
 
-    if (should_log) {
-        std::ostringstream oss;
-        oss.setf(std::ios::fixed, std::ios::floatfield);
-        oss << std::setprecision(3);
-        oss << "SAFE_TELEMETRY: audio_clock=" << audio_clock_sec
-            << "s, video_clock=" << video_clock_sec
-            << "s";
-        oss << ", drift=" << std::setprecision(2) << drift_ms << "ms";
-        oss << ", buffer=" << std::setprecision(1) << buffer_fill_percent << "%";
-        oss << ", pending=" << pending_frames;
-        oss << ", fps=" << fps_estimate;
-        oss << ", cache_hit=" << cache_hit_pct << "%";
-        oss << ", cache_items=" << cache_items;
-        oss << ", underruns=" << audio_underruns;
-        oss << ", audio_ready=" << (audio_ready ? "yes" : "no");
-        if (pending_head_pts >= 0) {
-            const double head_delta_ms = ((static_cast<double>(pending_head_pts) / 1'000'000.0) - audio_clock_sec) * 1000.0;
-            oss << ", head_delta=" << std::setprecision(2) << head_delta_ms << "ms";
-        }
-        ve::log::info(oss.str());
-    }
+    // SAFE_TELEMETRY logging disabled for performance - causes video interruptions
+    // if (should_log) {
+    //     std::ostringstream oss;
+    //     oss.setf(std::ios::fixed, std::ios::floatfield);
+    //     oss << std::setprecision(3);
+    //     oss << "SAFE_TELEMETRY: audio_clock=" << audio_clock_sec
+    //         << "s, video_clock=" << video_clock_sec
+    //         << "s";
+    //     oss << ", drift=" << std::setprecision(2) << drift_ms << "ms";
+    //     oss << ", buffer=" << std::setprecision(1) << buffer_fill_percent << "%";
+    //     oss << ", pending=" << pending_frames;
+    //     oss << ", fps=" << fps_estimate;
+    //     oss << ", cache_hit=" << cache_hit_pct << "%";
+    //     oss << ", cache_items=" << cache_items;
+    //     oss << ", underruns=" << audio_underruns;
+    //     oss << ", audio_ready=" << (audio_ready ? "yes" : "no");
+    //     if (pending_head_pts >= 0) {
+    //         const double head_delta_ms = ((static_cast<double>(pending_head_pts) / 1'000'000.0) - audio_clock_sec) * 1000.0;
+    //         oss << ", head_delta=" << std::setprecision(2) << head_delta_ms << "ms";
+    //     }
+    //     ve::log::info(oss.str());
+    // }
 
+    // Telemetry variable updates disabled for performance
     last_audio_telemetry_log_ = now;
-    last_logged_buffer_fill_ = buffer_fill_percent;
-    last_logged_drift_ms_ = drift_ms;
-    last_logged_underruns_ = audio_underruns;
+    // last_logged_buffer_fill_ = buffer_fill_percent;
+    // last_logged_drift_ms_ = drift_ms;
+    // last_logged_underruns_ = audio_underruns;
     last_logged_frame_count_ = frame_count;
-    last_logged_audio_clock_ = audio_clock_sec;
+    // last_logged_audio_clock_ = audio_clock_sec;
     last_logged_estimated_fps_ = fps_estimate;
-    last_logged_pending_frames_ = pending_frames;
-    last_logged_audio_ready_ = audio_ready;
+    // last_logged_pending_frames_ = pending_frames;
+    // last_logged_audio_ready_ = audio_ready;
 }
 
 int64_t PlaybackController::frame_duration_guess_us() const {
@@ -1630,18 +1717,9 @@ void PlaybackController::decode_one_frame_if_paused(int64_t seek_target_us) {
             std::scoped_lock lk(callbacks_mutex_);
             callback_count = video_video_entries_.size();
         }
-        auto video_callback_start = std::chrono::steady_clock::now();
-        int64_t current_frame_count = frame_count_.load();
-        const int64_t frame_pts = frame->pts;
-        ve::log::info(std::string("PlaybackController: Invoking ") + std::to_string(callback_count) + " video callbacks for frame pts=" + std::to_string(frame_pts) + " frame=" + std::to_string(current_frame_count));
+        // DISABLED FOR PERFORMANCE: Callback invocation logging every frame causes video interruptions
+        // ve::log::info(std::string("PlaybackController: Invoking ") + std::to_string(callback_count) + " video callbacks for frame pts=" + std::to_string(frame->pts));
     dispatch_video_frame(std::move(*frame), true);
-        auto video_callback_end = std::chrono::steady_clock::now();
-        auto callback_duration_us = std::chrono::duration_cast<std::chrono::microseconds>(video_callback_end - video_callback_start).count();
-        if (current_frame_count % 60 == 0) { // Log timing every 60 frames like video player
-            ve::log::info("VIDEO_TIMING: frame=" + std::to_string(current_frame_count) + 
-                         ", pts=" + std::to_string(frame_pts) + 
-                         ", callback_duration=" + std::to_string(callback_duration_us) + "us");
-        }
     } else {
         // Fallback: keep current_time at seek target
         current_time_us_.store(seek_target_us);
@@ -1854,9 +1932,7 @@ bool PlaybackController::initialize_audio_pipeline() {
         std::scoped_lock lk(pending_video_mutex_);
         pending_video_frames_.clear();
     }
-    av_map_ready_.store(false, std::memory_order_release);
-    av_map_audio0_sec_ = 0.0;
-    av_map_video0_sec_ = 0.0;
+    reset_av_sync_learning();
     last_audio_telemetry_log_ = {};
     last_logged_underruns_ = 0;
     last_logged_buffer_fill_ = 0.0;

@@ -3,6 +3,7 @@
 #include "../../media_io/include/media_io/media_probe.hpp"
 #include "../../timeline/include/timeline/timeline.hpp"
 #include "timeline_dock.hpp"
+#include "widget_inspector.hpp"
 #include <QMainWindow>
 #include <QDockWidget>
 #include <QTimer>
@@ -199,6 +200,9 @@ private:
     
     QDockWidget* audio_monitoring_dock_;
     ProfessionalAudioMonitoringPanel* audio_monitoring_panel_;
+    
+    // Widget inspector for debugging
+    WidgetInspector* widget_inspector_;
     
     // Menu actions
     QAction* new_action_;

@@ -33,6 +33,10 @@ GLVideoWidget::~GLVideoWidget() {
 }
 
 void GLVideoWidget::set_frame(const uint8_t* rgba, int w, int h, int stride_bytes, int64_t pts) {
+    static int frame_counter = 0;
+    frame_counter++;
+    ve::log::info("GL_DEBUG: set_frame #" + std::to_string(frame_counter) + " called with pts=" + std::to_string(pts) + " size=" + std::to_string(w) + "x" + std::to_string(h));
+    
     // Removed per-frame debug logging to prevent spam
     if (!rgba || w <= 0 || h <= 0) {
         ve::log::warn("GL_DEBUG: set_frame rejected - invalid parameters");
@@ -48,6 +52,8 @@ void GLVideoWidget::set_frame(const uint8_t* rgba, int w, int h, int stride_byte
         qWarning() << "GLVideoWidget::set_frame suspicious stride" << stride_bytes << "w=" << w << "h=" << h;
         return;
     }
+    
+    ve::log::info("GL_DEBUG: set_frame copying frame data (" + std::to_string(w * h * 4) + " bytes)");
     // Copy only the visible width (ignore right padding from stride)
     const qsizetype frame_bytes = static_cast<qsizetype>(w) * h * 4;
     QByteArray copy; copy.resize(frame_bytes);
@@ -56,6 +62,7 @@ void GLVideoWidget::set_frame(const uint8_t* rgba, int w, int h, int stride_byte
         const uint8_t* src_row = rgba + static_cast<size_t>(y) * stride_bytes;
         std::memcpy(dst + static_cast<size_t>(y) * required_stride, src_row, static_cast<size_t>(required_stride));
     }
+    
     {
         QMutexLocker lock(&mutex_);
         pending_.rgba = std::move(copy);
@@ -63,9 +70,12 @@ void GLVideoWidget::set_frame(const uint8_t* rgba, int w, int h, int stride_byte
         pending_.h = h;
         pending_.pts = pts;
         new_frame_ = true;
+        ve::log::info("GL_DEBUG: set_frame queued frame #" + std::to_string(frame_counter) + " for rendering, calling update()");
     }
+    
     // Removed per-frame completion logging to prevent spam
     update();
+    ve::log::info("GL_DEBUG: set_frame completed, widget update requested");
 }
 
 void GLVideoWidget::initializeGL() {
@@ -118,7 +128,8 @@ void GLVideoWidget::ensure_program() {
 
 void GLVideoWidget::paintGL() {
     VE_PROFILE_SCOPE_UNIQ("gl_widget.paintGL");
-    // Removed per-frame paintGL debug logging to prevent spam
+    ve::log::info("GL_DEBUG: paintGL() called - checking for new frames");
+    
     PendingFrame local; bool has_new = false;
     {
         QMutexLocker lock(&mutex_);
@@ -126,45 +137,68 @@ void GLVideoWidget::paintGL() {
             local = pending_; 
             new_frame_ = false; 
             has_new = true; 
-            // Removed per-frame new frame debug logging to prevent spam
+            ve::log::info("GL_DEBUG: paintGL processing new frame pts=" + std::to_string(local.pts) + " size=" + std::to_string(local.w) + "x" + std::to_string(local.h));
+        } else {
+            ve::log::info("GL_DEBUG: paintGL called but no new frame available");
         }
     }
+    
     if (has_new && local.w > 0 && local.h > 0 && !local.rgba.isEmpty()) {
-    // Removed per-frame texture upload debug logging to prevent spam
-    ensure_texture(local.w, local.h);
-    // Removed per-frame ensure_texture debug logging to prevent spam
+        ve::log::info("GL_DEBUG: Uploading texture data for frame pts=" + std::to_string(local.pts));
+        ensure_texture(local.w, local.h);
+        ve::log::info("GL_DEBUG: Texture ensured, uploading data...");
+        
 #if VE_ENABLE_PBO_UPLOAD
-    bool pbo_ok = false;
-    if (!pbo_runtime_disabled_) {
-        pbo_ok = upload_with_pbo(local.rgba, local.w, local.h);
-    }
-    if (!pbo_ok) {
-        VE_PROFILE_SCOPE_DETAILED("gl_widget.upload.fallback");
-        // Removed per-frame direct upload debug logging to prevent spam
+        bool pbo_ok = false;
+        if (!pbo_runtime_disabled_) {
+            pbo_ok = upload_with_pbo(local.rgba, local.w, local.h);
+            if (pbo_ok) {
+                ve::log::info("GL_DEBUG: PBO texture upload successful");
+            } else {
+                ve::log::info("GL_DEBUG: PBO upload failed, falling back to direct upload");
+            }
+        }
+        if (!pbo_ok) {
+            VE_PROFILE_SCOPE_DETAILED("gl_widget.upload.fallback");
+            glBindTexture(GL_TEXTURE_2D, texture_id_);
+            glTexSubImage2D(GL_TEXTURE_2D,0,0,0,local.w,local.h,GL_RGBA,GL_UNSIGNED_BYTE,local.rgba.constData());
+            ve::log::info("GL_DEBUG: Direct texture upload completed");
+        }
+#else
+        VE_PROFILE_SCOPE_DETAILED("gl_widget.upload");
         glBindTexture(GL_TEXTURE_2D, texture_id_);
         glTexSubImage2D(GL_TEXTURE_2D,0,0,0,local.w,local.h,GL_RGBA,GL_UNSIGNED_BYTE,local.rgba.constData());
-    }
-#else
-    VE_PROFILE_SCOPE_DETAILED("gl_widget.upload");
-    // Removed per-frame direct upload debug logging to prevent spam
-    glBindTexture(GL_TEXTURE_2D, texture_id_);
-    glTexSubImage2D(GL_TEXTURE_2D,0,0,0,local.w,local.h,GL_RGBA,GL_UNSIGNED_BYTE,local.rgba.constData());
+        ve::log::info("GL_DEBUG: Direct texture upload completed");
 #endif
+        
+        // Check for OpenGL errors after texture upload
+        GLenum upload_error = glGetError();
+        if (upload_error != GL_NO_ERROR) {
+            ve::log::error("GL_ERROR: OpenGL error after texture upload: " + std::to_string(upload_error));
+        } else {
+            ve::log::info("GL_DEBUG: Texture upload successful, no OpenGL errors");
+        }
+        
 #if VE_HEAP_DEBUG && defined(_MSC_VER)
-    _CrtCheckMemory();
+        _CrtCheckMemory();
 #endif
+    } else if (has_new) {
+        ve::log::warn("GL_DEBUG: paintGL has_new=true but frame data invalid - w=" + std::to_string(local.w) + " h=" + std::to_string(local.h) + " rgba.empty=" + std::to_string(local.rgba.isEmpty()));
     }
-    // Removed per-frame viewport setup debug logging to prevent spam
+    
+    ve::log::info("GL_DEBUG: Setting up viewport and clearing");
     glViewport(0,0,width(),height());
     glClearColor(0.f,0.f,0.f,1.f);
     glClear(GL_COLOR_BUFFER_BIT);
+    
     if (!texture_id_) {
-        // Keep warning for no texture (not per-frame, only when missing)
+        ve::log::warn("GL_DEBUG: No texture available for rendering");
         return;
     }
-    // Removed per-frame rendering debug logging to prevent spam
+    
+    ve::log::info("GL_DEBUG: Rendering quad with texture");
     ensure_program();
-
+    
     float widget_w = static_cast<float>(width());
     float widget_h = static_cast<float>(height());
     float tex_aspect = tex_h_>0 ? static_cast<float>(tex_w_)/static_cast<float>(tex_h_) : 1.f;
@@ -173,29 +207,38 @@ void GLVideoWidget::paintGL() {
     if (tex_aspect > widget_aspect) quad_h = widget_aspect/tex_aspect; else quad_w = tex_aspect/widget_aspect;
     float x0=-quad_w, x1=quad_w, y0=-quad_h, y1=quad_h;
     float verts[] = { x0,y0,0.f,1.f,  x1,y0,1.f,1.f,  x0,y1,0.f,0.f,  x1,y1,1.f,0.f };
+    
     if(attr_pos_ >=0 && attr_uv_ >=0) {
-    VE_PROFILE_SCOPE_DETAILED("gl_widget.draw");
-        // Removed per-frame quad rendering debug logging to prevent spam
+        VE_PROFILE_SCOPE_DETAILED("gl_widget.draw");
+        ve::log::info("GL_DEBUG: Drawing quad - program=" + std::to_string(program_) + " texture=" + std::to_string(texture_id_));
         glUseProgram(program_);
-        glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D, texture_id_); if(uni_tex_>=0) glUniform1i(uni_tex_,0);
+        glActiveTexture(GL_TEXTURE0); 
+        glBindTexture(GL_TEXTURE_2D, texture_id_); 
+        if(uni_tex_>=0) glUniform1i(uni_tex_,0);
         glEnableVertexAttribArray(static_cast<GLuint>(attr_pos_));
         glEnableVertexAttribArray(static_cast<GLuint>(attr_uv_));
         glVertexAttribPointer(static_cast<GLuint>(attr_pos_),2,GL_FLOAT,GL_FALSE,4*sizeof(float),verts);
         glVertexAttribPointer(static_cast<GLuint>(attr_uv_),2,GL_FLOAT,GL_FALSE,4*sizeof(float),verts+2);
-        // Removed per-frame glDrawArrays debug logging to prevent spam
+        ve::log::info("GL_DEBUG: Calling glDrawArrays...");
         glDrawArrays(GL_TRIANGLE_STRIP,0,4);
-        // Check for OpenGL errors
-        GLenum error = glGetError();
-        if (error != GL_NO_ERROR) {
-            ve::log::error("GL_ERROR: OpenGL error after glDrawArrays: " + std::to_string(error));
+        
+        // Check for OpenGL errors after drawing
+        GLenum draw_error = glGetError();
+        if (draw_error != GL_NO_ERROR) {
+            ve::log::error("GL_ERROR: OpenGL error after glDrawArrays: " + std::to_string(draw_error));
+        } else {
+            ve::log::info("GL_DEBUG: glDrawArrays completed successfully");
         }
+        
         glDisableVertexAttribArray(static_cast<GLuint>(attr_pos_));
         glDisableVertexAttribArray(static_cast<GLuint>(attr_uv_));
         glUseProgram(0);
-        // Removed per-frame quad completion debug logging to prevent spam
+        ve::log::info("GL_DEBUG: Quad rendering completed, display should be updated");
     } else {
         ve::log::error("GL_ERROR: skipping draw due to invalid attributes attr_pos_=" + std::to_string(attr_pos_) + " attr_uv_=" + std::to_string(attr_uv_));
     }
+    
+    ve::log::info("GL_DEBUG: paintGL() completed");
 }
 
 #if VE_ENABLE_PBO_UPLOAD

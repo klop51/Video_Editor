@@ -292,6 +292,7 @@ MainWindow::MainWindow(QWidget* parent)
     , media_worker_thread_(nullptr)
     , timeline_worker_(nullptr)
     , timeline_worker_thread_(nullptr)
+    , widget_inspector_(new WidgetInspector(this))
 {
     // Initialize timeline sync default from environment
     const bool env_disable_sync = (std::getenv("VE_DISABLE_TIMELINE_SYNC") != nullptr);
@@ -360,12 +361,16 @@ MainWindow::~MainWindow() {
     // Clean up worker threads
     cleanup_timeline_worker();
     cleanup_media_worker();
-
+    
     // Detach playback callbacks to prevent late thread invokes during shutdown
     if (playback_controller_) {
         playback_controller_->set_video_callback(nullptr);
         playback_controller_->set_state_callback(nullptr);
     }
+    
+    // Clean up widget inspector
+    delete widget_inspector_;
+    widget_inspector_ = nullptr;
     
     // Save window state
     QSettings settings;
@@ -373,9 +378,7 @@ MainWindow::~MainWindow() {
     settings.setValue("windowState", saveState());
     
     ve::log::info("Main window destroyed");
-}
-
-void MainWindow::setup_media_worker() {
+}void MainWindow::setup_media_worker() {
     // Create worker thread for media processing
     media_worker_thread_ = new QThread(this);
     media_worker_ = new MediaProcessingWorker();
@@ -806,6 +809,42 @@ void MainWindow::create_menus() {
 
     QMenu* dev_menu = menuBar()->addMenu("&Development");
     mk(dev_menu, dummy, "Create &Test Timeline Content", QKeySequence(), &MainWindow::create_test_timeline_content);
+    // Widget inspector debug commands
+    mk(dev_menu, dummy, "Inspect &QPushButton Widgets", QKeySequence(), [this](){
+        auto buttons = widget_inspector_->findWidgets("QPushButton");
+        QString msg = QString("Found %1 QPushButton widgets:").arg(buttons.size());
+        for (auto* btn : buttons) {
+            QString text = widget_inspector_->getProperty(btn, "text").toString();
+            msg += QString("\n  %1 (%2)").arg(btn->objectName()).arg(text);
+        }
+        QMessageBox::information(this, "Widget Inspector", msg);
+    });
+    mk(dev_menu, dummy, "Inspect &QLabel Widgets", QKeySequence(), [this](){
+        auto labels = widget_inspector_->findWidgets("QLabel");
+        QString msg = QString("Found %1 QLabel widgets:").arg(labels.size());
+        for (auto* lbl : labels) {
+            QString text = widget_inspector_->getProperty(lbl, "text").toString();
+            msg += QString("\n  %1 (%2): '%3'").arg(lbl->objectName()).arg(lbl->metaObject()->className()).arg(text.left(50));
+        }
+        QMessageBox::information(this, "Widget Inspector", msg);
+    });
+    mk(dev_menu, dummy, "Show Widget &Tree", QKeySequence(), [this](){
+        auto tree = widget_inspector_->getWidgetTree(this);
+        QString msg = "Widget Tree (MainWindow):\n" + tree;
+        QMessageBox::information(this, "Widget Inspector", msg);
+    });
+    mk(dev_menu, dummy, "Inspect Viewer &Panel", QKeySequence(), [this](){
+        if (viewer_panel_) {
+            auto props = widget_inspector_->getProperties(viewer_panel_);
+            QString msg = "ViewerPanel Properties:\n";
+            for (const auto& prop : props) {
+                msg += QString("  %1: %2\n").arg(QString::fromStdString(prop.first)).arg(QString::fromStdString(prop.second));
+            }
+            QMessageBox::information(this, "Widget Inspector", msg);
+        } else {
+            QMessageBox::information(this, "Widget Inspector", "No viewer panel available");
+        }
+    });
     // GPU pipeline toggle (experimental)
     QAction* toggleGpuAction = new QAction("Enable GPU Pipeline", this);
     toggleGpuAction->setCheckable(true);

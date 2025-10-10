@@ -73,8 +73,10 @@ public:
     bool is_broadcast_compliant() const;
     std::vector<std::string> get_compliance_warnings() const;
 
+    // Manual update methods (called by monitoring system to avoid deadlocks)
+    void update_monitoring_state();
+    
     // History and analysis
-    const LoudnessHistory& get_loudness_history() const { return history_; }
     void set_target_platform(const std::string& platform);
     
     // Statistics

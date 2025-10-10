@@ -725,31 +725,6 @@ if(ENABLE_TOOLS)
         target_compile_options(audio_monitoring_week10_validation_standalone PRIVATE /W0)
     endif()
 
-    # Week 10: Real-Time Audio Monitoring Validation
-    add_executable(audio_monitoring_week10_validation
-        audio_monitoring_week10_validation.cpp
-    )
-
-    target_link_libraries(audio_monitoring_week10_validation PRIVATE
-        ve_audio
-        ve_core
-    )
-
-    target_include_directories(audio_monitoring_week10_validation PRIVATE
-        src/core/include
-        src/audio/include
-    )
-
-    set_target_properties(audio_monitoring_week10_validation PROPERTIES
-        CXX_STANDARD 20
-        CXX_STANDARD_REQUIRED ON
-    )
-
-    # Disable warnings for this test executable
-    if(MSVC)
-        target_compile_options(audio_monitoring_week10_validation PRIVATE /W0)
-    endif()
-
     # Phase 2 Week 6: A/V Synchronization Validation Framework Test
     add_executable(sync_validator_test
         sync_validator_test.cpp
@@ -841,6 +816,33 @@ if(ENABLE_TOOLS)
         target_compile_options(audio_export_presets_week9_simple_validation PRIVATE /W0)
     endif()
 
+    endif() # VE_BUILD_AUDIO_VALIDATION
+
+    # FFmpegDecoderBridge Test
+    add_executable(test_ffmpeg_decoder_bridge
+        test_ffmpeg_decoder_bridge.cpp
+    )
+
+    target_link_libraries(test_ffmpeg_decoder_bridge PRIVATE
+        ve_audio
+        ve_core
+    )
+
+    target_include_directories(test_ffmpeg_decoder_bridge PRIVATE
+        src/audio/include
+        src/core/include
+    )
+
+    set_target_properties(test_ffmpeg_decoder_bridge PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
+    )
+
+    # Disable warnings for this test executable
+    if(MSVC)
+        target_compile_options(test_ffmpeg_decoder_bridge PRIVATE /W0)
+    endif()
+
     # AUDIO ENGINE ROADMAP Phase 1 Week 3 FFmpeg Integration Test
     add_executable(phase1_week3_ffmpeg_integration_test
         phase1_week3_ffmpeg_integration_test_simple.cpp
@@ -880,8 +882,6 @@ if(ENABLE_TOOLS)
         src/media_io/include
         src/core/include
     )
-
-    endif() # VE_BUILD_AUDIO_VALIDATION
 
     # FORMAT_SUPPORT_ROADMAP.md Phase 1 Week 1 validation executable
     add_executable(format_support_phase1_week1_validation
@@ -1053,6 +1053,51 @@ if(ENABLE_TOOLS)
         ${CMAKE_CURRENT_SOURCE_DIR}/src/media_io/include
         ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
     )
+
+    # A/V Sync Fix Validation Test
+    add_executable(test_av_sync_fix
+        test_av_sync_fix.cpp
+    )
+
+    target_link_libraries(test_av_sync_fix
+        PRIVATE
+        ve_core
+    )
+
+    target_include_directories(test_av_sync_fix
+        PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
+    )
+
+    # Disable warnings for this test executable
+    if(MSVC)
+        target_compile_options(test_av_sync_fix PRIVATE /W0)
+    endif()
+
+    # WASAPI Audio Output Validation Test
+    add_executable(audio_output_wasapi_validation
+        audio_output_wasapi_validation.cpp
+    )
+
+    target_link_libraries(audio_output_wasapi_validation PRIVATE
+        ve_audio
+        ve_core
+    )
+
+    target_include_directories(audio_output_wasapi_validation PRIVATE
+        src/audio/include
+        src/core/include
+    )
+
+    set_target_properties(audio_output_wasapi_validation PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
+    )
+
+    # Disable warnings for this test executable
+    if(MSVC)
+        target_compile_options(audio_output_wasapi_validation PRIVATE /W0)
+    endif()
 endif()
 
 # Debug tool for baby talk audio issue - sample rate analysis
@@ -1150,12 +1195,146 @@ if(ENABLE_QT_TOOLS)
             target_compile_options(simple_audio_widget_test PRIVATE /W0)
         endif()
         
+        # Week 10: Real-Time Audio Monitoring Validation
+        set(CMAKE_AUTOMOC ON)
+        add_executable(audio_monitoring_week10_validation
+            audio_monitoring_week10_validation.cpp
+        )
+
+        target_link_libraries(audio_monitoring_week10_validation PRIVATE
+            ve_audio
+            ve_core
+            ve_ui
+            Qt6::Core
+            Qt6::Widgets
+        )
+
+        target_include_directories(audio_monitoring_week10_validation PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/audio/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/include
+        )
+
+        set_target_properties(audio_monitoring_week10_validation PROPERTIES
+            CXX_STANDARD 20
+            CXX_STANDARD_REQUIRED ON
+        )
+
+        # Disable warnings for this test executable
+        if(MSVC)
+            target_compile_options(audio_monitoring_week10_validation PRIVATE /W0)
+        endif()
+
+        # Phase 4 Week 11: Audio Playback Engine with Monitoring Validation
+        set(CMAKE_AUTOMOC ON)
+        add_executable(audio_playback_engine_week11_validation
+            audio_playback_engine_week11_validation.cpp
+        )
+
+        target_link_libraries(audio_playback_engine_week11_validation PRIVATE
+            ve_audio
+            ve_core
+            ve_ui
+            Qt6::Core
+            Qt6::Widgets
+        )
+
+        target_include_directories(audio_playback_engine_week11_validation PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/audio/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/include
+        )
+
+        set_target_properties(audio_playback_engine_week11_validation PROPERTIES
+            CXX_STANDARD 20
+            CXX_STANDARD_REQUIRED ON
+        )
+
+        # Disable warnings for this test executable
+        if(MSVC)
+            target_compile_options(audio_playback_engine_week11_validation PRIVATE /W0)
+        endif()
+        
         message(STATUS "Week 8 Integration Test Application configured")
     else()
         message(STATUS "Skipping Week 8 Integration Test - Qt6 not found")
     endif()
 else()
     message(STATUS "Skipping Week 8 Integration Test - UI module not available")
+endif()
+
+# WidgetInspector Test Application
+if(ENABLE_QT_TOOLS)
+    find_package(Qt6 QUIET COMPONENTS Core Widgets)
+    if(Qt6_FOUND)
+        # Enable Qt's MOC for this test
+        set(CMAKE_AUTOMOC ON)
+        
+        add_executable(widget_inspector_test
+            widget_inspector_test.cpp
+            src/ui/src/widget_inspector.cpp
+            src/ui/include/ui/widget_inspector.hpp
+        )
+        
+        target_link_libraries(widget_inspector_test
+            PRIVATE
+            ve_core
+            Qt6::Core
+            Qt6::Widgets
+        )
+        
+        target_include_directories(widget_inspector_test
+            PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
+        )
+        
+        # Disable warnings for this test executable
+        if(MSVC)
+            target_compile_options(widget_inspector_test PRIVATE /W0)
+        endif()
+        
+        message(STATUS "WidgetInspector Test Application configured")
+    else()
+        message(STATUS "Skipping WidgetInspector Test - Qt6 not found")
+    endif()
+else()
+    message(STATUS "Skipping WidgetInspector Test - UI module not available")
+endif()
+
+# WidgetInspector Core Test (no GUI)
+if(ENABLE_QT_TOOLS)
+    find_package(Qt6 QUIET COMPONENTS Core Widgets)
+    if(Qt6_FOUND)
+        add_executable(widget_inspector_core_test
+            widget_inspector_core_test.cpp
+            src/ui/src/widget_inspector.cpp
+            src/ui/include/ui/widget_inspector.hpp
+        )
+
+        target_link_libraries(widget_inspector_core_test
+            PRIVATE
+            ve_core
+            Qt6::Core
+            Qt6::Widgets
+        )
+
+        target_include_directories(widget_inspector_core_test
+            PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/ui/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/core/include
+        )
+
+        if(MSVC)
+            target_compile_options(widget_inspector_core_test PRIVATE /W0)
+        endif()
+
+        message(STATUS "WidgetInspector Core Test configured")
+    else()
+        message(STATUS "Skipping WidgetInspector Core Test - Qt6 not found")
+    endif()
+else()
+    message(STATUS "Skipping WidgetInspector Core Test - UI module not available")
 endif()
 
 set(CPACK_PACKAGE_NAME "VideoEditor")

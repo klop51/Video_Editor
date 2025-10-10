@@ -1,14 +1,14 @@
 {
   "samples": [
-    { "name": "to_rgba_scaled_view", "count": 755, "total_ms": 2837.29, "avg_ms": 3.758, "min_ms": 3.3942, "max_ms": 6.0825, "p50_ms": 3.5203, "p95_ms": 5.6428 },
-    { "name": "gl_widget.paintGL", "count": 756, "total_ms": 2025.78, "avg_ms": 2.6796, "min_ms": 0.6817, "max_ms": 4.6534, "p50_ms": 2.6632, "p95_ms": 3.0077 },
-    { "name": "playback.cache_hit", "count": 1, "total_ms": 2.3346, "avg_ms": 2.3346, "min_ms": 2.3346, "max_ms": 2.3346, "p50_ms": 2.3346, "p95_ms": 2.3346 },
-    { "name": "to_rgba_scaled_view.sws_scale", "count": 755, "total_ms": 2824.82, "avg_ms": 3.74148, "min_ms": 3.3844, "max_ms": 6.0701, "p50_ms": 3.5061, "p95_ms": 5.6318 },
-    { "name": "to_rgba_scaled_view.ffmpeg", "count": 755, "total_ms": 2832.3, "avg_ms": 3.75139, "min_ms": 3.3922, "max_ms": 6.0798, "p50_ms": 3.5166, "p95_ms": 5.64 },
-    { "name": "viewer.display_frame", "count": 755, "total_ms": 19713, "avg_ms": 26.1099, "min_ms": 20.4913, "max_ms": 34.3159, "p50_ms": 26.0535, "p95_ms": 30.0257 },
-    { "name": "gl_widget.upload.pbo.map", "count": 748, "total_ms": 410.568, "avg_ms": 0.548887, "min_ms": 0.4546, "max_ms": 1.0931, "p50_ms": 0.5155, "p95_ms": 0.7439 },
-    { "name": "gl_widget.upload.pbo.tex", "count": 748, "total_ms": 0.6136, "avg_ms": 0.000820321, "min_ms": 0.0006, "max_ms": 0.0035, "p50_ms": 0.0007, "p95_ms": 0.0015 },
-    { "name": "gl_widget.upload.pbo", "count": 748, "total_ms": 425.88, "avg_ms": 0.569359, "min_ms": 0.4644, "max_ms": 1.8861, "p50_ms": 0.5285, "p95_ms": 0.7776 },
-    { "name": "gl_widget.draw", "count": 751, "total_ms": 600.979, "avg_ms": 0.800239, "min_ms": 0.695, "max_ms": 1.9774, "p50_ms": 0.7602, "p95_ms": 1.0276 }
+    { "name": "to_rgba_scaled_view", "count": 740, "total_ms": 2697.82, "avg_ms": 3.6457, "min_ms": 3.4012, "max_ms": 5.9799, "p50_ms": 3.4789, "p95_ms": 4.7336 },
+    { "name": "gl_widget.paintGL", "count": 745, "total_ms": 2466.74, "avg_ms": 3.31107, "min_ms": 0.8422, "max_ms": 10.6474, "p50_ms": 3.2484, "p95_ms": 3.7428 },
+    { "name": "playback.cache_hit", "count": 1, "total_ms": 1.0684, "avg_ms": 1.0684, "min_ms": 1.0684, "max_ms": 1.0684, "p50_ms": 1.0684, "p95_ms": 1.0684 },
+    { "name": "to_rgba_scaled_view.sws_scale", "count": 740, "total_ms": 2684.19, "avg_ms": 3.62728, "min_ms": 3.3908, "max_ms": 5.9658, "p50_ms": 3.4661, "p95_ms": 4.6289 },
+    { "name": "to_rgba_scaled_view.ffmpeg", "count": 740, "total_ms": 2691.79, "avg_ms": 3.63756, "min_ms": 3.3991, "max_ms": 5.9768, "p50_ms": 3.4762, "p95_ms": 4.6393 },
+    { "name": "viewer.display_frame", "count": 740, "total_ms": 5531.18, "avg_ms": 7.47457, "min_ms": 6.4785, "max_ms": 10.8353, "p50_ms": 7.245, "p95_ms": 9.0712 },
+    { "name": "gl_widget.upload.pbo.map", "count": 738, "total_ms": 384.266, "avg_ms": 0.520686, "min_ms": 0.4065, "max_ms": 1.2866, "p50_ms": 0.4992, "p95_ms": 0.6471 },
+    { "name": "gl_widget.upload.pbo.tex", "count": 738, "total_ms": 0.5582, "avg_ms": 0.000756369, "min_ms": 0.0004, "max_ms": 0.0054, "p50_ms": 0.0007, "p95_ms": 0.0012 },
+    { "name": "gl_widget.upload.pbo", "count": 738, "total_ms": 393.649, "avg_ms": 0.533399, "min_ms": 0.4166, "max_ms": 1.3493, "p50_ms": 0.5113, "p95_ms": 0.6622 },
+    { "name": "gl_widget.draw", "count": 740, "total_ms": 637.372, "avg_ms": 0.861313, "min_ms": 0.7916, "max_ms": 2.4059, "p50_ms": 0.8365, "p95_ms": 0.9861 }
   ]
 }
